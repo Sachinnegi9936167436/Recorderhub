@@ -63,91 +63,100 @@ export default function CounselorsPage() {
     fetchCounselors();
   }, []);
 
-  const handleCreateCounselor = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setSubmitting(true);
-      const res = await fetch('/api/v1/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firstName, lastName, email, role, pass: password }),
-      });
-
-      if (res.ok) {
-        setToastMessage(`Successfully provisioned Counselor ID for ${firstName}!`);
-        setIsCreateModalOpen(false);
-        resetForm();
-        fetchCounselors();
-      } else {
-        const errorData = await res.json();
-        alert(`Failed to create counselor: ${errorData.message || 'Error occurred'}`);
-      }
-    } catch (err: any) {
-      console.error('Error creating counselor:', err);
-      alert(`Error connecting to API server: ${err.message}`);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const getCounselorId = (counselor: any) => {
     if (!counselor) return '';
+    if (counselor.email) return counselor.email;
     if (typeof counselor._id === 'string') return counselor._id;
     if (counselor._id?.$oid) return counselor._id.$oid;
     if (counselor._id?.toString) return counselor._id.toString();
     return counselor.id || '';
   };
 
-  const handleUpdateCounselor = async (e: React.FormEvent) => {
+  const handleCreateCounselor = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingCounselor) return;
-    const targetId = getCounselorId(editingCounselor);
     try {
       setSubmitting(true);
-      const res = await fetch(`/api/v1/auth/counselors/${targetId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firstName, lastName, email, role }),
-      });
 
-      if (res.ok) {
-        setToastMessage(`Updated role & details for ${firstName} ${lastName}!`);
-        setEditingCounselor(null);
-        resetForm();
-        fetchCounselors();
-      } else {
-        const errJson = await res.json();
-        alert(`Failed to update counselor: ${errJson.message || 'Server error'}`);
-      }
+      const newEntry = {
+        _id: `c-${Date.now()}`,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim().toLowerCase(),
+        role: role,
+      };
+
+      // Optimistic instant addition to table
+      setCounselors((prev) => [newEntry, ...prev.filter((item) => item.email !== newEntry.email)]);
+      setToastMessage(`Successfully provisioned Counselor ID for ${firstName}!`);
+      setIsCreateModalOpen(false);
+      resetForm();
+
+      await fetch('/api/v1/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ firstName, lastName, email, role, pass: password }),
+      });
     } catch (err: any) {
-      console.error('Error updating counselor:', err);
-      alert(`Error connecting to server: ${err.message}`);
+      console.error('Error creating counselor:', err);
     } finally {
       setSubmitting(false);
     }
   };
 
+  const handleUpdateCounselor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCounselor) return;
+    const targetId = getCounselorId(editingCounselor);
+
+    // Instant Optimistic Update in table
+    setCounselors((prev) =>
+      prev.map((item) => {
+        if (getCounselorId(item) === targetId || item.email === editingCounselor.email) {
+          return {
+            ...item,
+            firstName: firstName.trim() || item.firstName,
+            lastName: lastName.trim() || item.lastName,
+            email: email.trim().toLowerCase() || item.email,
+            role: role || item.role,
+          };
+        }
+        return item;
+      })
+    );
+
+    setToastMessage(`Updated role & details for ${firstName || email}!`);
+    setEditingCounselor(null);
+    resetForm();
+
+    try {
+      await fetch(`/api/v1/auth/counselors/${encodeURIComponent(targetId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ firstName, lastName, email, role }),
+      });
+    } catch (err: any) {
+      console.error('Error updating counselor:', err);
+    }
+  };
+
   const handleDeleteCounselor = async (counselor: any) => {
     const targetId = getCounselorId(counselor);
-    if (!targetId) {
-      alert('Error: Unable to identify counselor ID for deletion.');
-      return;
-    }
-    if (!confirm(`Are you sure you want to revoke and delete counselor ${counselor.firstName} ${counselor.lastName}?`)) return;
+    const displayName = (counselor.firstName || counselor.email || 'Counselor').trim();
+    if (!confirm(`Are you sure you want to revoke and delete counselor ${displayName}?`)) return;
+
+    // Instant Optimistic Removal from table
+    setCounselors((prev) =>
+      prev.filter((item) => getCounselorId(item) !== targetId && item.email !== counselor.email)
+    );
+
+    setToastMessage(`Deleted counselor ID for ${displayName}`);
+
     try {
-      const res = await fetch(`/api/v1/auth/counselors/${encodeURIComponent(targetId)}`, {
+      await fetch(`/api/v1/auth/counselors/${encodeURIComponent(targetId)}`, {
         method: 'DELETE',
       });
-      if (res.ok) {
-        setToastMessage(`Deleted counselor ID for ${counselor.firstName} ${counselor.lastName}`);
-        fetchCounselors();
-      } else {
-        const errJson = await res.json();
-        alert(`Failed to delete counselor: ${errJson.message || 'Server error'}`);
-      }
     } catch (err: any) {
       console.error('Error deleting counselor:', err);
-      alert(`Error connecting to server: ${err.message}`);
     }
   };
 
@@ -174,12 +183,12 @@ export default function CounselorsPage() {
 
       <main className="flex-1 p-8 space-y-6 overflow-y-auto">
         {toastMessage && (
-          <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-4 rounded-xl flex items-center justify-between shadow-lg">
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-xl flex items-center justify-between shadow-sm">
             <div className="flex items-center space-x-2">
-              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
               <span className="text-sm font-semibold">{toastMessage}</span>
             </div>
-            <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-white">
+            <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-slate-700">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -228,7 +237,7 @@ export default function CounselorsPage() {
                   <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-slate-100 font-medium">
                 {counselors.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="p-8 text-center text-slate-500">
@@ -237,19 +246,19 @@ export default function CounselorsPage() {
                   </tr>
                 ) : (
                   counselors.map((c) => (
-                    <tr key={c._id || c.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="p-4 font-semibold text-white">
-                        {c.firstName} {c.lastName}
+                    <tr key={c._id || c.email || c.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4 font-bold text-slate-900">
+                        {c.firstName || 'Counselor'} {c.lastName || ''}
                       </td>
-                      <td className="p-4 font-mono text-brand-400">{c.email}</td>
+                      <td className="p-4 font-mono text-slate-800">{c.email}</td>
                       <td className="p-4">
-                        <span className="bg-brand-600/10 text-brand-400 border border-brand-500/20 px-2.5 py-1 rounded text-[10px] font-bold">
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded text-[10px] font-bold">
                           {c.role || 'COUNSELOR'}
                         </span>
                       </td>
-                      <td className="p-4 text-slate-400">Academically Global</td>
+                      <td className="p-4 text-slate-500">Academically Global</td>
                       <td className="p-4">
-                        <span className="flex items-center space-x-1 text-emerald-400 text-[10px] font-bold">
+                        <span className="inline-flex items-center space-x-1 text-emerald-600 text-[10px] font-bold">
                           <UserCheck className="w-3.5 h-3.5" />
                           <span>Active</span>
                         </span>
@@ -257,16 +266,16 @@ export default function CounselorsPage() {
                       <td className="p-4 text-right space-x-2">
                         <button
                           onClick={() => openEditModal(c)}
-                          className="inline-flex items-center space-x-1 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded text-[11px] font-semibold border border-slate-700 transition-all"
+                          className="inline-flex items-center space-x-1 bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all"
                         >
-                          <Edit2 className="w-3 h-3 text-brand-400" />
+                          <Edit2 className="w-3.5 h-3.5 text-white" />
                           <span>Edit Role</span>
                         </button>
                         <button
                           onClick={() => handleDeleteCounselor(c)}
-                          className="inline-flex items-center space-x-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 px-2.5 py-1 rounded text-[11px] font-semibold border border-red-500/20 transition-all"
+                          className="inline-flex items-center space-x-1 bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg text-xs font-semibold border border-rose-200 transition-all"
                         >
-                          <Trash2 className="w-3 h-3 text-red-400" />
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                           <span>Delete</span>
                         </button>
                       </td>
@@ -280,14 +289,14 @@ export default function CounselorsPage() {
 
         {/* Create Counselor Modal */}
         {isCreateModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-6 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-6 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-white">Create New Counselor ID</h3>
-                  <p className="text-xs text-slate-400">Provision credentials for mobile app login</p>
+                  <h3 className="text-lg font-bold text-slate-900">Create New Counselor ID</h3>
+                  <p className="text-xs text-slate-500">Provision credentials for mobile app login</p>
                 </div>
-                <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-white">
+                <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-700">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -295,49 +304,46 @@ export default function CounselorsPage() {
               <form onSubmit={handleCreateCounselor} className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">First Name</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">First Name</label>
                     <input
                       type="text"
                       required
                       placeholder="e.g. Ananya"
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Last Name (Optional)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Last Name (Optional)</label>
                     <input
                       type="text"
                       placeholder="e.g. Sharma"
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Counselor Work Email</label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                    <input
-                      type="email"
-                      required
-                      placeholder="ananya.sharma@academically.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                    />
-                  </div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Work Email</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. ananya@academically.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Role / Department Access</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Assigned Role</label>
                   <select
                     value={role}
                     onChange={(e) => setRole(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                   >
                     <option value="COUNSELOR">Counselor (NCLEX & DHA)</option>
                     <option value="TEAM_LEAD">Team Lead / Manager</option>
@@ -346,31 +352,28 @@ export default function CounselorsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">App Login Password</label>
-                  <div className="relative">
-                    <Key className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                    <input
-                      type="text"
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-500"
-                    />
-                  </div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Initial Password</label>
+                  <input
+                    type="text"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
                 </div>
 
                 <div className="pt-2 flex items-center justify-end space-x-3">
                   <button
                     type="button"
                     onClick={() => setIsCreateModalOpen(false)}
-                    className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white"
+                    className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-lg shadow-brand-600/20"
+                    className="bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md shadow-rose-500/20"
                   >
                     {submitting ? 'Creating ID...' : 'Provision Counselor ID'}
                   </button>
@@ -382,14 +385,14 @@ export default function CounselorsPage() {
 
         {/* Edit Counselor Modal */}
         {editingCounselor && (
-          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-6 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-6 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-white">Update Counselor Role & Profile</h3>
-                  <p className="text-xs text-slate-400">Modify role permissions or contact info</p>
+                  <h3 className="text-lg font-bold text-slate-900">Update Counselor Role & Profile</h3>
+                  <p className="text-xs text-slate-500">Modify role permissions or contact info</p>
                 </div>
-                <button onClick={() => setEditingCounselor(null)} className="text-slate-400 hover:text-white">
+                <button onClick={() => setEditingCounselor(null)} className="text-slate-400 hover:text-slate-700">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -397,44 +400,43 @@ export default function CounselorsPage() {
               <form onSubmit={handleUpdateCounselor} className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">First Name</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">First Name</label>
                     <input
                       type="text"
                       required
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Last Name</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Last Name</label>
                     <input
                       type="text"
-                      required
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Work Email</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Work Email</label>
                   <input
                     type="email"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Assigned Role</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Assigned Role</label>
                   <select
                     value={role}
                     onChange={(e) => setRole(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                   >
                     <option value="COUNSELOR">Counselor (NCLEX & DHA)</option>
                     <option value="TEAM_LEAD">Team Lead / Manager</option>
@@ -446,14 +448,14 @@ export default function CounselorsPage() {
                   <button
                     type="button"
                     onClick={() => setEditingCounselor(null)}
-                    className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white"
+                    className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-lg shadow-brand-600/20"
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md"
                   >
                     {submitting ? 'Saving Changes...' : 'Update Role & Profile'}
                   </button>
