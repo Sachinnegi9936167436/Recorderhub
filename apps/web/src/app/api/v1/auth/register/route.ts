@@ -15,7 +15,7 @@ export async function POST(req: Request) {
 
     const existing = await (UserModel as any).findOne({ email: email.toLowerCase() });
     if (existing) {
-      return NextResponse.json(existing);
+      return NextResponse.json({ message: 'A counselor with this work email already exists!' }, { status: 400 });
     }
 
     const rawPass = pass || 'Password123!';

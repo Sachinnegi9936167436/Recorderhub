@@ -104,9 +104,13 @@ export default function CounselorsPage() {
 
   const handleDeleteCounselor = async (counselor: any) => {
     const targetId = getCounselorId(counselor);
+    if (!targetId) {
+      alert('Error: Unable to identify counselor ID for deletion.');
+      return;
+    }
     if (!confirm(`Are you sure you want to revoke and delete counselor ${counselor.firstName} ${counselor.lastName}?`)) return;
     try {
-      const res = await fetch(`/api/v1/auth/counselors/${targetId}`, {
+      const res = await fetch(`/api/v1/auth/counselors/${encodeURIComponent(targetId)}`, {
         method: 'DELETE',
       });
       if (res.ok) {
