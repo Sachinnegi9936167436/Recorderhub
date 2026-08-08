@@ -129,7 +129,7 @@ export default function CounselorsPage() {
     resetForm();
 
     try {
-      await fetch(`/api/v1/auth/counselors/${encodeURIComponent(targetId)}`, {
+      await fetch(`/api/v1/auth/counselors?id=${encodeURIComponent(targetId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ firstName, lastName, email, role }),
@@ -152,7 +152,7 @@ export default function CounselorsPage() {
     setToastMessage(`Deleted counselor ID for ${displayName}`);
 
     try {
-      await fetch(`/api/v1/auth/counselors/${encodeURIComponent(targetId)}`, {
+      await fetch(`/api/v1/auth/counselors?id=${encodeURIComponent(targetId)}`, {
         method: 'DELETE',
       });
     } catch (err: any) {
