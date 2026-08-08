@@ -34,7 +34,9 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             RecordHubTheme {
-                var currentStep by remember { mutableStateOf(0) } // 0: Onboarding, 1: Permissions, 2: MainApp
+                val prefs = remember { getSharedPreferences("recordhub_prefs", MODE_PRIVATE) }
+                val isLoggedIn = remember { prefs.getBoolean("is_logged_in", false) }
+                var currentStep by remember { mutableStateOf(if (isLoggedIn) 2 else 0) }
                 val scope = rememberCoroutineScope()
 
                 val db = remember { AppDatabase.getInstance(applicationContext) }
@@ -117,7 +119,10 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         },
-                        onLogout = { currentStep = 0 }
+                        onLogout = {
+                            prefs.edit().putBoolean("is_logged_in", false).apply()
+                            currentStep = 0
+                        }
                     )
                 }
             }

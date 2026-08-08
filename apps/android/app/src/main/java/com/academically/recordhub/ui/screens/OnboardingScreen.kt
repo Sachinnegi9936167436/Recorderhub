@@ -178,6 +178,12 @@ fun OnboardingScreen(onProceedToPermissions: () -> Unit) {
 
                             if (response.isSuccessful && response.body() != null) {
                                 authenticated = true
+                                val prefs = context.getSharedPreferences("recordhub_prefs", android.content.Context.MODE_PRIVATE)
+                                prefs.edit()
+                                    .putBoolean("is_logged_in", true)
+                                    .putString("counselor_email", counselorEmail.trim())
+                                    .putString("access_token", response.body()?.accessToken ?: "")
+                                    .apply()
                                 break
                             } else if (response.code() == 401 || response.code() == 400) {
                                 lastErrorMsg = "Invalid email or password! Verify credentials created on Web Dashboard."
