@@ -8,7 +8,7 @@ import { PhoneCall, Search, Filter, ShieldCheck, ShieldAlert, PlayCircle, Eye, M
 export default function CallsPage() {
   const [callsList, setCallsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showPII, setShowPII] = useState(false);
+  const [showPII, setShowPII] = useState(true);
   const [directionFilter, setDirectionFilter] = useState('ALL');
   const [channelFilter, setChannelFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
