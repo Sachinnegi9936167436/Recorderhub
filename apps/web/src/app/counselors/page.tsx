@@ -22,7 +22,7 @@ export default function CounselorsPage() {
   const fetchCounselors = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/v1/auth/counselors');
+      const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setCounselors(data || []);

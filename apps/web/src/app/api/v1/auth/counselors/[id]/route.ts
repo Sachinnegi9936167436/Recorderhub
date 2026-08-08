@@ -3,6 +3,9 @@ import { connectToDatabase } from '@/lib/db';
 import { UserModel } from '@/lib/models';
 import mongoose from 'mongoose';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   try {
     await connectToDatabase();
@@ -11,7 +14,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     if (!id || id === 'undefined') {
       return NextResponse.json({ message: 'Invalid counselor ID provided' }, { status: 400 });
     }
-    const filter = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { email: id };
+    const filter = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { email: id.toLowerCase() };
     const updated = await (UserModel as any).findOneAndUpdate(filter, { $set: body }, { new: true }).select('-passwordHash').exec();
     return NextResponse.json(updated);
   } catch (err: any) {
@@ -27,7 +30,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     if (!id || id === 'undefined') {
       return NextResponse.json({ message: 'Invalid counselor ID provided' }, { status: 400 });
     }
-    const filter = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { email: id };
+    const filter = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { email: id.toLowerCase() };
     await (UserModel as any).findOneAndDelete(filter).exec();
     return NextResponse.json({ success: true });
   } catch (err: any) {
