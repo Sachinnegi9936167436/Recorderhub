@@ -83,7 +83,7 @@ export default function SalestrailCallsPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Salestrail_Call_Logs_${Date.now()}.csv`);
+    link.setAttribute('download', `RecorderHub_Call_Logs_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

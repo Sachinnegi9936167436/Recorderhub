@@ -83,7 +83,7 @@ export default function SalestrailDashboard() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Salestrail_Calls_Export_${Date.now()}.csv`);
+    link.setAttribute('download', `RecorderHub_Calls_Export_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

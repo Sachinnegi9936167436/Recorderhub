@@ -37,12 +37,12 @@ export default function Navigation() {
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between h-screen sticky top-0 font-sans z-30">
       <div>
-        {/* Salestrail Brand Header */}
+        {/* RecorderHub Brand Header */}
         <div className="px-6 py-5 flex items-center space-x-2.5">
-          <div className="w-8 h-8 rounded-lg bg-rose-500 flex items-center justify-center text-white shadow-md shadow-rose-500/20">
-            <Triangle className="w-5 h-5 fill-white rotate-90" />
+          <div className="w-8 h-8 rounded-lg bg-rose-500 flex items-center justify-center text-white shadow-md shadow-rose-500/20 font-bold text-lg">
+            R
           </div>
-          <span className="font-bold text-slate-900 text-xl tracking-tight">salestrail</span>
+          <span className="font-bold text-slate-900 text-xl tracking-tight">recorderhub</span>
         </div>
 
         {/* Navigation List */}
