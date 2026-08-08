@@ -167,7 +167,10 @@ export default function CallsPage() {
                   </tr>
                 ) : (
                   filteredCalls.map((call) => {
-                    const maskedPhone = (call.phoneNumber || '').replace(/(\+\d{2}\s?\d{2})\d{4}(\d{4})/, '$1 **** $2');
+                    const rawPhone = call.phoneNumber || call.phoneNumberMasked || call.phone || '';
+                    const maskedPhone = rawPhone.length > 5
+                      ? rawPhone.substring(0, 4) + ' **** ' + rawPhone.substring(rawPhone.length - 4)
+                      : rawPhone || 'Unknown Number';
                     const startTimeStr = call.startTime ? new Date(call.startTime).toLocaleString() : 'Just Now';
                     const durationStr = call.durationSeconds ? `${Math.floor(call.durationSeconds / 60)}m ${call.durationSeconds % 60}s` : '0s';
 
@@ -178,8 +181,8 @@ export default function CallsPage() {
                           <p className="font-semibold text-slate-200">{call.leadName || 'Inbound Prospect'}</p>
                           <p className="text-[10px] text-slate-400">{call.leadId || 'PH-LIVE-LEAD'}</p>
                         </td>
-                        <td className="p-4 font-mono font-medium text-slate-300">
-                          {showPII ? call.phoneNumber : maskedPhone}
+                        <td className="p-4 font-mono font-semibold text-teal-300">
+                          {showPII ? (rawPhone || 'N/A') : maskedPhone}
                         </td>
                         <td className="p-4">
                           {call.channel === 'WHATSAPP' ? (

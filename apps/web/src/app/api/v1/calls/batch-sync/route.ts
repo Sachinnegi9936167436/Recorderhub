@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function POST(req: Request) {
   try {
     await connectToDatabase();
@@ -19,7 +22,8 @@ export async function POST(req: Request) {
         await (CallModel as any).create({
           deviceId: evt.deviceId || 'ANDROID-XIAOMI-PROD',
           idempotencyKey: evt.idempotencyKey,
-          phoneNumberMasked: evt.phoneNumber,
+          phoneNumber: evt.phoneNumber || '',
+          phoneNumberMasked: evt.phoneNumber || '',
           direction: evt.direction || 'INCOMING',
           status: evt.status || 'ANSWERED',
           startTime: evt.startTime ? new Date(evt.startTime) : new Date(),
