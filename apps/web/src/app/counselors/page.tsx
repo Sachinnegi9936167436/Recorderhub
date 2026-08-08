@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Navigation from '@/components/Navigation';
+import { Navigation } from '@/components/Navigation';
 import { useSearchParams } from 'next/navigation';
 import { 
   Users, 

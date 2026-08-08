@@ -91,10 +91,12 @@ function NavigationInner() {
   );
 }
 
-export default function Navigation() {
+export function Navigation() {
   return (
     <Suspense fallback={<aside className="w-64 bg-white border-r border-slate-200 h-screen sticky top-0" />}>
       <NavigationInner />
     </Suspense>
   );
 }
+
+export default Navigation;

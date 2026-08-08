@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Navigation from '@/components/Navigation';
+import { Navigation } from '@/components/Navigation';
 import Link from 'next/link';
 import { 
   PhoneCall, 
@@ -19,7 +19,7 @@ import {
   User
 } from 'lucide-react';
 
-export default function SalestrailCallsPage() {
+function SalestrailCallsInner() {
   const [callsList, setCallsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPII, setShowPII] = useState(true);
@@ -277,5 +277,13 @@ export default function SalestrailCallsPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function SalestrailCallsPage() {
+  return (
+    <React.Suspense fallback={<div className="flex min-h-screen bg-[#f8fafc] text-slate-900 font-sans"><main className="flex-1 p-8">Loading calls...</main></div>}>
+      <SalestrailCallsInner />
+    </React.Suspense>
   );
 }

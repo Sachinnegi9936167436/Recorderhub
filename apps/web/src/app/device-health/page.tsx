@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Navigation from '@/components/Navigation';
+import { Navigation } from '@/components/Navigation';
 import { Smartphone, CheckCircle2, AlertTriangle, BatteryCharging, RefreshCw, FolderCheck, HardDrive } from 'lucide-react';
 
 export default function DeviceHealthPage() {
