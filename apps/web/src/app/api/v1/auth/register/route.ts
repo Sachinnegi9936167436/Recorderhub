@@ -13,14 +13,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: 'Email and First Name are required' }, { status: 400 });
     }
 
-    const existing = await (UserModel as any).findOne({ email: email.toLowerCase() });
-    if (existing) {
-      return NextResponse.json({ message: 'A counselor with this work email already exists!' }, { status: 400 });
-    }
-
     const rawPass = pass || 'Password123!';
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(rawPass, salt);
+
+    const existing = await (UserModel as any).findOne({ email: email.toLowerCase() });
+
+    if (existing) {
+      const updatedUser = await (UserModel as any).findByIdAndUpdate(
+        existing._id,
+        {
+          $set: {
+            firstName,
+            lastName: lastName || '',
+            role: role || 'COUNSELOR',
+            passwordHash,
+            isActive: true,
+          },
+        },
+        { new: true },
+      ).select('-passwordHash');
+
+      return NextResponse.json(updatedUser);
+    }
 
     const newUser = await (UserModel as any).create({
       email: email.toLowerCase(),
