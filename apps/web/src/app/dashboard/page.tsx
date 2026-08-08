@@ -74,7 +74,7 @@ export default function RecorderHubDashboard() {
 
   validCalls.forEach((c) => {
     if (!c) return;
-    const name = c.agentName || c.deviceId || 'Counselor Agent';
+    const name = c.agentName || c.counselorName || c.deviceId || 'Counselor';
     if (!userActivityMap[name]) {
       userActivityMap[name] = {
         name,

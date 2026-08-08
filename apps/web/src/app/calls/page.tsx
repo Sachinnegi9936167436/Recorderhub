@@ -211,10 +211,10 @@ export default function SalestrailCallsPage() {
 
                     return (
                       <tr key={call.id || call._id || call.idempotencyKey} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-4 font-bold text-slate-900">{call.agentName || call.deviceId || 'Counselor Agent'}</td>
+                        <td className="p-4 font-bold text-slate-900">{call.agentName || call.counselorName || call.deviceId || 'Counselor'}</td>
                         <td className="p-4">
-                          <p className="font-semibold text-slate-900">{call.leadName || 'Inbound Prospect'}</p>
-                          <p className="text-[10px] text-slate-400">{call.leadId || 'PH-LIVE-LEAD'}</p>
+                          <p className="font-semibold text-slate-900">{call.leadName || 'Work Contact'}</p>
+                          <p className="text-[10px] text-slate-400">{call.leadId || 'Direct Call'}</p>
                         </td>
                         <td className="p-4 font-mono font-bold text-slate-900">
                           {showPII ? (rawPhone || 'N/A') : maskedPhone}
