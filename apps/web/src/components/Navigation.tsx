@@ -3,79 +3,82 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, PhoneCall, Smartphone, Settings, ShieldCheck, Activity, LogOut, Users } from 'lucide-react';
+import { 
+  BarChart3, 
+  PhoneCall, 
+  PhoneIncoming, 
+  Mic, 
+  Users, 
+  UserCheck, 
+  CreditCard, 
+  Puzzle, 
+  HeartHandshake, 
+  Settings, 
+  ChevronDown,
+  Triangle
+} from 'lucide-react';
 
 export default function Navigation() {
   const pathname = usePathname();
 
   const navItems = [
-    { name: 'Executive Overview', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Calls Explorer', href: '/calls', icon: PhoneCall },
-    { name: 'Counselors Directory', href: '/counselors', icon: Users },
-    { name: 'Device Health', href: '/device-health', icon: Smartphone },
-    { name: 'Settings & Policy', href: '/settings', icon: Settings },
+    { name: 'Analytics', href: '/dashboard', icon: BarChart3, hasSub: true },
+    { name: 'Calls', href: '/calls', icon: PhoneCall },
+    { name: 'Inbound (beta)', href: '/calls?direction=INCOMING', icon: PhoneIncoming, hasSub: true },
+    { name: 'Recording', href: '/calls?filter=recordings', icon: Mic },
+    { name: 'Team Management', href: '/counselors', icon: Users },
+    { name: 'User Management', href: '/counselors', icon: UserCheck },
+    { name: 'Subscription', href: '/settings', icon: CreditCard, hasSub: true },
+    { name: 'Integrations', href: '/device-health', icon: Puzzle, hasSub: true },
+    { name: 'Referral Program', href: '/settings', icon: HeartHandshake },
+    { name: 'Settings', href: '/settings', icon: Settings },
   ];
 
   return (
-    <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between h-screen sticky top-0">
+    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between h-screen sticky top-0 font-sans z-30">
       <div>
-        {/* Brand Header */}
-        <div className="p-5 border-b border-slate-800 flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-brand-600/20 font-bold text-xl">
-            R
+        {/* Salestrail Brand Header */}
+        <div className="px-6 py-5 flex items-center space-x-2.5">
+          <div className="w-8 h-8 rounded-lg bg-rose-500 flex items-center justify-center text-white shadow-md shadow-rose-500/20">
+            <Triangle className="w-5 h-5 fill-white rotate-90" />
           </div>
-          <div>
-            <h1 className="font-bold text-white tracking-wide text-lg leading-tight">RecordHub</h1>
-            <p className="text-[11px] text-teal-400 font-medium tracking-tight">Academically Global</p>
-          </div>
+          <span className="font-bold text-slate-900 text-xl tracking-tight">salestrail</span>
         </div>
 
-        {/* Navigation Menu */}
-        <nav className="p-3 space-y-1">
-          {navItems.map((item) => {
+        {/* Navigation List */}
+        <nav className="px-3 py-2 space-y-0.5">
+          {navItems.map((item, idx) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+
             return (
               <Link
-                key={item.href}
+                key={idx}
                 href={item.href}
-                className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+                className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
                   isActive
-                    ? 'bg-brand-600/10 text-brand-400 border border-brand-500/20'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-rose-50 text-rose-600 font-semibold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <Icon className={`w-5 h-5 ${isActive ? 'text-brand-400' : 'text-slate-400'}`} />
-                <span>{item.name}</span>
+                <div className="flex items-center space-x-3">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-rose-600' : 'text-slate-500'}`} />
+                  <span>{item.name}</span>
+                </div>
+                {item.hasSub && (
+                  <ChevronDown className={`w-3.5 h-3.5 ${isActive ? 'text-rose-600' : 'text-slate-400'}`} />
+                )}
               </Link>
             );
           })}
         </nav>
       </div>
 
-      {/* System Status & Profile */}
-      <div className="p-4 border-t border-slate-800 space-y-3">
-        <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/60 text-xs">
-          <div className="flex items-center space-x-2 text-emerald-400 font-medium">
-            <Activity className="w-3.5 h-3.5 animate-pulse" />
-            <span>Sync Engine Active</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">Tenant: Academically India</p>
-        </div>
-
-        <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-semibold text-slate-200">
-              DA
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-white">Dr. Akram Ahmad</p>
-              <p className="text-[10px] text-slate-400">Company Admin</p>
-            </div>
-          </div>
-          <Link href="/" className="text-slate-400 hover:text-red-400 transition-colors p-1.5 rounded-md hover:bg-slate-800">
-            <LogOut className="w-4 h-4" />
-          </Link>
+      {/* Salestrail Bottom Banner */}
+      <div className="p-4 border-t border-slate-100">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-center space-y-1">
+          <p className="font-semibold text-slate-800">Academically Global</p>
+          <p className="text-[11px] text-slate-500">Organisation ID: 65c1f00</p>
         </div>
       </div>
     </aside>

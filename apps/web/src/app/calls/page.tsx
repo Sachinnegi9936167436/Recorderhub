@@ -3,9 +3,23 @@
 import React, { useState, useEffect } from 'react';
 import Navigation from '@/components/Navigation';
 import Link from 'next/link';
-import { PhoneCall, Search, Filter, ShieldCheck, ShieldAlert, PlayCircle, Eye, MessageSquare, Smartphone, RefreshCw } from 'lucide-react';
+import { 
+  PhoneCall, 
+  Search, 
+  Filter, 
+  ShieldCheck, 
+  ShieldAlert, 
+  PlayCircle, 
+  Eye, 
+  MessageSquare, 
+  Smartphone, 
+  RefreshCw,
+  Download,
+  ChevronDown,
+  User
+} from 'lucide-react';
 
-export default function CallsPage() {
+export default function SalestrailCallsPage() {
   const [callsList, setCallsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPII, setShowPII] = useState(true);
@@ -24,7 +38,7 @@ export default function CallsPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        const apiCalls = data.calls || data || [];
+        const apiCalls = Array.isArray(data) ? data : data.calls || [];
         setCallsList(apiCalls);
       }
     } catch (err) {
@@ -41,90 +55,111 @@ export default function CallsPage() {
   }, []);
 
   const filteredCalls = callsList.filter((call) => {
-    if (directionFilter !== 'ALL' && call.direction !== directionFilter) return false;
-    if (channelFilter !== 'ALL' && (call.channel || 'CELLULAR') !== channelFilter) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return (
-        (call.agentName || call.deviceId || '').toLowerCase().includes(q) ||
-        (call.phoneNumber || '').toLowerCase().includes(q) ||
-        (call.disposition || '').toLowerCase().includes(q)
-      );
-    }
-    return true;
+    const phone = call.phoneNumber || call.phoneNumberMasked || '';
+    const agent = call.agentName || call.deviceId || '';
+    const matchesSearch = phone.toLowerCase().includes(searchQuery.toLowerCase()) || agent.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesDir = directionFilter === 'ALL' || (call.direction || '').toUpperCase() === directionFilter;
+    const matchesChan = channelFilter === 'ALL' || (call.channel || 'CELLULAR').toUpperCase() === channelFilter;
+
+    return matchesSearch && matchesDir && matchesChan;
   });
 
+  const exportCSV = () => {
+    if (callsList.length === 0) {
+      alert('No call records available to export.');
+      return;
+    }
+    const headers = ['Counselor', 'PhoneNumber', 'Direction', 'Status', 'DurationSec', 'Date'];
+    const rows = callsList.map((c) => [
+      c.agentName || c.deviceId || 'Counselor Agent',
+      c.phoneNumber || c.phoneNumberMasked || '',
+      c.direction || 'INCOMING',
+      c.status || 'ANSWERED',
+      c.durationSeconds || 0,
+      c.startTime ? new Date(c.startTime).toLocaleString() : '',
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Salestrail_Call_Logs_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <div className="flex min-h-screen bg-navy-950">
+    <div className="flex h-screen bg-[#f8fafc] text-slate-900 font-sans overflow-hidden">
+      {/* Sidebar Navigation */}
       <Navigation />
 
-      <main className="flex-1 p-8 space-y-6 overflow-y-auto">
-        {/* Header & Controls */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-y-auto p-8">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between pb-8">
           <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">Calls Explorer</h1>
-            <p className="text-sm text-slate-400">Search, filter, and listen to SIM & WhatsApp call recordings</p>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Call Audit Log & Recordings</h1>
+            <p className="text-xs text-slate-500 mt-1">Real-time mobile SIM & WhatsApp call tracking from counselor devices</p>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-4">
             <button
               onClick={() => setShowPII(!showPII)}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold border transition-all ${
                 showPII
-                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
+                  ? 'bg-rose-50 border-rose-200 text-rose-600'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
             >
-              {showPII ? <ShieldAlert className="w-4 h-4 text-amber-400" /> : <ShieldCheck className="w-4 h-4 text-emerald-400" />}
-              <span>{showPII ? 'PII Unmasked (Admin Mode)' : 'Mask Phone Numbers (Safe Mode)'}</span>
+              {showPII ? <ShieldAlert className="w-4 h-4 text-rose-600" /> : <ShieldCheck className="w-4 h-4 text-slate-500" />}
+              <span>{showPII ? 'Hide PII Numbers' : 'Show Unmasked Numbers'}</span>
             </button>
-          </div>
-        </div>
 
-        {/* Filter Bar */}
-        <div className="glass-panel p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="relative w-full md:w-80">
+            <button
+              onClick={exportCSV}
+              className="flex items-center space-x-2 bg-white border border-slate-900 text-slate-900 hover:bg-slate-50 font-semibold px-4 py-2 rounded-lg text-sm transition-all shadow-sm"
+            >
+              <Download className="w-4 h-4" />
+              <span>Export as CSV</span>
+            </button>
+
+            <div className="flex items-center space-x-3 border-l border-slate-200 pl-4">
+              <div className="flex items-center space-x-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 px-2.5 py-1.5 rounded-md shadow-sm">
+                <span>🇺🇸 US</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              </div>
+              <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center text-slate-700 font-bold text-sm shadow-sm">
+                <User className="w-5 h-5 text-slate-600" />
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Filter Controls Bar */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6 shadow-sm flex items-center justify-between">
+          <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
             <input
               type="text"
-              placeholder="Search counselor, prospect, disposition..."
+              placeholder="Search phone number or counselor..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            <div className="flex items-center space-x-1.5">
-              <Filter className="w-4 h-4 text-slate-400" />
-              <span className="text-xs text-slate-400 font-medium">Channel:</span>
-              {['ALL', 'CELLULAR', 'WHATSAPP'].map((ch) => (
-                <button
-                  key={ch}
-                  onClick={() => setChannelFilter(ch)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    channelFilter === ch
-                      ? ch === 'WHATSAPP'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-brand-600 text-white'
-                      : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-                  }`}
-                >
-                  {ch === 'CELLULAR' ? 'SIM Call' : ch === 'WHATSAPP' ? 'WhatsApp' : 'All Channels'}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center space-x-1.5 border-l border-slate-800 pl-3">
-              <span className="text-xs text-slate-400 font-medium">Direction:</span>
+          <div className="flex items-center space-x-6 text-xs">
+            <div className="flex items-center space-x-2">
+              <span className="font-semibold text-slate-700">Direction:</span>
               {['ALL', 'INCOMING', 'OUTGOING'].map((dir) => (
                 <button
                   key={dir}
                   onClick={() => setDirectionFilter(dir)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     directionFilter === dir
-                      ? 'bg-slate-700 text-white'
-                      : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   {dir}
@@ -135,10 +170,10 @@ export default function CallsPage() {
         </div>
 
         {/* Calls Table */}
-        <div className="glass-panel overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-950/90 text-slate-400 uppercase font-semibold text-[11px] border-b border-slate-800">
+            <table className="w-full text-left text-xs text-slate-700">
+              <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[11px] border-b border-slate-200">
                 <tr>
                   <th className="p-4">Counselor</th>
                   <th className="p-4">Prospect / Lead</th>
@@ -151,17 +186,17 @@ export default function CallsPage() {
                   <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-slate-100 font-medium">
                 {filteredCalls.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="p-8 text-center text-slate-400">
+                    <td colSpan={9} className="p-12 text-center text-slate-500">
                       {loading ? (
                         <div className="flex items-center justify-center space-x-2">
-                          <RefreshCw className="w-4 h-4 animate-spin text-teal-400" />
-                          <span>Fetching live call records from MongoDB...</span>
+                          <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
+                          <span>Fetching live call records from MongoDB Atlas...</span>
                         </div>
                       ) : (
-                        <span>No call events synced to MongoDB yet. Make a work call on your Android phone!</span>
+                        <span>No call events recorded yet. Make a call on your Android phone to sync live!</span>
                       )}
                     </td>
                   </tr>
@@ -175,23 +210,23 @@ export default function CallsPage() {
                     const durationStr = call.durationSeconds ? `${Math.floor(call.durationSeconds / 60)}m ${call.durationSeconds % 60}s` : '0s';
 
                     return (
-                      <tr key={call.id || call._id || call.idempotencyKey} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="p-4 font-medium text-white">{call.agentName || call.deviceId || 'Counselor Agent'}</td>
+                      <tr key={call.id || call._id || call.idempotencyKey} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-4 font-bold text-slate-900">{call.agentName || call.deviceId || 'Counselor Agent'}</td>
                         <td className="p-4">
-                          <p className="font-semibold text-slate-200">{call.leadName || 'Inbound Prospect'}</p>
+                          <p className="font-semibold text-slate-900">{call.leadName || 'Inbound Prospect'}</p>
                           <p className="text-[10px] text-slate-400">{call.leadId || 'PH-LIVE-LEAD'}</p>
                         </td>
-                        <td className="p-4 font-mono font-semibold text-teal-300">
+                        <td className="p-4 font-mono font-bold text-slate-900">
                           {showPII ? (rawPhone || 'N/A') : maskedPhone}
                         </td>
                         <td className="p-4">
                           {call.channel === 'WHATSAPP' ? (
-                            <span className="inline-flex items-center space-x-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded text-[10px] font-bold">
+                            <span className="inline-flex items-center space-x-1 bg-emerald-50 text-emerald-600 border border-emerald-200 px-2.5 py-1 rounded-md text-[10px] font-bold">
                               <MessageSquare className="w-3 h-3" />
                               <span>WhatsApp</span>
                             </span>
                           ) : (
-                            <span className="inline-flex items-center space-x-1 bg-blue-500/10 text-blue-400 border border-blue-500/30 px-2 py-1 rounded text-[10px] font-bold">
+                            <span className="inline-flex items-center space-x-1 bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1 rounded-md text-[10px] font-bold">
                               <Smartphone className="w-3 h-3" />
                               <span>SIM Call</span>
                             </span>
@@ -199,34 +234,34 @@ export default function CallsPage() {
                         </td>
                         <td className="p-4">
                           <span
-                            className={`px-2 py-1 rounded text-[10px] font-bold ${
-                              call.direction === 'OUTGOING'
-                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                            className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold ${
+                              (call.direction || '').toUpperCase() === 'OUTGOING'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
                             }`}
                           >
                             {call.direction || 'INCOMING'}
                           </span>
                         </td>
                         <td className="p-4">
-                          <p className="text-slate-200">{startTimeStr}</p>
-                          <p className="text-[10px] font-mono text-slate-400">{durationStr}</p>
+                          <p className="font-semibold text-slate-800">{startTimeStr}</p>
+                          <p className="text-[11px] font-mono text-slate-500">{durationStr}</p>
                         </td>
-                        <td className="p-4 font-medium text-slate-300">{call.disposition || 'New Lead Inquiry'}</td>
+                        <td className="p-4 text-slate-600 font-medium">{call.disposition || 'Imported Phone Call'}</td>
                         <td className="p-4">
-                          {call.recordingStatus === 'UPLOADED' || call.recordingPath ? (
-                            <span className="flex items-center space-x-1.5 text-teal-400 bg-teal-500/10 px-2 py-1 rounded text-[10px] font-medium border border-teal-500/20">
+                          {call.recordingStatus === 'COMPLETED' || call.audioUrl ? (
+                            <span className="inline-flex items-center space-x-1 bg-rose-50 text-rose-600 border border-rose-200 px-2.5 py-1 rounded-md text-[10px] font-bold">
                               <PlayCircle className="w-3.5 h-3.5" />
-                              <span>S3 Audio</span>
+                              <span>Cloud Audio</span>
                             </span>
                           ) : (
-                            <span className="text-slate-500 text-[11px]">No Recording</span>
+                            <span className="text-slate-400 text-[11px]">No Recording</span>
                           )}
                         </td>
                         <td className="p-4 text-right">
                           <Link
                             href={`/calls/${call.id || call._id}`}
-                            className="inline-flex items-center space-x-1 bg-brand-600/20 hover:bg-brand-600 text-brand-300 hover:text-white px-3 py-1.5 rounded text-xs font-semibold transition-all border border-brand-500/30"
+                            className="inline-flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all border border-rose-200"
                           >
                             <Eye className="w-3.5 h-3.5" />
                             <span>Play Audio</span>

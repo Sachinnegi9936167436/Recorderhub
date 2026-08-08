@@ -144,7 +144,7 @@ export default function CounselorsPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-navy-950">
+    <div className="flex min-h-screen bg-[#f8fafc] text-slate-900 font-sans">
       <Navigation />
 
       <main className="flex-1 p-8 space-y-6 overflow-y-auto">
@@ -162,8 +162,8 @@ export default function CounselorsPage() {
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">Counselor ID Directory</h1>
-            <p className="text-sm text-slate-400">Admin Management Console • Provision, Update & Revoke Counselor Access</p>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Team & User Management</h1>
+            <p className="text-xs text-slate-500">Admin Management Console • Provision, Update & Revoke Counselor Access</p>
           </div>
 
           <button
@@ -171,7 +171,7 @@ export default function CounselorsPage() {
               resetForm();
               setIsCreateModalOpen(true);
             }}
-            className="flex items-center space-x-2 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-brand-600/20"
+            className="flex items-center space-x-2 bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-rose-500/20"
           >
             <Plus className="w-4 h-4" />
             <span>Create New Counselor ID</span>
@@ -179,12 +179,12 @@ export default function CounselorsPage() {
         </div>
 
         {/* Counselors Table */}
-        <div className="glass-panel overflow-hidden p-6 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden p-6 space-y-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-white">Registered Counselors & Role Access</h3>
+            <h3 className="text-base font-bold text-slate-900">Registered Counselors & Role Access</h3>
             <button
               onClick={fetchCounselors}
-              className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-medium text-slate-300 px-3 py-1.5 rounded-lg transition-all"
+              className="flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold text-slate-700 px-3 py-1.5 rounded-lg transition-all"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               <span>Refresh Directory</span>
@@ -192,8 +192,8 @@ export default function CounselorsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-950/80 text-slate-400 uppercase font-semibold text-[11px] border-b border-slate-800">
+            <table className="w-full text-left text-xs text-slate-700">
+              <thead className="bg-slate-50 text-slate-500 uppercase font-semibold text-[11px] border-b border-slate-200">
                 <tr>
                   <th className="p-4">Counselor Name</th>
                   <th className="p-4">Email ID / Login</th>
