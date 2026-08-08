@@ -22,7 +22,7 @@ export default function CounselorsPage() {
   const fetchCounselors = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:4000/api/v1/auth/counselors');
+      const res = await fetch('/api/v1/auth/counselors');
       if (res.ok) {
         const data = await res.json();
         setCounselors(data || []);
@@ -42,7 +42,7 @@ export default function CounselorsPage() {
     e.preventDefault();
     try {
       setSubmitting(true);
-      const res = await fetch('http://localhost:4000/api/v1/auth/register', {
+      const res = await fetch('/api/v1/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ firstName, lastName, email, role, pass: password }),
@@ -70,7 +70,7 @@ export default function CounselorsPage() {
     if (!editingCounselor) return;
     try {
       setSubmitting(true);
-      const res = await fetch(`http://localhost:4000/api/v1/auth/counselors/${editingCounselor._id || editingCounselor.id}`, {
+      const res = await fetch(`/api/v1/auth/counselors/${editingCounselor._id || editingCounselor.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ firstName, lastName, email, role }),
@@ -92,7 +92,7 @@ export default function CounselorsPage() {
   const handleDeleteCounselor = async (counselor: any) => {
     if (!confirm(`Are you sure you want to revoke and delete counselor ${counselor.firstName} ${counselor.lastName}?`)) return;
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/auth/counselors/${counselor._id || counselor.id}`, {
+      const res = await fetch(`/api/v1/auth/counselors/${counselor._id || counselor.id}`, {
         method: 'DELETE',
       });
       if (res.ok) {

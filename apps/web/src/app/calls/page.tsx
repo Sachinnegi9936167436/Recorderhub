@@ -16,7 +16,7 @@ export default function CallsPage() {
   const fetchCalls = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:4000/api/v1/calls', {
+      const res = await fetch('/api/v1/calls', {
         headers: {
           Authorization: 'Bearer mock_jwt_token',
         },

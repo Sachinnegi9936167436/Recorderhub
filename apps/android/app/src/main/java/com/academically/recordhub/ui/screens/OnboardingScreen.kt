@@ -22,8 +22,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun OnboardingScreen(onProceedToPermissions: () -> Unit) {
     var acceptedConsent by remember { mutableStateOf(false) }
-    var counselorEmail by remember { mutableStateOf("ananya.sharma@academically.com") }
-    var password by remember { mutableStateOf("Password123!") }
+    var counselorEmail by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var isAuthenticating by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 

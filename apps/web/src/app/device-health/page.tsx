@@ -11,7 +11,7 @@ export default function DeviceHealthPage() {
   const fetchDevices = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:4000/api/v1/devices', {
+      const res = await fetch('/api/v1/devices', {
         headers: {
           Authorization: 'Bearer mock_jwt_token',
         },
