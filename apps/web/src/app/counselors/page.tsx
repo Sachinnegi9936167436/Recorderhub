@@ -65,12 +65,21 @@ export default function CounselorsPage() {
     }
   };
 
+  const getCounselorId = (counselor: any) => {
+    if (!counselor) return '';
+    if (typeof counselor._id === 'string') return counselor._id;
+    if (counselor._id?.$oid) return counselor._id.$oid;
+    if (counselor._id?.toString) return counselor._id.toString();
+    return counselor.id || '';
+  };
+
   const handleUpdateCounselor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCounselor) return;
+    const targetId = getCounselorId(editingCounselor);
     try {
       setSubmitting(true);
-      const res = await fetch(`/api/v1/auth/counselors/${editingCounselor._id || editingCounselor.id}`, {
+      const res = await fetch(`/api/v1/auth/counselors/${targetId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ firstName, lastName, email, role }),
@@ -81,26 +90,35 @@ export default function CounselorsPage() {
         setEditingCounselor(null);
         resetForm();
         fetchCounselors();
+      } else {
+        const errJson = await res.json();
+        alert(`Failed to update counselor: ${errJson.message || 'Server error'}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating counselor:', err);
+      alert(`Error connecting to server: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDeleteCounselor = async (counselor: any) => {
+    const targetId = getCounselorId(counselor);
     if (!confirm(`Are you sure you want to revoke and delete counselor ${counselor.firstName} ${counselor.lastName}?`)) return;
     try {
-      const res = await fetch(`/api/v1/auth/counselors/${counselor._id || counselor.id}`, {
+      const res = await fetch(`/api/v1/auth/counselors/${targetId}`, {
         method: 'DELETE',
       });
       if (res.ok) {
         setToastMessage(`Deleted counselor ID for ${counselor.firstName} ${counselor.lastName}`);
         fetchCounselors();
+      } else {
+        const errJson = await res.json();
+        alert(`Failed to delete counselor: ${errJson.message || 'Server error'}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting counselor:', err);
+      alert(`Error connecting to server: ${err.message}`);
     }
   };
 
