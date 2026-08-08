@@ -31,8 +31,14 @@ import { AppController } from './app.controller';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
-    MongooseModule.forRoot(process.env.MONGODB_URI || 'mongodb://localhost:27017/recordhub?replicaSet=rs0&directConnection=true'),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['../../.env', '.env'],
+    }),
+    MongooseModule.forRoot(
+      process.env.MONGODB_URI ||
+        'mongodb+srv://recordhub_admin:developer123@recordhubdb.dxwpdx6.mongodb.net/recordhub?retryWrites=true&w=majority',
+    ),
     MongooseModule.forFeature([
       { name: Organization.name, schema: OrganizationSchema },
       { name: User.name, schema: UserSchema },

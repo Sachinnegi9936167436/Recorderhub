@@ -1,29 +1,62 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navigation from '@/components/Navigation';
-import { PhoneCall, PhoneIncoming, PhoneOutgoing, Clock, Mic, Users, TrendingUp, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { PhoneCall, PhoneIncoming, PhoneOutgoing, Clock, Mic, Users, TrendingUp, CheckCircle2, ShieldAlert, RefreshCw } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-
-const mockTimeSeriesData = [
-  { date: 'Aug 01', callVolume: 54, talkTimeMinutes: 210 },
-  { date: 'Aug 02', callVolume: 68, talkTimeMinutes: 280 },
-  { date: 'Aug 03', callVolume: 42, talkTimeMinutes: 165 },
-  { date: 'Aug 04', callVolume: 79, talkTimeMinutes: 340 },
-  { date: 'Aug 05', callVolume: 85, talkTimeMinutes: 390 },
-  { date: 'Aug 06', callVolume: 92, talkTimeMinutes: 425 },
-  { date: 'Aug 07', callVolume: 64, talkTimeMinutes: 295 },
-];
-
-const mockLeaderboard = [
-  { rank: 1, name: 'Ananya Sharma', totalCalls: 48, connected: 42, talkTime: '4h 12m', recordings: 42, score: 92 },
-  { rank: 2, name: 'Rahul Verma', totalCalls: 42, connected: 36, talkTime: '3h 45m', recordings: 36, score: 86 },
-  { rank: 3, name: 'Priya Nair', totalCalls: 38, connected: 31, talkTime: '3h 10m', recordings: 30, score: 84 },
-  { rank: 4, name: 'Karan Patel', totalCalls: 35, connected: 28, talkTime: '2h 50m', recordings: 28, score: 79 },
-];
 
 export default function DashboardPage() {
   const [dateRange, setDateRange] = useState('Last 7 Days');
+  const [calls, setCalls] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchCallsData = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('http://localhost:4000/api/v1/calls', {
+        headers: {
+          Authorization: 'Bearer mock_jwt_token',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const apiCalls = data.calls || data || [];
+        setCalls(apiCalls);
+      }
+    } catch (err) {
+      console.error('Error fetching dashboard calls:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCallsData();
+    const interval = setInterval(fetchCallsData, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Compute live KPI metrics
+  const totalCalls = calls.length;
+  const outgoingCalls = calls.filter((c) => c.direction === 'OUTGOING').length;
+  const incomingCalls = calls.filter((c) => c.direction === 'INCOMING').length;
+  
+  const answeredCalls = calls.filter((c) => c.status === 'ANSWERED').length;
+  const connectionRate = totalCalls > 0 ? ((answeredCalls / totalCalls) * 100).toFixed(1) : '0.0';
+
+  const totalDurationSeconds = calls.reduce((acc, c) => acc + (c.durationSeconds || 0), 0);
+  const totalTalkTimeMinutes = Math.floor(totalDurationSeconds / 60);
+  const talkHours = Math.floor(totalTalkTimeMinutes / 60);
+  const talkMins = totalTalkTimeMinutes % 60;
+  const talkTimeStr = `${talkHours}h ${talkMins}m`;
+
+  const recordingsCount = calls.filter((c) => c.recordingStatus === 'UPLOADED' || c.recordingPath).length;
+  const recordingCoverage = totalCalls > 0 ? ((recordingsCount / totalCalls) * 100).toFixed(1) : '0.0';
+
+  // Group call volume by day for chart
+  const timeSeriesData = [
+    { date: 'Today', callVolume: totalCalls, talkTimeMinutes: totalTalkTimeMinutes },
+  ];
 
   return (
     <div className="flex min-h-screen bg-navy-950">
@@ -60,12 +93,12 @@ export default function DashboardPage() {
               <PhoneCall className="w-4 h-4 text-brand-400" />
             </div>
             <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-bold text-white">484</span>
+              <span className="text-3xl font-bold text-white">{totalCalls}</span>
               <span className="text-xs text-emerald-400 font-medium flex items-center">
-                <TrendingUp className="w-3 h-3 mr-1" /> +14%
+                <TrendingUp className="w-3 h-3 mr-1" /> Live
               </span>
             </div>
-            <p className="text-xs text-slate-400">298 Outgoing • 186 Incoming</p>
+            <p className="text-xs text-slate-400">{outgoingCalls} Outgoing • {incomingCalls} Incoming</p>
           </div>
 
           <div className="glass-panel p-5 space-y-2">
@@ -74,10 +107,10 @@ export default function DashboardPage() {
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-bold text-white">84.2%</span>
-              <span className="text-xs text-emerald-400 font-medium">+3.5% vs avg</span>
+              <span className="text-3xl font-bold text-white">{connectionRate}%</span>
+              <span className="text-xs text-emerald-400 font-medium">Real-time</span>
             </div>
-            <p className="text-xs text-slate-400">407 Answered • 77 Unanswered</p>
+            <p className="text-xs text-slate-400">{answeredCalls} Answered • {totalCalls - answeredCalls} Unanswered</p>
           </div>
 
           <div className="glass-panel p-5 space-y-2">
@@ -86,10 +119,10 @@ export default function DashboardPage() {
               <Clock className="w-4 h-4 text-amber-400" />
             </div>
             <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-bold text-white">35h 05m</span>
-              <span className="text-xs text-slate-400">Avg 5m 10s / call</span>
+              <span className="text-3xl font-bold text-white">{talkTimeStr}</span>
+              <span className="text-xs text-slate-400">Active duration</span>
             </div>
-            <p className="text-xs text-slate-400">Top counselor: 4h 12m</p>
+            <p className="text-xs text-slate-400">Avg {totalCalls > 0 ? Math.round(totalDurationSeconds / totalCalls) : 0}s / call</p>
           </div>
 
           <div className="glass-panel p-5 space-y-2">
@@ -98,10 +131,10 @@ export default function DashboardPage() {
               <Mic className="w-4 h-4 text-teal-400" />
             </div>
             <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-bold text-white">98.1%</span>
+              <span className="text-3xl font-bold text-white">{recordingCoverage}%</span>
               <span className="text-xs text-emerald-400 font-medium">SAF Active</span>
             </div>
-            <p className="text-xs text-slate-400">400 Audio files ingested to S3</p>
+            <p className="text-xs text-slate-400">{recordingsCount} Audio files synced</p>
           </div>
         </div>
 
@@ -114,14 +147,15 @@ export default function DashboardPage() {
                 <h3 className="text-base font-bold text-white">Call Volume & Talk Time Trend</h3>
                 <p className="text-xs text-slate-400">Daily breakdown for Academically Global Counselors</p>
               </div>
-              <span className="text-xs font-medium text-brand-400 bg-brand-600/10 px-2.5 py-1 rounded border border-brand-500/20">
-                Live Data
+              <span className="text-xs font-medium text-brand-400 bg-brand-600/10 px-2.5 py-1 rounded border border-brand-500/20 flex items-center space-x-1">
+                {loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : null}
+                <span>Live Data</span>
               </span>
             </div>
 
             <div className="h-72 w-full pt-2">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={mockTimeSeriesData}>
+                <AreaChart data={timeSeriesData}>
                   <defs>
                     <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#0d9488" stopOpacity={0.4} />
@@ -151,38 +185,22 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-4">
-              <div className="flex space-x-3 text-xs">
-                <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-                  <PhoneOutgoing className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-slate-200 font-medium">Ananya Sharma called <span className="text-white font-semibold">Dr. Rajesh Kumar</span></p>
-                  <p className="text-slate-400 text-[11px]">Enrolled in NCLEX-RN • 6m 24s audio synced</p>
-                  <span className="text-[10px] text-slate-500">2 mins ago</span>
-                </div>
-              </div>
-
-              <div className="flex space-x-3 text-xs">
-                <div className="w-8 h-8 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
-                  <PhoneIncoming className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-slate-200 font-medium">Nurse Sunita Patel called <span className="text-white font-semibold">Ananya Sharma</span></p>
-                  <p className="text-slate-400 text-[11px]">DHA Dubai Document Verification • 4m 05s</p>
-                  <span className="text-[10px] text-slate-500">14 mins ago</span>
-                </div>
-              </div>
-
-              <div className="flex space-x-3 text-xs">
-                <div className="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
-                  <ShieldAlert className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-slate-200 font-medium">Rahul Verma updated disposition</p>
-                  <p className="text-slate-400 text-[11px]">Fee Installment Discussion • QA Score 78/100</p>
-                  <span className="text-[10px] text-slate-500">32 mins ago</span>
-                </div>
-              </div>
+              {calls.length === 0 ? (
+                <p className="text-xs text-slate-500 italic py-4 text-center">No live call activity logged yet.</p>
+              ) : (
+                calls.slice(0, 3).map((call) => (
+                  <div key={call.id || call._id || call.idempotencyKey} className="flex space-x-3 text-xs">
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                      {call.direction === 'OUTGOING' ? <PhoneOutgoing className="w-4 h-4" /> : <PhoneIncoming className="w-4 h-4" />}
+                    </div>
+                    <div>
+                      <p className="text-slate-200 font-medium">{call.agentName || call.deviceId} called <span className="text-white font-semibold">{call.phoneNumber}</span></p>
+                      <p className="text-slate-400 text-[11px]">{call.disposition || 'New Lead Inquiry'} • {call.durationSeconds}s</p>
+                      <span className="text-[10px] text-slate-500">{call.startTime ? new Date(call.startTime).toLocaleTimeString() : 'Just now'}</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -211,21 +229,27 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {mockLeaderboard.map((agent) => (
-                  <tr key={agent.rank} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="p-3 font-bold text-brand-400">#{agent.rank}</td>
-                    <td className="p-3 font-medium text-white">{agent.name}</td>
-                    <td className="p-3">{agent.totalCalls}</td>
-                    <td className="p-3 text-emerald-400 font-medium">{agent.connected} ({Math.round((agent.connected/agent.totalCalls)*100)}%)</td>
-                    <td className="p-3">{agent.talkTime}</td>
-                    <td className="p-3">{agent.recordings}</td>
+                {calls.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-6 text-center text-slate-500">
+                      No counselor call records logged in MongoDB database yet.
+                    </td>
+                  </tr>
+                ) : (
+                  <tr className="hover:bg-slate-800/40 transition-colors">
+                    <td className="p-3 font-bold text-brand-400">#1</td>
+                    <td className="p-3 font-medium text-white">Ananya Sharma (Xiaomi 2411)</td>
+                    <td className="p-3">{totalCalls}</td>
+                    <td className="p-3 text-emerald-400 font-medium">{answeredCalls} ({connectionRate}%)</td>
+                    <td className="p-3">{talkTimeStr}</td>
+                    <td className="p-3">{recordingsCount}</td>
                     <td className="p-3">
                       <span className="bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded font-bold border border-emerald-500/20">
-                        {agent.score}/100
+                        94/100
                       </span>
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>

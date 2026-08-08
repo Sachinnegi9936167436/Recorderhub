@@ -42,47 +42,87 @@ class CallObserverService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            }
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun registerCallStateListener() {
-        telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-        telephonyManager?.listen(callStateListener, PhoneStateListener.LISTEN_CALL_STATE)
+        try {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.READ_PHONE_STATE
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    telephonyManager?.registerTelephonyCallback(
+                        mainExecutor,
+                        object : android.telephony.TelephonyCallback(), android.telephony.TelephonyCallback.CallStateListener {
+                            override fun onCallStateChanged(state: Int) {
+                                handleCallState(state, incomingNumber)
+                            }
+                        }
+                    )
+                } else {
+                    telephonyManager?.listen(callStateListener, PhoneStateListener.LISTEN_CALL_STATE)
+                }
+            } else {
+                Log.w(TAG, "READ_PHONE_STATE permission not granted yet. Listener will activate once permission is granted.")
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException registering TelephonyManager listener: ${e.message}")
+        }
     }
 
     private val callStateListener = object : PhoneStateListener() {
         override fun onCallStateChanged(state: Int, phoneNumber: String?) {
             super.onCallStateChanged(state, phoneNumber)
-
             if (!phoneNumber.isNullOrEmpty()) {
                 incomingNumber = phoneNumber
             }
+            handleCallState(state, incomingNumber)
+        }
+    }
 
-            when (state) {
-                TelephonyManager.CALL_STATE_RINGING -> {
-                    lastState = state
+    private fun handleCallState(state: Int, phone: String) {
+        when (state) {
+            TelephonyManager.CALL_STATE_RINGING -> {
+                lastState = state
+                callStartTimeMs = System.currentTimeMillis()
+                Log.i(TAG, "Call State: RINGING from $phone")
+            }
+            TelephonyManager.CALL_STATE_OFFHOOK -> {
+                if (lastState != TelephonyManager.CALL_STATE_RINGING) {
                     callStartTimeMs = System.currentTimeMillis()
-                    Log.i(TAG, "Call State: RINGING from $incomingNumber")
                 }
-                TelephonyManager.CALL_STATE_OFFHOOK -> {
-                    if (lastState != TelephonyManager.CALL_STATE_RINGING) {
-                        // Outgoing Call Started
-                        callStartTimeMs = System.currentTimeMillis()
-                    }
-                    lastState = state
-                    Log.i(TAG, "Call State: OFFHOOK (Active Call)")
-                }
-                TelephonyManager.CALL_STATE_IDLE -> {
-                    if (lastState == TelephonyManager.CALL_STATE_OFFHOOK || lastState == TelephonyManager.CALL_STATE_RINGING) {
-                        // Call Ended
-                        val endTimeMs = System.currentTimeMillis()
-                        val durationSec = Math.max(1, ((endTimeMs - callStartTimeMs) / 1000).toInt())
-                        val direction = if (lastState == TelephonyManager.CALL_STATE_RINGING) "INCOMING" else "OUTGOING"
+                lastState = state
+                Log.i(TAG, "Call State: OFFHOOK (Active Call)")
+            }
+            TelephonyManager.CALL_STATE_IDLE -> {
+                if (lastState == TelephonyManager.CALL_STATE_OFFHOOK || lastState == TelephonyManager.CALL_STATE_RINGING) {
+                    val endTimeMs = System.currentTimeMillis()
+                    val durationSec = Math.max(1, ((endTimeMs - callStartTimeMs) / 1000).toInt())
+                    val direction = if (lastState == TelephonyManager.CALL_STATE_RINGING) "INCOMING" else "OUTGOING"
 
-                        saveCallEventToRoom(incomingNumber, direction, "ANSWERED", callStartTimeMs, endTimeMs, durationSec)
-                    }
-                    lastState = state
+                    saveCallEventToRoom(phone, direction, "ANSWERED", callStartTimeMs, endTimeMs, durationSec)
                 }
+                lastState = state
             }
         }
     }

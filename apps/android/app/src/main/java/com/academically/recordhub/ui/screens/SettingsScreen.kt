@@ -25,7 +25,7 @@ fun SettingsScreen(onLogout: () -> Unit) {
             .padding(16.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(spaceBy = 16.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(
                 text = "Counselor Agent Settings",
                 style = MaterialTheme.typography.titleLarge.copy(
@@ -39,7 +39,7 @@ fun SettingsScreen(onLogout: () -> Unit) {
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp), spaceBy = 12.dp) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         text = "Working Hours & Schedule",
                         fontWeight = FontWeight.Bold,
@@ -70,7 +70,7 @@ fun SettingsScreen(onLogout: () -> Unit) {
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp), spaceBy = 12.dp) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         text = "Network & S3 Upload Preferences",
                         fontWeight = FontWeight.Bold,

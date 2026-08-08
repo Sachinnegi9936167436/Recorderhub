@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryCharging
+import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FolderSpecial
 import androidx.compose.material.icons.filled.Smartphone
@@ -72,7 +72,7 @@ fun DeviceHealthScreen() {
             title = "Battery Optimization Status",
             value = "Unrestricted / Whitelisted",
             sub = "OS Doze Mode bypass active",
-            icon = Icons.Default.BatteryCharging,
+            icon = Icons.Default.BatteryFull,
             iconTint = Emerald400
         )
 

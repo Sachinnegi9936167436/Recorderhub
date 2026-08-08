@@ -6,7 +6,7 @@ export type UserDocument = User & Document;
 
 @Schema({ timestamps: true })
 export class User {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Organization', required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Organization', required: false })
   organizationId: MongooseSchema.Types.ObjectId;
 
   @Prop({ required: true })
@@ -18,16 +18,16 @@ export class User {
   @Prop({ required: true })
   firstName: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false, default: '' })
   lastName: string;
 
-  @Prop({ type: String, enum: UserRole, required: true })
-  role: UserRole;
+  @Prop({ type: String, required: true, default: 'COUNSELOR' })
+  role: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false, default: '' })
   phoneNumber: string;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Team' })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Team', required: false })
   teamId: MongooseSchema.Types.ObjectId;
 
   @Prop({ default: true })

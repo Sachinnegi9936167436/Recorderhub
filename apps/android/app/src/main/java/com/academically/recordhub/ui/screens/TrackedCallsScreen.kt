@@ -19,9 +19,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.academically.recordhub.data.local.CallEventEntity
 import com.academically.recordhub.ui.theme.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+private fun formatCallTime(timestampMs: Long): String {
+    val sdf = SimpleDateFormat("hh:mm a • MMM dd", Locale.getDefault())
+    return sdf.format(Date(timestampMs))
+}
 
 @Composable
-fun TrackedCallsScreen(callEvents: List<CallEventEntity>, onTogglePrivate: (String) -> Unit) {
+fun TrackedCallsScreen(
+    callEvents: List<CallEventEntity>,
+    onTogglePrivate: (String) -> Unit,
+    onScanCallLogs: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -46,12 +58,15 @@ fun TrackedCallsScreen(callEvents: List<CallEventEntity>, onTogglePrivate: (Stri
                     style = MaterialTheme.typography.bodySmall.copy(color = Slate400)
                 )
             }
-            Text(
-                text = "${callEvents.size} Calls",
-                color = MedicalTeal400,
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp
-            )
+            
+            Button(
+                onClick = onScanCallLogs,
+                colors = ButtonDefaults.buttonColors(containerColor = MedicalTeal600),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(text = "Scan Calls", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -63,11 +78,22 @@ fun TrackedCallsScreen(callEvents: List<CallEventEntity>, onTogglePrivate: (Stri
                     .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "No call events logged yet. Make a work call to start tracking.",
-                    color = Slate400,
-                    fontSize = 12.sp
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "No call events logged yet.",
+                        color = Slate400,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = onScanCallLogs,
+                        colors = ButtonDefaults.buttonColors(containerColor = MedicalTeal600),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(text = "Import Phone Call Logs", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -125,7 +151,7 @@ fun TrackedCallCard(call: CallEventEntity, onTogglePrivate: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "${call.direction} • ${call.durationSeconds}s • SIM ${call.simSlot + 1}",
+                    text = "${formatCallTime(call.startTime)} • ${call.direction} • ${call.durationSeconds}s",
                     color = Slate400,
                     fontSize = 11.sp
                 )

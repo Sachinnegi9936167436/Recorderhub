@@ -37,3 +37,4 @@ apps/android/build/
 apps/android/local.properties
 *.apk
 *.aar
+*.hprof

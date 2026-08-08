@@ -32,4 +32,10 @@ interface CallEventDao {
 
     @Query("UPDATE call_events SET disposition = :disposition WHERE id = :callId")
     suspend fun updateDisposition(callId: String, disposition: String)
+
+    @Query("DELETE FROM call_events WHERE idempotencyKey LIKE 'DEMO-%' OR idempotencyKey LIKE 'DEV-%'")
+    suspend fun clearDemoData()
+
+    @Query("DELETE FROM call_events")
+    suspend fun deleteAllCalls()
 }

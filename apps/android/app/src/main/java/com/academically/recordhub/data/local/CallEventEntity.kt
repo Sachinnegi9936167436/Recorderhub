@@ -1,10 +1,11 @@
 package com.academically.recordhub.data.local
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
-@Entity(tableName = "call_events")
+@Entity(tableName = "call_events", indices = [Index(value = ["idempotencyKey"], unique = true)])
 data class CallEventEntity(
     @PrimaryKey
     val id: String = UUID.randomUUID().toString(),

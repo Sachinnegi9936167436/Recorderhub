@@ -30,8 +30,8 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document);
 
   const port = process.env.PORT || 4000;
-  await app.listen(port);
-  console.log(`🚀 RecordHub REST API server running on http://localhost:${port}/api/v1`);
+  await app.listen(port, '0.0.0.0');
+  console.log(`🚀 RecordHub REST API server running on http://0.0.0.0:${port}/api/v1`);
   console.log(`📚 OpenAPI Documentation available on http://localhost:${port}/docs`);
 }
 

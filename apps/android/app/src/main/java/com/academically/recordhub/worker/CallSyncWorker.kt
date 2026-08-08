@@ -30,7 +30,7 @@ class CallSyncWorker(
 
         return try {
             val retrofit = Retrofit.Builder()
-                .baseUrl("http://10.0.2.2:4000/api/v1/") // Local host alias for Android Emulator
+                .baseUrl("http://192.168.31.86:4000/api/v1/")
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
 

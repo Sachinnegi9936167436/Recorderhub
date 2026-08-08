@@ -7,7 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.ShieldCheck
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -46,7 +46,7 @@ fun PrivateCallsScreen(privateCalls: List<CallEventEntity>) {
                 )
             }
             Icon(
-                imageVector = Icons.Default.ShieldCheck,
+                imageVector = Icons.Default.Shield,
                 contentDescription = null,
                 tint = Emerald400,
                 modifier = Modifier.size(24.dp)

@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, PhoneCall, Smartphone, Settings, ShieldCheck, Activity, LogOut } from 'lucide-react';
+import { LayoutDashboard, PhoneCall, Smartphone, Settings, ShieldCheck, Activity, LogOut, Users } from 'lucide-react';
 
 export default function Navigation() {
   const pathname = usePathname();
@@ -11,6 +11,7 @@ export default function Navigation() {
   const navItems = [
     { name: 'Executive Overview', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Calls Explorer', href: '/calls', icon: PhoneCall },
+    { name: 'Counselors Directory', href: '/counselors', icon: Users },
     { name: 'Device Health', href: '/device-health', icon: Smartphone },
     { name: 'Settings & Policy', href: '/settings', icon: Settings },
   ];

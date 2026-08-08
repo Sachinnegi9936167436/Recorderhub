@@ -19,6 +19,8 @@ fun MainContainerScreen(
     trackedCalls: List<CallEventEntity>,
     privateCalls: List<CallEventEntity>,
     onTogglePrivate: (String) -> Unit,
+    onSelectSafFolder: () -> Unit,
+    onScanCallLogs: () -> Unit,
     onLogout: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(0) }
@@ -72,9 +74,13 @@ fun MainContainerScreen(
             color = Navy950
         ) {
             when (selectedTab) {
-                0 -> TrackedCallsScreen(callEvents = trackedCalls, onTogglePrivate = onTogglePrivate)
+                0 -> TrackedCallsScreen(
+                    callEvents = trackedCalls,
+                    onTogglePrivate = onTogglePrivate,
+                    onScanCallLogs = onScanCallLogs
+                )
                 1 -> PrivateCallsScreen(privateCalls = privateCalls)
-                2 -> RecordingUploadScreen(onSelectSafFolder = {})
+                2 -> RecordingUploadScreen(onSelectSafFolder = onSelectSafFolder)
                 3 -> DeviceHealthScreen()
                 4 -> SettingsScreen(onLogout = onLogout)
             }

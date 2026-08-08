@@ -25,7 +25,7 @@ fun RecordingUploadScreen(onSelectSafFolder: () -> Unit) {
             .padding(16.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(spaceBy = 16.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(
                 text = "Recording Upload & Ingestion",
                 style = MaterialTheme.typography.titleLarge.copy(
@@ -43,7 +43,7 @@ fun RecordingUploadScreen(onSelectSafFolder: () -> Unit) {
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp), spaceBy = 12.dp) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.FolderOpen,
@@ -84,7 +84,7 @@ fun RecordingUploadScreen(onSelectSafFolder: () -> Unit) {
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp), spaceBy = 10.dp) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = "Upload Queue Telemetry",
                         fontWeight = FontWeight.Bold,
