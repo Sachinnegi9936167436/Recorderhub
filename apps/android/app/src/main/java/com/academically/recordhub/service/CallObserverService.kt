@@ -156,6 +156,17 @@ class CallObserverService : Service() {
 
             db.callEventDao().insertCallEvent(entity)
             Log.i(TAG, "Saved Call Event to Room DB: $idempotencyKey")
+
+            try {
+                val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.academically.recordhub.worker.CallSyncWorker>().build()
+                androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                    "CallSyncWorkerOneTime",
+                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    syncRequest
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error enqueueing CallSyncWorker: ${e.message}")
+            }
         }
     }
 
