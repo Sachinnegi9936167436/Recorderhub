@@ -162,7 +162,7 @@ fun OnboardingScreen(onProceedToPermissions: () -> Unit) {
                 scope.launch(Dispatchers.IO) {
                     isAuthenticating = true
                     errorMessage = null
-                    val urls = listOf("http://192.168.31.86:4000/api/v1/", "http://10.0.2.2:4000/api/v1/")
+                    val urls = listOf("https://recorderhub-gold.vercel.app/api/v1/", "http://192.168.31.86:4000/api/v1/", "http://10.0.2.2:4000/api/v1/")
                     var authenticated = false
                     var lastErrorMsg = "Invalid email or password."
 

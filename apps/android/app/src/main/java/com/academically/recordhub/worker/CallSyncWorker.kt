@@ -30,7 +30,7 @@ class CallSyncWorker(
 
         return try {
             val retrofit = Retrofit.Builder()
-                .baseUrl("http://192.168.31.86:4000/api/v1/")
+                .baseUrl("https://recorderhub-gold.vercel.app/api/v1/")
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
 
