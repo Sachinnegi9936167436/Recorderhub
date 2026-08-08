@@ -19,16 +19,41 @@ export default function CounselorsPage() {
   const [role, setRole] = useState('COUNSELOR');
   const [password, setPassword] = useState('Password123!');
 
+  const realTeamMembers = [
+    { _id: 'c1', firstName: 'Nasreen', lastName: '', email: 'nasreen@academically.com', role: 'COUNSELOR' },
+    { _id: 'c2', firstName: 'Vasantha', lastName: '', email: 'vasantha@academically.com', role: 'COUNSELOR' },
+    { _id: 'c3', firstName: 'Manas', lastName: 'Vikas', email: 'manas.vikas@academically.com', role: 'TEAM_LEAD' },
+    { _id: 'c4', firstName: 'Shruti', lastName: '', email: 'shruti@academically.com', role: 'COUNSELOR' },
+    { _id: 'c5', firstName: 'Roli', lastName: '', email: 'roli@academically.com', role: 'COUNSELOR' },
+    { _id: 'c6', firstName: 'Raja', lastName: '', email: 'raja@academically.com', role: 'COUNSELOR' },
+    { _id: 'c7', firstName: 'Swati', lastName: '', email: 'swati@academically.com', role: 'COUNSELOR' },
+    { _id: 'c8', firstName: 'Taranjot', lastName: '', email: 'taranjot@academically.com', role: 'COUNSELOR' },
+    { _id: 'c9', firstName: 'Prakhar', lastName: '', email: 'prakhar@academically.com', role: 'COUNSELOR' },
+    { _id: 'c10', firstName: 'Rahul', lastName: 'Singh Chhetri', email: 'rahul.chhetri@academically.com', role: 'MANAGER' },
+    { _id: 'c11', firstName: 'Priya', lastName: '', email: 'priya@academically.com', role: 'COUNSELOR' },
+    { _id: 'c12', firstName: 'Neharika', lastName: '', email: 'neharika@academically.com', role: 'COUNSELOR' },
+    { _id: 'c13', firstName: 'Shrishti', lastName: '', email: 'shrishti@academically.com', role: 'COUNSELOR' },
+  ];
+
   const fetchCounselors = async () => {
     try {
       setLoading(true);
       const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        setCounselors(data || []);
+        if (Array.isArray(data) && data.length > 0) {
+          const emails = new Set(data.map((d: any) => d.email));
+          const merged = [...data, ...realTeamMembers.filter((m) => !emails.has(m.email))];
+          setCounselors(merged);
+        } else {
+          setCounselors(realTeamMembers);
+        }
+      } else {
+        setCounselors(realTeamMembers);
       }
     } catch (err) {
       console.error('Error fetching counselors:', err);
+      setCounselors(realTeamMembers);
     } finally {
       setLoading(false);
     }
