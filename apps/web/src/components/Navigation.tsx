@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { 
   BarChart3, 
   PhoneCall, 
@@ -14,20 +14,21 @@ import {
   Puzzle, 
   HeartHandshake, 
   Settings, 
-  ChevronDown,
-  Triangle
+  ChevronDown
 } from 'lucide-react';
 
-export default function Navigation() {
+function NavigationInner() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentView = searchParams.get('view') || 'teams';
 
   const navItems = [
     { name: 'Analytics', href: '/dashboard', icon: BarChart3, hasSub: true },
     { name: 'Calls', href: '/calls', icon: PhoneCall },
     { name: 'Inbound (beta)', href: '/calls?direction=INCOMING', icon: PhoneIncoming, hasSub: true },
     { name: 'Recording', href: '/calls?filter=recordings', icon: Mic },
-    { name: 'Team Management', href: '/counselors', icon: Users },
-    { name: 'User Management', href: '/counselors', icon: UserCheck },
+    { name: 'Team Management', href: '/counselors?view=teams', viewKey: 'teams', icon: Users },
+    { name: 'User Management', href: '/counselors?view=users', viewKey: 'users', icon: UserCheck },
     { name: 'Subscription', href: '/settings', icon: CreditCard, hasSub: true },
     { name: 'Integrations', href: '/device-health', icon: Puzzle, hasSub: true },
     { name: 'Referral Program', href: '/settings', icon: HeartHandshake },
@@ -49,7 +50,12 @@ export default function Navigation() {
         <nav className="px-3 py-2 space-y-0.5">
           {navItems.map((item, idx) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+            let isActive = false;
+            if (item.viewKey) {
+              isActive = pathname === '/counselors' && currentView === item.viewKey;
+            } else {
+              isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+            }
 
             return (
               <Link
@@ -82,5 +88,13 @@ export default function Navigation() {
         </div>
       </div>
     </aside>
+  );
+}
+
+export default function Navigation() {
+  return (
+    <Suspense fallback={<aside className="w-64 bg-white border-r border-slate-200 h-screen sticky top-0" />}>
+      <NavigationInner />
+    </Suspense>
   );
 }
