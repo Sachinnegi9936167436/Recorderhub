@@ -88,8 +88,10 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       try {
         const possibleKeys = [
           s3KeyTarget,
+          `recordings/${recordingId}.mp3`,
           `recordings/${recordingId}.m4a`,
           `recordings/${recordingId}`,
+          `${recordingId}.mp3`,
           `${recordingId}.m4a`,
           `${recordingId}`
         ];
@@ -103,7 +105,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
               const byteArray = await s3Response.Body.transformToByteArray();
               const buffer = Buffer.from(byteArray);
               if (buffer.length > 0) {
-                return createAudioResponse(buffer, 'audio/mp4');
+                const isMp3 = targetKey.endsWith('.mp3') || s3Response.ContentType?.includes('mpeg') || s3Response.ContentType?.includes('mp3');
+                const contentType = isMp3 ? 'audio/mpeg' : 'audio/mp4';
+                return createAudioResponse(buffer, contentType);
               }
             }
           } catch {

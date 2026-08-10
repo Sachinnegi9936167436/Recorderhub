@@ -166,10 +166,20 @@ class CallSyncWorker(
 
             AppLogManager.log("SYNC", "RecordingSync", "Initiating upload for ${file.name} (${file.length()} bytes)")
 
+            val ext = file.extension.lowercase()
+            val mimeType = when (ext) {
+                "mp3" -> "audio/mpeg"
+                "m4a" -> "audio/mp4"
+                "amr" -> "audio/amr"
+                "wav" -> "audio/wav"
+                "3gp" -> "audio/3gpp"
+                else -> "audio/mp4"
+            }
+
             val initReq = UploadInitiateRequest(
                 callId = evt.idempotencyKey,
                 fileSizeBytes = file.length(),
-                mimeType = "audio/m4a",
+                mimeType = mimeType,
                 checksumSha256 = "dummy_checksum_${file.name.hashCode()}",
                 durationSeconds = evt.durationSeconds
             )
@@ -178,7 +188,7 @@ class CallSyncWorker(
             if (initRes.isSuccessful && initRes.body() != null) {
                 val uploadInfo = initRes.body()!!
                 val putUrl = uploadInfo.presignedPutUrl
-                val reqBody = file.asRequestBody("audio/m4a".toMediaTypeOrNull())
+                val reqBody = file.asRequestBody(mimeType.toMediaTypeOrNull())
 
                 var uploadSuccess = false
 

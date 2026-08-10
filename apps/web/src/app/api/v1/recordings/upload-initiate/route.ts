@@ -15,7 +15,8 @@ export async function POST(req: Request) {
     const { callId, fileSizeBytes, mimeType, checksumSha256, durationSeconds } = body;
 
     const recordingId = `REC-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    const s3Key = `recordings/${recordingId}.m4a`;
+    const ext = mimeType?.includes('mpeg') || mimeType?.includes('mp3') ? 'mp3' : 'm4a';
+    const s3Key = `recordings/${recordingId}.${ext}`;
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
 
     const host = req.headers.get('host') || 'localhost:3000';
