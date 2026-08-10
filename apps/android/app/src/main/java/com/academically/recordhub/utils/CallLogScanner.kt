@@ -24,13 +24,28 @@ object CallLogScanner {
         try {
             db.callEventDao().clearDemoData()
             db.callEventDao().resetAllToPendingSync()
+
+            // Get or initialize app installation timestamp
+            val prefs = context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
+            var installTimeMs = prefs.getLong("app_installed_at", 0L)
+            if (installTimeMs == 0L) {
+                installTimeMs = try {
+                    context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
+                } catch (e: Exception) {
+                    System.currentTimeMillis()
+                }
+                prefs.edit().putLong("app_installed_at", installTimeMs).apply()
+            }
+
             val resolver = context.contentResolver
+            val selection = "${CallLog.Calls.DATE} >= ?"
+            val selectionArgs = arrayOf(installTimeMs.toString())
 
             val cursor = resolver.query(
                 CallLog.Calls.CONTENT_URI,
                 null,
-                null,
-                null,
+                selection,
+                selectionArgs,
                 "${CallLog.Calls.DATE} DESC"
             )
 
@@ -43,6 +58,11 @@ object CallLogScanner {
                 val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
 
                 while (c.moveToNext() && importedCount < 100) {
+                    val dateMs = if (dateIdx >= 0) c.getLong(dateIdx) else System.currentTimeMillis()
+                    if (dateMs < installTimeMs) {
+                        // Ignore any call made before app installation
+                        continue
+                    }
                     val rawNumber = if (numberIdx >= 0) c.getString(numberIdx) else null
                     if (rawNumber.isNullOrEmpty()) continue
 

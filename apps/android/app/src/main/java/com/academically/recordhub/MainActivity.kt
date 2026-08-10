@@ -33,6 +33,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppLogManager.log("INFO", "System", "MainActivity onCreate - Initializing RecordHub App.")
 
+        val prefs = getSharedPreferences("recordhub_prefs", MODE_PRIVATE)
+        if (!prefs.contains("app_installed_at")) {
+            val installTime = try {
+                packageManager.getPackageInfo(packageName, 0).firstInstallTime
+            } catch (e: Exception) {
+                System.currentTimeMillis()
+            }
+            prefs.edit().putLong("app_installed_at", installTime).apply()
+        }
+
         startCallObserverService()
         schedulePeriodicCallSync()
 
