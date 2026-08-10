@@ -79,12 +79,23 @@ class WhatsAppAudioRecorder(private val context: Context) {
             mediaRecorder = null
             isRecording = false
             val durationSec = (System.currentTimeMillis() - recordingStartTimeMs) / 1000
-            Log.d("WhatsAppAudioRecorder", "Stopped WhatsApp call audio recording. Duration: ${durationSec}s File: ${currentOutputFile?.absolutePath}")
+
+            if (currentOutputFile != null && currentOutputFile!!.exists() && currentOutputFile!!.length() <= 1000L) {
+                Log.w("WhatsAppAudioRecorder", "Recording file is empty/too small (${currentOutputFile?.length()} bytes). Deleting empty file.")
+                try { currentOutputFile!!.delete() } catch (_: Exception) {}
+                currentOutputFile = null
+            } else {
+                Log.d("WhatsAppAudioRecorder", "Stopped WhatsApp call audio recording. Duration: ${durationSec}s File: ${currentOutputFile?.absolutePath} Size: ${currentOutputFile?.length()} bytes")
+            }
             currentOutputFile
         } catch (e: Exception) {
             Log.e("WhatsAppAudioRecorder", "Error stopping WhatsApp audio recording", e)
             mediaRecorder = null
             isRecording = false
+            if (currentOutputFile != null && currentOutputFile!!.exists() && currentOutputFile!!.length() <= 1000L) {
+                try { currentOutputFile!!.delete() } catch (_: Exception) {}
+                currentOutputFile = null
+            }
             currentOutputFile
         }
     }

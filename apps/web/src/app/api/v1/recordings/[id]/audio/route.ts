@@ -48,11 +48,44 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       console.warn('DB lookup for recording ID failed:', dbErr);
     }
 
+    const createAudioResponse = (buffer: Buffer, mimeType: string = 'audio/mp4') => {
+      const rangeHeader = req.headers.get('range');
+      const totalSize = buffer.length;
+
+      if (rangeHeader) {
+        const parts = rangeHeader.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+        const chunkSize = end - start + 1;
+        const chunk = buffer.subarray(start, end + 1);
+
+        return new Response(chunk as any, {
+          status: 206,
+          headers: {
+            'Content-Type': mimeType,
+            'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunkSize.toString(),
+            'Cache-Control': 'public, max-age=3600',
+          },
+        });
+      }
+
+      return new Response(buffer as any, {
+        status: 200,
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': totalSize.toString(),
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    };
+
     // 2. Try fetching from AWS S3 Bucket
     const s3Info = getS3Client();
     if (s3Info) {
       try {
-        // Key candidate list
         const possibleKeys = [
           s3KeyTarget,
           `recordings/${recordingId}.m4a`,
@@ -69,15 +102,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
             if (s3Response.Body) {
               const byteArray = await s3Response.Body.transformToByteArray();
               const buffer = Buffer.from(byteArray);
-              return new Response(buffer as any, {
-                status: 200,
-                headers: {
-                  'Content-Type': s3Response.ContentType || 'audio/mp4',
-                  'Content-Length': buffer.length.toString(),
-                  'Accept-Ranges': 'bytes',
-                  'Cache-Control': 'public, max-age=3600',
-                },
-              });
+              if (buffer.length > 0) {
+                return createAudioResponse(buffer, 'audio/mp4');
+              }
             }
           } catch {
             // try next key
@@ -94,14 +121,10 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
     try {
       const buffer = await fs.readFile(filePath);
-      return new Response(buffer as any, {
-        status: 200,
-        headers: {
-          'Content-Type': 'audio/mp4',
-          'Content-Length': buffer.length.toString(),
-          'Accept-Ranges': 'bytes',
-        },
-      });
+      if (buffer.length > 0) {
+        return createAudioResponse(buffer, 'audio/mp4');
+      }
+      return NextResponse.json({ message: 'Audio recording file is 0 bytes (empty recording)' }, { status: 404 });
     } catch {
       return NextResponse.json({ message: 'Audio recording file not found in S3 or local storage' }, { status: 404 });
     }
