@@ -12,7 +12,7 @@ data class UserDto(val id: String, val email: String, val firstName: String, val
 
 data class BatchSyncRequest(val callEvents: List<CallEventDto>)
 data class CallEventDto(
-    val deviceId: String,
+    val deviceId: String = "ANDROID_DEVICE",
     val idempotencyKey: String,
     val phoneNumber: String,
     val direction: String,
@@ -22,7 +22,8 @@ data class CallEventDto(
     val durationSeconds: Int,
     val simSlot: Int,
     val isPrivate: Boolean,
-    val disposition: String
+    val disposition: String,
+    val channel: String = "CELLULAR"
 )
 
 data class BatchSyncResponse(
@@ -52,7 +53,12 @@ data class UploadInitiateRequest(
 data class UploadInitiateResponse(
     val recordingId: String,
     val s3Key: String,
-    val presignedPutUrl: String
+    val presignedPutUrl: String,
+    val fallbackUploadUrl: String? = null
+)
+
+data class UploadCompleteRequest(
+    val callId: String
 )
 
 interface RecordHubApi {
@@ -80,6 +86,7 @@ interface RecordHubApi {
     @POST("recordings/{id}/upload-complete")
     suspend fun completeUpload(
         @Header("Authorization") token: String,
-        @Path("id") recordingId: String
+        @Path("id") recordingId: String,
+        @Body request: UploadCompleteRequest
     ): Response<Any>
 }

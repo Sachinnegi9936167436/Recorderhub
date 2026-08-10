@@ -20,7 +20,8 @@ const CallSchema = new Schema(
     userId: { type: String },
     agentName: { type: String, default: 'Counselor Agent' },
     deviceId: { type: String, default: 'ANDROID-XIAOMI-PROD' },
-    idempotencyKey: { type: String, required: true },
+    idempotencyKey: { type: String, index: true },
+    phoneNumber: { type: String },
     phoneNumberMasked: { type: String },
     phoneNumberHash: { type: String },
     direction: { type: String, default: 'INCOMING' },
@@ -36,7 +37,7 @@ const CallSchema = new Schema(
     leadId: { type: String },
     leadName: { type: String },
   },
-  { timestamps: true },
+  { timestamps: true, strict: false },
 );
 
 const DeviceSchema = new Schema(

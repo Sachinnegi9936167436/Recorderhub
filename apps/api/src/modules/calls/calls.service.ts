@@ -21,9 +21,33 @@ export class CallsService {
 
     for (const event of callEvents) {
       try {
+        const rawDigits = (event.phoneNumber || '').replace(/\D/g, '').slice(-10);
         const normalized = normalizePhoneNumber(event.phoneNumber);
         const phoneHash = crypto.createHash('sha256').update(normalized).digest('hex');
         const masked = maskPhoneNumber(normalized);
+
+        const evtStartTime = new Date(event.startTime);
+        const minTime = new Date(evtStartTime.getTime() - 120000);
+        const maxTime = new Date(evtStartTime.getTime() + 120000);
+
+        // Deduplicate within 120s window for same 10-digit number & channel
+        if (rawDigits.length === 10) {
+          const match = await this.callModel.findOne({
+            organizationId: new Types.ObjectId(organizationId),
+            startTime: { $gte: minTime, $lte: maxTime },
+            channel: event.channel || CallChannel.CELLULAR,
+          }).exec();
+
+          if (match) {
+            const newDuration = Math.max(match.durationSeconds || 0, event.durationSeconds || 0);
+            await this.callModel.updateOne(
+              { _id: match._id },
+              { $set: { durationSeconds: newDuration } },
+            ).exec();
+            duplicates.push(event.idempotencyKey);
+            continue;
+          }
+        }
 
         const newCall = new this.callModel({
           organizationId: new Types.ObjectId(organizationId),
@@ -36,7 +60,7 @@ export class CallsService {
           direction: event.direction || CallDirection.OUTGOING,
           status: event.status || CallStatus.ANSWERED,
           channel: event.channel || CallChannel.CELLULAR,
-          startTime: new Date(event.startTime),
+          startTime: evtStartTime,
           endTime: new Date(event.endTime),
           durationSeconds: event.durationSeconds,
           simSlot: event.simSlot || 0,

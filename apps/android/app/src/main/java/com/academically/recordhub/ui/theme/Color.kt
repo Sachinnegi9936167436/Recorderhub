@@ -11,6 +11,7 @@ val MedicalTeal500 = Color(0xFF14B8A6)
 val MedicalTeal400 = Color(0xFF2DD4BF)
 
 val Slate200 = Color(0xFFE2E8F0)
+val Slate300 = Color(0xFFCBD5E1)
 val Slate400 = Color(0xFF94A3B8)
 val Slate500 = Color(0xFF64748B)
 

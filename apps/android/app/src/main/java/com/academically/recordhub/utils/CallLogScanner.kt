@@ -1,12 +1,15 @@
 package com.academically.recordhub.utils
 
 import android.content.Context
+import android.os.Build
 import android.provider.CallLog
+import android.provider.Settings
 import android.util.Log
 import com.academically.recordhub.data.local.AppDatabase
 import com.academically.recordhub.data.local.CallEventEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 object CallLogScanner {
 
@@ -15,8 +18,12 @@ object CallLogScanner {
     suspend fun scanRecentCallLogs(context: Context): Int = withContext(Dispatchers.IO) {
         var importedCount = 0
         val db = AppDatabase.getInstance(context)
+        val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "ANDROID_DEVICE"
+        val deviceId = "ANDROID-${Build.MODEL.replace(" ", "_")}-$androidId"
+
         try {
             db.callEventDao().clearDemoData()
+            db.callEventDao().resetAllToPendingSync()
             val resolver = context.contentResolver
 
             val cursor = resolver.query(
@@ -32,14 +39,22 @@ object CallLogScanner {
                 val typeIdx = c.getColumnIndex(CallLog.Calls.TYPE)
                 val dateIdx = c.getColumnIndex(CallLog.Calls.DATE)
                 val durationIdx = c.getColumnIndex(CallLog.Calls.DURATION)
+                val accountIdx = c.getColumnIndex(CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME)
+                val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
 
-                while (c.moveToNext() && importedCount < 50) {
+                while (c.moveToNext() && importedCount < 100) {
                     val rawNumber = if (numberIdx >= 0) c.getString(numberIdx) else null
                     if (rawNumber.isNullOrEmpty()) continue
 
                     val type = if (typeIdx >= 0) c.getInt(typeIdx) else CallLog.Calls.INCOMING_TYPE
                     val dateMs = if (dateIdx >= 0) c.getLong(dateIdx) else System.currentTimeMillis()
                     val durationSec = if (durationIdx >= 0) c.getInt(durationIdx) else 30
+                    val accountName = if (accountIdx >= 0) c.getString(accountIdx) ?: "" else ""
+                    val cachedName = if (nameIdx >= 0) c.getString(nameIdx) ?: "" else ""
+
+                    val isWhatsApp = accountName.lowercase().contains("whatsapp") ||
+                            rawNumber.lowercase().contains("whatsapp") ||
+                            cachedName.lowercase().contains("whatsapp")
 
                     val direction = when (type) {
                         CallLog.Calls.INCOMING_TYPE -> "INCOMING"
@@ -49,13 +64,28 @@ object CallLogScanner {
                     }
 
                     val cleanDigits = rawNumber.replace("\\D".toRegex(), "").takeLast(10)
-                    val idempotencyKey = "SYS-LOG-$dateMs-$cleanDigits"
+                    val formattedPhone = if (cleanDigits.length == 10) "+91 ${cleanDigits.chunked(5).joinToString(" ")}" else (if (cachedName.isNotBlank()) cachedName else rawNumber)
+                    val idempotencyKey = if (isWhatsApp) "WA_LOG-$dateMs-$cleanDigits" else "SYS-LOG-$dateMs-$cleanDigits"
                     val endTimeMs = dateMs + (durationSec * 1000L)
 
+                    // Skip duplicate import if a call for the same number/time window already exists in Room DB
+                    val existingEvents = db.callEventDao().getPendingSyncEvents()
+                    val isDuplicate = existingEvents.any { existing ->
+                        val existingDigits = existing.phoneNumber.replace("\\D".toRegex(), "").takeLast(10)
+                        existingDigits == cleanDigits && Math.abs(existing.startTime - dateMs) < 120000
+                    }
+
+                    if (isDuplicate) {
+                        Log.d(TAG, "Skipping system call log import for $cleanDigits as matching event already exists.")
+                        continue
+                    }
+
+                    val audioFile = SimCallRecordingScanner.findAudioForCall(context, rawNumber, dateMs, endTimeMs)
+
                     val entity = CallEventEntity(
-                        deviceId = "ANDROID-XIAOMI-PROD",
+                        deviceId = deviceId,
                         idempotencyKey = idempotencyKey,
-                        phoneNumber = rawNumber,
+                        phoneNumber = formattedPhone,
                         direction = direction,
                         status = if (type == CallLog.Calls.MISSED_TYPE) "MISSED" else "ANSWERED",
                         startTime = dateMs,
@@ -63,7 +93,9 @@ object CallLogScanner {
                         durationSeconds = Math.max(1, durationSec),
                         simSlot = 0,
                         isPrivate = false,
-                        disposition = "Imported Phone Call",
+                        recordingPath = audioFile?.absolutePath,
+                        recordingStatus = if (audioFile != null && audioFile.exists()) "PENDING_UPLOAD" else "NONE",
+                        disposition = if (isWhatsApp) "WhatsApp Call" else "Imported Phone Call",
                         syncStatus = "PENDING"
                     )
 
@@ -74,7 +106,32 @@ object CallLogScanner {
                 }
             }
 
-            Log.i(TAG, "Imported $importedCount new call events from phone CallLog")
+            // Attach WhatsApp recording files to existing events instead of creating duplicate call entries
+            val waDir = File(context.filesDir, "whatsapp_recordings")
+            if (waDir.exists() && waDir.isDirectory) {
+                val files = waDir.listFiles() ?: emptyArray()
+                val pendingEvents = db.callEventDao().getPendingSyncEvents()
+                for (file in files) {
+                    if (file.name.endsWith(".m4a") && file.length() > 0) {
+                        val matchingEvent = pendingEvents.firstOrNull { evt ->
+                            (evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")) &&
+                            evt.recordingPath.isNullOrEmpty() &&
+                            Math.abs(evt.startTime - (file.lastModified() - 30000L)) < 180000
+                        }
+                        if (matchingEvent != null) {
+                            db.callEventDao().insertCallEvent(
+                                matchingEvent.copy(
+                                    recordingPath = file.absolutePath,
+                                    recordingStatus = "PENDING_UPLOAD"
+                                )
+                            )
+                            Log.i(TAG, "Attached whatsapp recording file ${file.name} to existing call ${matchingEvent.idempotencyKey}")
+                        }
+                    }
+                }
+            }
+
+            Log.i(TAG, "Imported $importedCount new call events from phone CallLog & WhatsApp recordings")
         } catch (e: Exception) {
             Log.e(TAG, "Error scanning system call logs: ${e.message}", e)
         }

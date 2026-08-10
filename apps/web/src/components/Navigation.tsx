@@ -25,13 +25,9 @@ function NavigationInner() {
   const navItems = [
     { name: 'Analytics', href: '/dashboard', icon: BarChart3, hasSub: true },
     { name: 'Calls', href: '/calls', icon: PhoneCall },
-    { name: 'Inbound (beta)', href: '/calls?direction=INCOMING', icon: PhoneIncoming, hasSub: true },
     { name: 'Recording', href: '/calls?filter=recordings', icon: Mic },
     { name: 'Team Management', href: '/counselors?view=teams', viewKey: 'teams', icon: Users },
     { name: 'User Management', href: '/counselors?view=users', viewKey: 'users', icon: UserCheck },
-    { name: 'Subscription', href: '/settings', icon: CreditCard, hasSub: true },
-    { name: 'Integrations', href: '/device-health', icon: Puzzle, hasSub: true },
-    { name: 'Referral Program', href: '/settings', icon: HeartHandshake },
     { name: 'Settings', href: '/settings', icon: Settings },
   ];
 

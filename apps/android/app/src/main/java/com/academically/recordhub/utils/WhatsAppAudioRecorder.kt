@@ -18,44 +18,58 @@ class WhatsAppAudioRecorder(private val context: Context) {
     fun startRecording(contactTitle: String): File? {
         if (isRecording) return currentOutputFile
 
-        try {
-            val outputDir = File(context.filesDir, "whatsapp_recordings")
-            if (!outputDir.exists()) outputDir.mkdirs()
+        val outputDir = File(context.filesDir, "whatsapp_recordings")
+        if (!outputDir.exists()) outputDir.mkdirs()
 
-            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val safeContact = contactTitle.replace("[^a-zA-Z0-9]".toRegex(), "_")
-            currentOutputFile = File(outputDir, "WA_CALL_${timestamp}_${safeContact}.m4a")
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val safeContact = contactTitle.replace("[^a-zA-Z0-9]".toRegex(), "_")
+        currentOutputFile = File(outputDir, "WA_CALL_${timestamp}_${safeContact}.m4a")
 
-            mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                MediaRecorder(context)
-            } else {
-                @Suppress("DEPRECATION")
-                MediaRecorder()
-            }.apply {
-                setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
-                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioSamplingRate(44100)
-                setAudioEncodingBitRate(128000)
-                setOutputFile(currentOutputFile?.absolutePath)
-                prepare()
-                start()
+        // Try AudioSource.VOICE_COMMUNICATION first, fallback to AudioSource.MIC
+        val sourcesToTry = intArrayOf(
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.VOICE_RECOGNITION
+        )
+
+        for (source in sourcesToTry) {
+            try {
+                mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    MediaRecorder(context)
+                } else {
+                    @Suppress("DEPRECATION")
+                    MediaRecorder()
+                }.apply {
+                    setAudioSource(source)
+                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                    setAudioSamplingRate(44100)
+                    setAudioEncodingBitRate(128000)
+                    setOutputFile(currentOutputFile?.absolutePath)
+                    prepare()
+                    start()
+                }
+
+                isRecording = true
+                recordingStartTimeMs = System.currentTimeMillis()
+                Log.d("WhatsAppAudioRecorder", "Started WhatsApp audio recording with source $source: ${currentOutputFile?.name}")
+                return currentOutputFile
+            } catch (e: Exception) {
+                Log.w("WhatsAppAudioRecorder", "Failed audio source $source for WhatsApp recording: ${e.message}")
+                try {
+                    mediaRecorder?.release()
+                } catch (_: Exception) {}
+                mediaRecorder = null
             }
-
-            isRecording = true
-            recordingStartTimeMs = System.currentTimeMillis()
-            Log.d("WhatsAppAudioRecorder", "Started WhatsApp call audio recording: ${currentOutputFile?.name}")
-            return currentOutputFile
-        } catch (e: Exception) {
-            Log.e("WhatsAppAudioRecorder", "Failed to start WhatsApp audio recording", e)
-            isRecording = false
-            currentOutputFile = null
-            return null
         }
+
+        Log.e("WhatsAppAudioRecorder", "Hardware mic locked by WhatsApp VoIP. Proceeding with Call Metadata Syncing.")
+        isRecording = false
+        return null
     }
 
     fun stopRecording(): File? {
-        if (!isRecording) return null
+        if (!isRecording) return currentOutputFile
 
         return try {
             mediaRecorder?.apply {
@@ -71,7 +85,7 @@ class WhatsAppAudioRecorder(private val context: Context) {
             Log.e("WhatsAppAudioRecorder", "Error stopping WhatsApp audio recording", e)
             mediaRecorder = null
             isRecording = false
-            null
+            currentOutputFile
         }
     }
 

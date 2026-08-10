@@ -9,15 +9,16 @@ export async function POST(req: Request) {
   try {
     await connectToDatabase();
     const body = await req.json().catch(() => ({}));
-    const { recordingId } = body;
+    const { recordingId, callId } = body;
 
     if (recordingId) {
+      const filter = callId ? { idempotencyKey: callId } : {};
       await (CallModel as any).findOneAndUpdate(
-        { recordingStatus: 'PENDING' },
+        filter,
         {
           $set: {
             recordingStatus: 'COMPLETED',
-            audioUrl: `https://recorderhub-gold.vercel.app/api/v1/recordings/${recordingId}/audio`,
+            audioUrl: `/api/v1/recordings/${recordingId}/audio`,
           },
         },
         { sort: { createdAt: -1 } },

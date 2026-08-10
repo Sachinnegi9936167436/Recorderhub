@@ -15,13 +15,13 @@ import {
 export default function RecorderHubDashboard() {
   const [calls, setCalls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState('This week');
+  const [dateRange, setDateRange] = useState('All time');
   const [salesRepFilter, setSalesRepFilter] = useState('Teams');
   const [teamFilter, setTeamFilter] = useState('All Teams');
 
   const fetchCallsData = async () => {
     try {
-      setLoading(true);
+      if (calls.length === 0) setLoading(true);
       const res = await fetch('/api/v1/calls', {
         cache: 'no-store',
         headers: {
@@ -46,20 +46,39 @@ export default function RecorderHubDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Compute Live Metrics safely
-  const validCalls = (calls || []).filter(Boolean);
-  const totalCallsCount = validCalls.length || 10150;
-  const outboundCount = validCalls.filter((c) => (c?.direction || '').toUpperCase() === 'OUTGOING').length || 8830;
-  const inboundCount = validCalls.filter((c) => (c?.direction || '').toUpperCase() === 'INCOMING').length || 1320;
-  const answeredCount = validCalls.filter((c) => (c?.status || '').toUpperCase() === 'ANSWERED').length || 4818;
+  // Filter calls by Date Range
+  const validCalls = (calls || []).filter((c) => {
+    if (!c) return false;
+    if (dateRange === 'All time') return true;
+    const callDate = c.startTime ? new Date(c.startTime) : new Date();
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+    if (dateRange === 'Today') {
+      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      return callDate >= startOfToday && callDate <= endOfToday;
+    } else if (dateRange === 'This week') {
+      const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 86400000);
+      return callDate >= sevenDaysAgo;
+    } else if (dateRange === 'This month') {
+      const thirtyDaysAgo = new Date(startOfToday.getTime() - 30 * 86400000);
+      return callDate >= thirtyDaysAgo;
+    }
+    return true;
+  });
+
+  const totalCallsCount = validCalls.length;
+  const outboundCount = validCalls.filter((c) => (c?.direction || '').toUpperCase() === 'OUTGOING' || (c?.direction || '').toUpperCase() === 'OUTBOUND').length;
+  const inboundCount = validCalls.filter((c) => (c?.direction || '').toUpperCase() === 'INCOMING' || (c?.direction || '').toUpperCase() === 'INBOUND').length;
+  const answeredCount = validCalls.filter((c) => (c?.status || '').toUpperCase() === 'ANSWERED').length;
 
   const totalSeconds = validCalls.reduce((sum, c) => sum + (c?.durationSeconds || 0), 0);
-  const avgSeconds = validCalls.length > 0 ? Math.round(totalSeconds / validCalls.length) : 202; // 3m 22s
+  const avgSeconds = validCalls.length > 0 ? Math.round(totalSeconds / validCalls.length) : 0;
 
   const avgDurationStr = `${Math.floor(avgSeconds / 60)}m ${avgSeconds % 60}s`;
   const totalTalkHours = Math.floor(totalSeconds / 3600);
   const totalTalkMins = Math.floor((totalSeconds % 3600) / 60);
-  const totalTalkStr = totalSeconds > 0 ? `${totalTalkHours}h ${totalTalkMins}m` : '142h 18m';
+  const totalTalkStr = `${totalTalkHours}h ${totalTalkMins}m`;
 
   // Group calls by Counselor / Agent Name
   const userActivityMap: Record<string, {
@@ -104,38 +123,20 @@ export default function RecorderHubDashboard() {
     }
   });
 
-  const defaultUsersList = [
-    { name: 'Nasreen', total: 616, answered: 125, unanswered: 491, durationStr: '12h:58m:50s', uniqueCalls: 288, uniqueAnswered: 90 },
-    { name: 'Vasantha', total: 589, answered: 278, unanswered: 311, durationStr: '6h:51m:56s', uniqueCalls: 425, uniqueAnswered: 211 },
-    { name: 'Manas Vikas', total: 547, answered: 305, unanswered: 242, durationStr: '14h:21m:09s', uniqueCalls: 426, uniqueAnswered: 235 },
-    { name: 'shruti', total: 497, answered: 139, unanswered: 358, durationStr: '2h:29m:54s', uniqueCalls: 312, uniqueAnswered: 103 },
-    { name: 'Roli', total: 495, answered: 135, unanswered: 360, durationStr: '5h:49m:22s', uniqueCalls: 172, uniqueAnswered: 77 },
-    { name: 'raja', total: 451, answered: 244, unanswered: 207, durationStr: '13h:50m:40s', uniqueCalls: 253, uniqueAnswered: 145 },
-    { name: 'Swati', total: 439, answered: 218, unanswered: 221, durationStr: '6h:26m:40s', uniqueCalls: 327, uniqueAnswered: 171 },
-    { name: 'taranjot', total: 412, answered: 184, unanswered: 228, durationStr: '6h:48m:14s', uniqueCalls: 257, uniqueAnswered: 118 },
-    { name: 'prakhar', total: 392, answered: 166, unanswered: 226, durationStr: '12h:20m:25s', uniqueCalls: 228, uniqueAnswered: 116 },
-    { name: 'Rahul Singh Chhetri', total: 380, answered: 153, unanswered: 227, durationStr: '8h:40m:37s', uniqueCalls: 211, uniqueAnswered: 99 },
-    { name: 'priya', total: 363, answered: 138, unanswered: 225, durationStr: '10h:54m:19s', uniqueCalls: 175, uniqueAnswered: 84 },
-    { name: 'neharika', total: 346, answered: 157, unanswered: 189, durationStr: '5h:15m:44s', uniqueCalls: 227, uniqueAnswered: 107 },
-    { name: 'shrishti', total: 336, answered: 130, unanswered: 206, durationStr: '7h:58m:18s', uniqueCalls: 157, uniqueAnswered: 74 },
-  ];
-
-  const userActivityRows = Object.keys(userActivityMap).length > 0
-    ? Object.values(userActivityMap).map((u) => {
-        const h = Math.floor(u.totalSeconds / 3600);
-        const m = Math.floor((u.totalSeconds % 3600) / 60);
-        const s = u.totalSeconds % 60;
-        return {
-          name: u.name,
-          total: u.total,
-          answered: u.answered,
-          unanswered: u.unanswered,
-          durationStr: `${h}h:${m}m:${s}s`,
-          uniqueCalls: u.uniquePhones.size || u.total,
-          uniqueAnswered: u.uniqueAnsweredPhones.size || u.answered,
-        };
-      }).sort((a, b) => b.total - a.total)
-    : defaultUsersList;
+  const userActivityRows = Object.values(userActivityMap).map((u) => {
+    const h = Math.floor(u.totalSeconds / 3600);
+    const m = Math.floor((u.totalSeconds % 3600) / 60);
+    const s = u.totalSeconds % 60;
+    return {
+      name: u.name,
+      total: u.total,
+      answered: u.answered,
+      unanswered: u.unanswered,
+      durationStr: `${h}h:${m}m:${s}s`,
+      uniqueCalls: u.uniquePhones.size || u.total,
+      uniqueAnswered: u.uniqueAnsweredPhones.size || u.answered,
+    };
+  }).sort((a, b) => b.total - a.total);
 
   const exportCSV = () => {
     if (calls.length === 0) {
@@ -365,17 +366,32 @@ export default function RecorderHubDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {userActivityRows.map((user, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-4 pl-6 font-semibold text-slate-900">{user.name}</td>
-                      <td className="p-4 text-center text-slate-800 font-medium">{user.total}</td>
-                      <td className="p-4 text-center text-slate-800 font-medium">{user.answered}</td>
-                      <td className="p-4 text-center text-slate-800 font-medium">{user.unanswered}</td>
-                      <td className="p-4 text-center font-mono text-slate-800">{user.durationStr}</td>
-                      <td className="p-4 text-center text-slate-800 font-medium">{user.uniqueCalls}</td>
-                      <td className="p-4 text-center text-slate-800 font-medium pr-6">{user.uniqueAnswered}</td>
+                  {userActivityRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-12 text-center text-slate-500 font-medium">
+                        {loading ? (
+                          <div className="flex items-center justify-center space-x-2">
+                            <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
+                            <span>Loading user activity from mobile calls...</span>
+                          </div>
+                        ) : (
+                          <span>No counselor call activity recorded yet. Sync calls from your mobile app to see live user activity!</span>
+                        )}
+                      </td>
                     </tr>
-                  ))}
+                  ) : (
+                    userActivityRows.map((user, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-4 pl-6 font-semibold text-slate-900">{user.name}</td>
+                        <td className="p-4 text-center text-slate-800 font-medium">{user.total}</td>
+                        <td className="p-4 text-center text-slate-800 font-medium">{user.answered}</td>
+                        <td className="p-4 text-center text-slate-800 font-medium">{user.unanswered}</td>
+                        <td className="p-4 text-center font-mono text-slate-800">{user.durationStr}</td>
+                        <td className="p-4 text-center text-slate-800 font-medium">{user.uniqueCalls}</td>
+                        <td className="p-4 text-center text-slate-800 font-medium pr-6">{user.uniqueAnswered}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

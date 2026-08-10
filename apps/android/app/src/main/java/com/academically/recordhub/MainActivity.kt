@@ -1,8 +1,10 @@
 package com.academically.recordhub
 
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
@@ -17,6 +19,7 @@ import com.academically.recordhub.ui.screens.MainContainerScreen
 import com.academically.recordhub.ui.screens.OnboardingScreen
 import com.academically.recordhub.ui.screens.PermissionsScreen
 import com.academically.recordhub.ui.theme.RecordHubTheme
+import com.academically.recordhub.utils.AppLogManager
 import com.academically.recordhub.utils.CallLogScanner
 import com.academically.recordhub.worker.CallSyncWorker
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +31,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLogManager.log("INFO", "System", "MainActivity onCreate - Initializing RecordHub App.")
 
         startCallObserverService()
         schedulePeriodicCallSync()
@@ -52,13 +56,14 @@ class MainActivity : ComponentActivity() {
                                 uri,
                                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                             )
+                            AppLogManager.log("INFO", "UI_Action", "SAF Recording Folder Authorized: $uri")
                             android.widget.Toast.makeText(
                                 applicationContext,
                                 "Authorized Call Recording Folder!",
                                 android.widget.Toast.LENGTH_SHORT
                             ).show()
                         } catch (e: Exception) {
-                            android.util.Log.e("MainActivity", "Error taking persistable URI permission: ${e.message}")
+                            AppLogManager.log("ERROR", "UI_Action", "Error authorizing SAF folder permission: ${e.message}")
                         }
                     }
                 }
@@ -66,6 +71,7 @@ class MainActivity : ComponentActivity() {
                 val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
                     contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
                 ) { permissions ->
+                    AppLogManager.log("INFO", "UI_Action", "Permissions Result Handled: ${permissions.filterValues { it }.keys}")
                     scope.launch(Dispatchers.IO) {
                         CallLogScanner.scanRecentCallLogs(applicationContext)
                         triggerImmediateSync()
@@ -76,14 +82,19 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(Unit) {
                     scope.launch(Dispatchers.IO) {
+                        AppLogManager.log("SYNC", "Background", "Initial CallLog Scanner & AWS S3 Sync Triggered.")
                         CallLogScanner.scanRecentCallLogs(applicationContext)
                         triggerImmediateSync()
                     }
                 }
 
                 when (currentStep) {
-                    0 -> OnboardingScreen(onProceedToPermissions = { currentStep = 1 })
+                    0 -> OnboardingScreen(onProceedToPermissions = { 
+                        AppLogManager.log("INFO", "UI_Action", "User tapped 'Get Started' on Onboarding Screen.")
+                        currentStep = 1 
+                    })
                     1 -> PermissionsScreen(onPermissionsGranted = {
+                        AppLogManager.log("INFO", "UI_Action", "User tapped 'Grant All Permissions' Button.")
                         val perms = mutableListOf(
                             android.Manifest.permission.READ_CALL_LOG,
                             android.Manifest.permission.READ_PHONE_STATE,
@@ -93,19 +104,33 @@ class MainActivity : ComponentActivity() {
                             perms.add("android.permission.POST_NOTIFICATIONS")
                         }
                         permissionLauncher.launch(perms.toTypedArray())
+
+                        if (!isNotificationListenerEnabled(applicationContext)) {
+                            try {
+                                AppLogManager.log("INFO", "UI_Action", "Opening Notification Listener Settings for WhatsApp...")
+                                val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(intent)
+                            } catch (e: Exception) {
+                                AppLogManager.log("ERROR", "UI_Action", "Error opening Notification Listener settings: ${e.message}")
+                            }
+                        }
                     })
                     else -> MainContainerScreen(
                         trackedCalls = trackedCallsFlow.value,
                         privateCalls = privateCallsFlow.value,
                         onTogglePrivate = { callId ->
+                            AppLogManager.log("INFO", "UI_Action", "User toggled privacy for call ID: $callId")
                             scope.launch {
                                 db.callEventDao().setPrivateState(callId, true)
                             }
                         },
                         onSelectSafFolder = {
+                            AppLogManager.log("INFO", "UI_Action", "User tapped 'Change Call Recording Folder' Button.")
                             safFolderLauncher.launch(null)
                         },
                         onScanCallLogs = {
+                            AppLogManager.log("INFO", "UI_Action", "User tapped 'Scan & Sync Call Logs' Button.")
                             scope.launch(Dispatchers.IO) {
                                 val count = CallLogScanner.scanRecentCallLogs(applicationContext)
                                 triggerImmediateSync()
@@ -113,13 +138,14 @@ class MainActivity : ComponentActivity() {
                                 withContext(Dispatchers.Main) {
                                     android.widget.Toast.makeText(
                                         applicationContext,
-                                        "Imported $count calls & syncing to Cloud!",
+                                        "Scanned call logs & syncing all call events to Cloud!",
                                         android.widget.Toast.LENGTH_SHORT
                                     ).show()
                                 }
                             }
                         },
                         onLogout = {
+                            AppLogManager.log("INFO", "UI_Action", "User tapped 'Log Out' Button.")
                             prefs.edit().putBoolean("is_logged_in", false).apply()
                             currentStep = 0
                         }
@@ -129,8 +155,40 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun startCallObserverService() {
+        try {
+            AppLogManager.log("INFO", "Background", "Starting CallObserverService Foreground Telephony Monitor.")
+            val intent = Intent(this, CallObserverService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            AppLogManager.log("ERROR", "Background", "Failed to start CallObserverService: ${e.message}")
+        }
+    }
+
+    private fun schedulePeriodicCallSync() {
+        try {
+            AppLogManager.log("SYNC", "Background", "Enqueuing 15-Minute Periodic CallSyncWorker for AWS S3 Sync.")
+            val syncWorkRequest = PeriodicWorkRequestBuilder<CallSyncWorker>(
+                15, TimeUnit.MINUTES
+            ).build()
+
+            WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
+                "CallSyncWorkerPeriodic",
+                ExistingPeriodicWorkPolicy.KEEP,
+                syncWorkRequest
+            )
+        } catch (e: Exception) {
+            AppLogManager.log("ERROR", "Background", "Failed to schedule periodic WorkManager: ${e.message}")
+        }
+    }
+
     private fun triggerImmediateSync() {
         try {
+            AppLogManager.log("SYNC", "Background", "Enqueuing Immediate OneTime CallSyncWorker for AWS S3 Sync.")
             val syncRequest = OneTimeWorkRequestBuilder<CallSyncWorker>().build()
             WorkManager.getInstance(applicationContext).enqueueUniqueWork(
                 "CallSyncWorkerOneTime",
@@ -138,33 +196,15 @@ class MainActivity : ComponentActivity() {
                 syncRequest
             )
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error triggering immediate sync: ${e.message}")
+            AppLogManager.log("ERROR", "Background", "Failed to trigger immediate WorkManager: ${e.message}")
         }
     }
 
-    private fun schedulePeriodicCallSync() {
-        try {
-            val periodicSyncRequest = PeriodicWorkRequestBuilder<CallSyncWorker>(15, TimeUnit.MINUTES).build()
-            WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
-                "CallSyncWorkerPeriodic",
-                ExistingPeriodicWorkPolicy.KEEP,
-                periodicSyncRequest
-            )
-        } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error scheduling periodic sync: ${e.message}")
-        }
-    }
-
-    private fun startCallObserverService() {
-        try {
-            val serviceIntent = Intent(this, CallObserverService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent)
-            } else {
-                startService(serviceIntent)
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error starting CallObserverService: ${e.message}")
-        }
+    private fun isNotificationListenerEnabled(context: Context): Boolean {
+        val flat = android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            "enabled_notification_listeners"
+        )
+        return flat != null && flat.contains(context.packageName)
     }
 }

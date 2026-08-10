@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Navigation } from '@/components/Navigation';
 import { useSearchParams } from 'next/navigation';
 import { 
@@ -14,10 +14,10 @@ import {
   CheckCircle2, 
   Search, 
   ChevronDown, 
-  PlusCircle, 
   User, 
   ArrowUpDown, 
-  ArrowDown 
+  ArrowDown,
+  Info
 } from 'lucide-react';
 
 function CounselorsAndTeamsInner() {
@@ -28,18 +28,15 @@ function CounselorsAndTeamsInner() {
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAddTeamModalOpen, setIsAddTeamModalOpen] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState<any | null>(null);
+  const [activeDrawerTab, setActiveDrawerTab] = useState<'current' | 'invited'>('current');
   const [editingCounselor, setEditingCounselor] = useState<any | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Teams State
-  const [teamsList, setTeamsList] = useState([
-    { id: 't1', name: 'Dehradun Team', admin: 'Mohammed Ayaan', installedRatio: '23 / 23' },
-    { id: 't2', name: 'Hyd Team', admin: 'Singoji Santhosh + 1', installedRatio: '1 / 1' },
-    { id: 't3', name: 'Team Rajdeep', admin: 'Mohammed Ayaan + 1', installedRatio: '9 / 9' },
-    { id: 't4', name: 'NCLEX Sales Team', admin: 'Dr. Akram Ahmad', installedRatio: '13 / 13' },
-    { id: 't5', name: 'DHA Counselor Team', admin: 'Rahul Singh Chhetri', installedRatio: '12 / 12' },
-  ]);
+  // Teams State (Starts empty - teams added dynamically by user)
+  const [teamsList, setTeamsList] = useState<any[]>([]);
+
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamAdmin, setNewTeamAdmin] = useState('');
   const [newTeamAppCount, setNewTeamAppCount] = useState('5 / 5');
@@ -56,41 +53,19 @@ function CounselorsAndTeamsInner() {
   const [role, setRole] = useState('COUNSELOR');
   const [password, setPassword] = useState('Password123!');
 
-  const realTeamMembers = [
-    { _id: 'c1', firstName: 'Nasreen', lastName: '', email: 'nasreen@academically.com', role: 'COUNSELOR' },
-    { _id: 'c2', firstName: 'Vasantha', lastName: '', email: 'vasantha@academically.com', role: 'COUNSELOR' },
-    { _id: 'c3', firstName: 'Manas', lastName: 'Vikas', email: 'manas.vikas@academically.com', role: 'TEAM_LEAD' },
-    { _id: 'c4', firstName: 'Shruti', lastName: '', email: 'shruti@academically.com', role: 'COUNSELOR' },
-    { _id: 'c5', firstName: 'Roli', lastName: '', email: 'roli@academically.com', role: 'COUNSELOR' },
-    { _id: 'c6', firstName: 'Raja', lastName: '', email: 'raja@academically.com', role: 'COUNSELOR' },
-    { _id: 'c7', firstName: 'Swati', lastName: '', email: 'swati@academically.com', role: 'COUNSELOR' },
-    { _id: 'c8', firstName: 'Taranjot', lastName: '', email: 'taranjot@academically.com', role: 'COUNSELOR' },
-    { _id: 'c9', firstName: 'Prakhar', lastName: '', email: 'prakhar@academically.com', role: 'COUNSELOR' },
-    { _id: 'c10', firstName: 'Rahul', lastName: 'Singh Chhetri', email: 'rahul.chhetri@academically.com', role: 'MANAGER' },
-    { _id: 'c11', firstName: 'Priya', lastName: '', email: 'priya@academically.com', role: 'COUNSELOR' },
-    { _id: 'c12', firstName: 'Neharika', lastName: '', email: 'neharika@academically.com', role: 'COUNSELOR' },
-    { _id: 'c13', firstName: 'Shrishti', lastName: '', email: 'shrishti@academically.com', role: 'COUNSELOR' },
-  ];
-
   const fetchCounselors = async () => {
     try {
       setLoading(true);
       const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          const emails = new Set(data.map((d: any) => d.email));
-          const merged = [...data, ...realTeamMembers.filter((m) => !emails.has(m.email))];
-          setCounselors(merged);
-        } else {
-          setCounselors(realTeamMembers);
-        }
+        setCounselors(Array.isArray(data) ? data : []);
       } else {
-        setCounselors(realTeamMembers);
+        setCounselors([]);
       }
     } catch (err) {
       console.error('Error fetching counselors:', err);
-      setCounselors(realTeamMembers);
+      setCounselors([]);
     } finally {
       setLoading(false);
     }
@@ -117,6 +92,8 @@ function CounselorsAndTeamsInner() {
       name: newTeamName.trim(),
       admin: newTeamAdmin.trim() || 'Mohammed Ayaan',
       installedRatio: newTeamAppCount || '1 / 1',
+      members: ['Nasreen', 'Vasantha', 'Manas Vikas'],
+      admins: [newTeamAdmin.trim() || 'Mohammed Ayaan']
     };
     setTeamsList([newTeam, ...teamsList]);
     setToastMessage(`Successfully created team "${newTeam.name}"!`);
@@ -124,6 +101,38 @@ function CounselorsAndTeamsInner() {
     setNewTeamName('');
     setNewTeamAdmin('');
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handleRemoveMemberFromTeam = (memberName: string) => {
+    if (!selectedTeam) return;
+    const updatedMembers = selectedTeam.members.filter((m: string) => m !== memberName);
+    const updatedTeam = { ...selectedTeam, members: updatedMembers };
+    setSelectedTeam(updatedTeam);
+    setTeamsList((prev) => prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t)));
+    setToastMessage(`Removed ${memberName} from ${selectedTeam.name}`);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleRemoveAdminFromTeam = (adminName: string) => {
+    if (!selectedTeam) return;
+    const updatedAdmins = selectedTeam.admins.filter((a: string) => a !== adminName);
+    const updatedTeam = { ...selectedTeam, admins: updatedAdmins };
+    setSelectedTeam(updatedTeam);
+    setTeamsList((prev) => prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t)));
+    setToastMessage(`Removed admin ${adminName} from ${selectedTeam.name}`);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleAddUserToTeam = () => {
+    if (!selectedTeam) return;
+    const availableNames = counselors.map((m: any) => m.firstName || m.email || 'Counselor');
+    const newMember = availableNames.find((n: string) => !selectedTeam.members.includes(n)) || `User ${selectedTeam.members.length + 1}`;
+    const updatedMembers = [...selectedTeam.members, newMember];
+    const updatedTeam = { ...selectedTeam, members: updatedMembers, installedRatio: `${updatedMembers.length} / ${updatedMembers.length}` };
+    setSelectedTeam(updatedTeam);
+    setTeamsList((prev) => prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t)));
+    setToastMessage(`Added ${newMember} to ${selectedTeam.name}!`);
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
   const handleCreateCounselor = async (e: React.FormEvent) => {
@@ -354,13 +363,25 @@ function CounselorsAndTeamsInner() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {filteredTeams.map((t) => (
-                      <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-5 pl-12 font-semibold text-slate-900 text-center">{t.name}</td>
-                        <td className="p-5 text-center text-slate-800 font-medium">{t.admin}</td>
-                        <td className="p-5 text-center font-semibold text-slate-900 pr-12">{t.installedRatio}</td>
+                    {filteredTeams.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="p-12 text-center text-slate-500 font-medium">
+                          No teams created yet. Click <span className="font-bold text-slate-800">"+ Add team"</span> above to create your first team!
+                        </td>
                       </tr>
-                    ))}
+                    ) : (
+                      filteredTeams.map((t) => (
+                        <tr 
+                          key={t.id} 
+                          onClick={() => setSelectedTeam(t)}
+                          className="hover:bg-slate-50 cursor-pointer transition-colors"
+                        >
+                          <td className="p-5 pl-12 font-semibold text-slate-900 text-center">{t.name}</td>
+                          <td className="p-5 text-center text-slate-800 font-medium">{t.admin}</td>
+                          <td className="p-5 text-center font-semibold text-slate-900 pr-12">{t.installedRatio}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -413,7 +434,14 @@ function CounselorsAndTeamsInner() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {counselors.map((c) => (
+                    {counselors.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-12 text-center text-slate-500 font-medium">
+                          {loading ? 'Loading directory...' : 'No counselors registered yet. Click "+ Create New Counselor ID" above to provision a counselor!'}
+                        </td>
+                      </tr>
+                    ) : (
+                      counselors.map((c) => (
                       <tr key={c._id || c.email || c.id} className="hover:bg-slate-50 transition-colors">
                         <td className="p-4 font-bold text-slate-900">
                           {c.firstName || 'Counselor'} {c.lastName || ''}
@@ -448,9 +476,113 @@ function CounselorsAndTeamsInner() {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                    ))
+                  )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SLIDE-OVER DRAWER: Team Details (Matches User Screenshot) */}
+        {selectedTeam && (
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex justify-end">
+            <div className="bg-white w-full max-w-lg h-full p-8 shadow-2xl overflow-y-auto flex flex-col justify-between animate-in slide-in-from-right duration-300">
+              <div className="space-y-6">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                  <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">{selectedTeam.name}</h2>
+                  <button onClick={() => setSelectedTeam(null)} className="text-slate-400 hover:text-slate-900 p-1">
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex items-center justify-end space-x-6 border-b border-slate-100 pb-2 text-sm">
+                  <button
+                    onClick={() => setActiveDrawerTab('current')}
+                    className={`font-bold pb-2 border-b-2 transition-all ${
+                      activeDrawerTab === 'current'
+                        ? 'text-slate-900 border-[#ff5c75]'
+                        : 'text-slate-400 border-transparent hover:text-slate-700'
+                    }`}
+                  >
+                    Current user
+                  </button>
+                  <button
+                    onClick={() => setActiveDrawerTab('invited')}
+                    className={`font-bold pb-2 border-b-2 transition-all ${
+                      activeDrawerTab === 'invited'
+                        ? 'text-slate-900 border-[#ff5c75]'
+                        : 'text-slate-400 border-transparent hover:text-slate-700'
+                    }`}
+                  >
+                    Invited users
+                  </button>
+                </div>
+
+                {/* Team Members List Section */}
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-1.5 text-sm font-bold text-slate-900">
+                    <span>Team members</span>
+                    <Info className="w-4 h-4 text-slate-400" />
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                    {selectedTeam.members && selectedTeam.members.length > 0 ? (
+                      selectedTeam.members.map((member: string, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-3.5 text-sm text-slate-800 font-medium hover:bg-slate-50 transition-colors">
+                          <span>{member}</span>
+                          <button 
+                            onClick={() => handleRemoveMemberFromTeam(member)}
+                            className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50"
+                          >
+                            <X className="w-4 h-4 text-rose-400" />
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-4 text-xs text-slate-400 text-center">No members in this team yet.</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Team Admins Section */}
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center space-x-1.5 text-sm font-bold text-slate-900">
+                    <span>Team admins</span>
+                    <Info className="w-4 h-4 text-slate-400" />
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl p-3.5 divide-y divide-slate-100">
+                    {selectedTeam.admins && selectedTeam.admins.length > 0 ? (
+                      selectedTeam.admins.map((admin: string, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between py-1 text-sm text-slate-800 font-medium">
+                          <span>{admin}</span>
+                          <button 
+                            onClick={() => handleRemoveAdminFromTeam(admin)}
+                            className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50"
+                          >
+                            <X className="w-4 h-4 text-rose-400" />
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-slate-400">Mohammed Ayaan</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Action Button: Add users */}
+              <div className="pt-6">
+                <button
+                  onClick={handleAddUserToTeam}
+                  className="w-full bg-[#ff5c75] hover:bg-[#ef4c65] text-white font-bold text-sm py-3.5 rounded-xl shadow-md transition-all text-center"
+                >
+                  Add users
+                </button>
               </div>
             </div>
           </div>
@@ -708,8 +840,8 @@ function CounselorsAndTeamsInner() {
 
 export default function CounselorsAndTeamsPage() {
   return (
-    <React.Suspense fallback={<div className="flex min-h-screen bg-[#f8fafc] text-slate-900 font-sans"><main className="flex-1 p-8">Loading...</main></div>}>
+    <Suspense fallback={<div className="flex min-h-screen bg-[#f8fafc] text-slate-900 font-sans"><main className="flex-1 p-8">Loading teams...</main></div>}>
       <CounselorsAndTeamsInner />
-    </React.Suspense>
+    </Suspense>
   );
 }

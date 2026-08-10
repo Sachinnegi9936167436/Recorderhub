@@ -132,7 +132,7 @@ fun OnboardingScreen(onProceedToPermissions: () -> Unit) {
                     )
 
                     Text(
-                        text = "RecordHub collects work-related SIM call events and authorized audio recordings during official working hours for QA coaching and lead conversion analysis.",
+                        text = "RecordHub collects work-related SIM call events and authorized audio recordings for QA coaching and lead conversion analysis.",
                         color = Slate400,
                         fontSize = 11.sp,
                         lineHeight = 16.sp

@@ -5,12 +5,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import com.academically.recordhub.data.local.CallEventEntity
 import com.academically.recordhub.ui.theme.*
 
@@ -33,35 +33,60 @@ fun MainContainerScreen(
             ) {
                 NavigationBarItem(
                     selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
+                    onClick = { 
+                        selectedTab = 0 
+                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 0: Tracked Calls")
+                    },
                     icon = { Icon(Icons.Default.Call, contentDescription = "Calls") },
                     label = { Text("Tracked") },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
                     selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
+                    onClick = { 
+                        selectedTab = 1 
+                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 1: Private Calls")
+                    },
                     icon = { Icon(Icons.Default.Lock, contentDescription = "Private") },
                     label = { Text("Private") },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = Amber400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
                     selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
+                    onClick = { 
+                        selectedTab = 2 
+                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 2: Uploads & Recordings")
+                    },
                     icon = { Icon(Icons.Default.CloudUpload, contentDescription = "Uploads") },
                     label = { Text("Uploads") },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
                     selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    icon = { Icon(Icons.Default.Smartphone, contentDescription = "Health") },
-                    label = { Text("Health") },
+                    onClick = { 
+                        selectedTab = 3 
+                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 3: System & Sync Logs")
+                    },
+                    icon = { Icon(Icons.Default.ListAlt, contentDescription = "Logs") },
+                    label = { Text("Logs") },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = Emerald400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
                     selected = selectedTab == 4,
-                    onClick = { selectedTab = 4 },
+                    onClick = { 
+                        selectedTab = 4 
+                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 4: Device Health")
+                    },
+                    icon = { Icon(Icons.Default.Smartphone, contentDescription = "Health") },
+                    label = { Text("Health") },
+                    colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 5,
+                    onClick = { 
+                        selectedTab = 5 
+                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 5: Settings")
+                    },
                     icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
                     label = { Text("Settings") },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
@@ -80,9 +105,14 @@ fun MainContainerScreen(
                     onScanCallLogs = onScanCallLogs
                 )
                 1 -> PrivateCallsScreen(privateCalls = privateCalls)
-                2 -> RecordingUploadScreen(onSelectSafFolder = onSelectSafFolder)
-                3 -> DeviceHealthScreen()
-                4 -> SettingsScreen(onLogout = onLogout)
+                2 -> RecordingUploadScreen(
+                    recordings = trackedCalls,
+                    onSelectSafFolder = onSelectSafFolder,
+                    onSyncNow = onScanCallLogs
+                )
+                3 -> AppLogsScreen(onScanLogsTrigger = onScanCallLogs)
+                4 -> DeviceHealthScreen()
+                5 -> SettingsScreen(onLogout = onLogout)
             }
         }
     }

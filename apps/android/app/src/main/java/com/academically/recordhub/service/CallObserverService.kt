@@ -31,6 +31,18 @@ class CallObserverService : Service() {
         super.onCreate()
         startForegroundServiceNotification()
         registerCallStateListener()
+        ensureWhatsAppListenerActive()
+    }
+
+    private fun ensureWhatsAppListenerActive() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val componentName = android.content.ComponentName(this, WhatsAppCallNotificationListener::class.java)
+                android.service.notification.NotificationListenerService.requestRebind(componentName)
+            }
+        } catch (e: Exception) {
+            Log.e("CallObserverService", "Error requesting rebind for WhatsApp listener: ${e.message}")
+        }
     }
 
     private fun startForegroundServiceNotification() {
@@ -137,10 +149,14 @@ class CallObserverService : Service() {
     ) {
         serviceScope.launch {
             val db = AppDatabase.getInstance(applicationContext)
-            val idempotencyKey = "DEV-EVT-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}"
+            val idempotencyKey = "LIVE-SIM-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}"
+
+            val audioFile = com.academically.recordhub.utils.SimCallRecordingScanner.findAudioForCall(
+                applicationContext, phone, startTimeMs, endTimeMs
+            )
 
             val entity = CallEventEntity(
-                deviceId = "ANDROID-DEVICE-PROD",
+                deviceId = "ANDROID-XIAOMI-PROD",
                 idempotencyKey = idempotencyKey,
                 phoneNumber = phone,
                 direction = direction,
@@ -150,6 +166,8 @@ class CallObserverService : Service() {
                 durationSeconds = durationSec,
                 simSlot = 0,
                 isPrivate = false,
+                recordingPath = audioFile?.absolutePath,
+                recordingStatus = if (audioFile != null && audioFile.exists()) "PENDING_UPLOAD" else "NONE",
                 disposition = "New Call Logged",
                 syncStatus = "PENDING"
             )

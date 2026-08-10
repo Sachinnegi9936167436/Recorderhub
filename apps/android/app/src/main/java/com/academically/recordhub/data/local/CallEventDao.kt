@@ -27,13 +27,16 @@ interface CallEventDao {
     @Query("UPDATE call_events SET syncStatus = 'SYNCED' WHERE idempotencyKey IN (:idempotencyKeys)")
     suspend fun markEventsSynced(idempotencyKeys: List<String>)
 
+    @Query("UPDATE call_events SET syncStatus = 'PENDING'")
+    suspend fun resetAllToPendingSync()
+
     @Query("UPDATE call_events SET isPrivate = :isPrivate WHERE id = :callId")
     suspend fun setPrivateState(callId: String, isPrivate: Boolean)
 
     @Query("UPDATE call_events SET disposition = :disposition WHERE id = :callId")
     suspend fun updateDisposition(callId: String, disposition: String)
 
-    @Query("DELETE FROM call_events WHERE idempotencyKey LIKE 'DEMO-%' OR idempotencyKey LIKE 'DEV-%'")
+    @Query("DELETE FROM call_events WHERE idempotencyKey LIKE 'DEMO-%'")
     suspend fun clearDemoData()
 
     @Query("DELETE FROM call_events")
