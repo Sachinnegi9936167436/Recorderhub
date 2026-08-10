@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
-import { DeviceModel } from '@/lib/models';
+import { DeviceModel, CallModel } from '@/lib/models';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -8,9 +8,55 @@ export const revalidate = 0;
 export async function GET() {
   try {
     await connectToDatabase();
-    const devices = await (DeviceModel as any).find().exec();
+    const devices = await (DeviceModel as any).find().sort({ lastSyncTimestamp: -1, updatedAt: -1 }).exec();
     return NextResponse.json(devices);
   } catch (err: any) {
     return NextResponse.json({ message: err.message || 'Error fetching devices' }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    await connectToDatabase();
+    const body = await req.json();
+    const { deviceId, agentName, counselorEmail, deviceModel, androidVersion, appVersion } = body;
+
+    if (!deviceId) {
+      return NextResponse.json({ message: 'deviceId is required' }, { status: 400 });
+    }
+
+    const email = counselorEmail || body.email;
+    const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
+    const resolvedName = agentName || derivedName || 'Counselor Agent';
+
+    const updatedDevice = await (DeviceModel as any).findOneAndUpdate(
+      { deviceId },
+      {
+        $set: {
+          deviceId,
+          agentName: resolvedName,
+          counselorEmail: email,
+          deviceModel: deviceModel || 'Android Phone',
+          androidVersion: androidVersion || 'Android 14',
+          appVersion: appVersion || 'v1.0.4',
+          lastSyncTimestamp: new Date(),
+          status: 'HEALTHY',
+        },
+      },
+      { upsert: true, new: true }
+    );
+
+    // Bulk update all call logs belonging to this device to use the counselor name
+    if (resolvedName && resolvedName !== 'Counselor Agent') {
+      await (CallModel as any).updateMany(
+        { deviceId },
+        { $set: { agentName: resolvedName, counselorEmail: email } }
+      ).catch(() => {});
+    }
+
+    return NextResponse.json({ success: true, data: updatedDevice });
+  } catch (err: any) {
+    console.error('Error saving device registration:', err);
+    return NextResponse.json({ message: err.message || 'Error saving device' }, { status: 500 });
   }
 }

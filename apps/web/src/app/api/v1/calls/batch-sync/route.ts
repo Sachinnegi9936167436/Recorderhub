@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
-import { CallModel } from '@/lib/models';
+import { CallModel, DeviceModel } from '@/lib/models';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -53,9 +53,18 @@ export async function POST(req: Request) {
 
         const channelType = isWhatsApp ? 'WHATSAPP' : (evt.channel || 'CELLULAR');
 
+        const cleanKey = evt.idempotencyKey || `SYNC_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+        const email = evt.counselorEmail || evt.email;
+        const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
+        const resolvedAgentName = evt.agentName || derivedName || 'Counselor Agent';
+
         // Check 1: Exact idempotencyKey match
         const exactExisting = await (CallModel as any).findOne({ idempotencyKey: evt.idempotencyKey });
         if (exactExisting) {
+          if (resolvedAgentName && resolvedAgentName !== 'Counselor Agent' && exactExisting.agentName !== resolvedAgentName) {
+            await (CallModel as any).updateOne({ _id: exactExisting._id }, { $set: { agentName: resolvedAgentName, counselorEmail: email } }).catch(() => {});
+          }
           duplicates.push(evt.idempotencyKey);
           continue;
         }
@@ -82,6 +91,8 @@ export async function POST(req: Request) {
                 phoneNumber: formattedPhone,
                 phoneNumberMasked: formattedPhone,
                 leadName: evt.leadName || matchByTimeWindow.leadName || formattedPhone,
+                agentName: resolvedAgentName,
+                counselorEmail: email,
               }
             }
           );
@@ -89,17 +100,9 @@ export async function POST(req: Request) {
           continue;
         }
 
-        const cleanKey = evt.idempotencyKey || `SYNC_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-
-        const email = evt.counselorEmail || evt.email;
-        const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
-        const resolvedAgentName = (evt.agentName && evt.agentName !== 'Sachin Negi' && evt.agentName !== 'Counselor') 
-          ? evt.agentName 
-          : (derivedName || evt.agentName || 'Counselor Agent');
-
         await (CallModel as any).create({
           organizationId: evt.organizationId || '65c1f0000000000000000001',
-          deviceId: evt.deviceId || 'ANDROID-REDMI14C-PROD',
+          deviceId: evt.deviceId || 'ANDROID-DEVICE-PROD',
           idempotencyKey: cleanKey,
           phoneNumber: formattedPhone,
           phoneNumberMasked: formattedPhone,
@@ -116,6 +119,21 @@ export async function POST(req: Request) {
           counselorEmail: email,
           leadName: evt.leadName || formattedPhone || 'Contact',
         });
+
+        // Bulk update ALL past calls sharing this deviceId to reflect the current logged-in user name
+        if (evt.deviceId && resolvedAgentName && resolvedAgentName !== 'Counselor Agent') {
+          await (CallModel as any).updateMany(
+            { deviceId: evt.deviceId },
+            { $set: { agentName: resolvedAgentName, counselorEmail: email } }
+          ).catch(() => {});
+
+          await (DeviceModel as any).updateOne(
+            { deviceId: evt.deviceId },
+            { $set: { agentName: resolvedAgentName, counselorEmail: email, lastSyncTimestamp: new Date() } },
+            { upsert: true }
+          ).catch(() => {});
+        }
+
         syncedIds.push(cleanKey);
       } catch (evtErr: any) {
         console.error(`Error saving individual call event ${evt.idempotencyKey}:`, evtErr);
