@@ -41,7 +41,9 @@ data class DeviceRegisterRequest(
     val androidVersion: String,
     val appVersion: String,
     val batteryOptimizationDisabled: Boolean,
-    val safDirectoryAuthorized: Boolean
+    val safDirectoryAuthorized: Boolean,
+    val agentName: String? = null,
+    val counselorEmail: String? = null
 )
 
 data class UploadInitiateRequest(

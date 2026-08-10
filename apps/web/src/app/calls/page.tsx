@@ -48,6 +48,9 @@ function SalestrailCallsInner() {
   const [teamSelection, setTeamSelection] = useState('All Teams');
   const [searchQuery, setSearchQuery] = useState('');
 
+  const [counselorsList, setCounselorsList] = useState<any[]>([]);
+  const [assigningDeviceId, setAssigningDeviceId] = useState<string | null>(null);
+
   const fetchCalls = async () => {
     try {
       if (callsList.length === 0) setLoading(true);
@@ -69,11 +72,47 @@ function SalestrailCallsInner() {
     }
   };
 
+  const fetchProvisionedCounselors = async () => {
+    try {
+      const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setCounselorsList(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error fetching counselors list:', err);
+    }
+  };
+
   useEffect(() => {
     fetchCalls();
+    fetchProvisionedCounselors();
     const interval = setInterval(fetchCalls, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleAssignCounselor = async (deviceId: string, newCounselorName: string) => {
+    if (!deviceId || !newCounselorName) return;
+    try {
+      setAssigningDeviceId(deviceId);
+      const res = await fetch('/api/v1/calls/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId, agentName: newCounselorName }),
+      });
+      if (res.ok) {
+        // Optimistically update local call list state for matching deviceId
+        setCallsList((prevCalls) =>
+          prevCalls.map((c) => (c.deviceId === deviceId ? { ...c, agentName: newCounselorName } : c))
+        );
+        fetchCalls();
+      }
+    } catch (err) {
+      console.error('Error assigning counselor:', err);
+    } finally {
+      setAssigningDeviceId(null);
+    }
+  };
 
   const resolveCounselorName = (call: any) => {
     const rawName = call.agentName || call.counselorName || call.userName || call.user || '';
@@ -95,7 +134,12 @@ function SalestrailCallsInner() {
 
   // Get unique list of counselor names for dropdown
   const uniqueCounselors = Array.from(
-    new Set(callsList.map((c) => resolveCounselorName(c)).filter(Boolean))
+    new Set(
+      callsList
+        .map((c) => resolveCounselorName(c))
+        .concat(counselorsList.map((c) => (c.firstName ? `${c.firstName} ${c.lastName || ''}`.trim() : c.email?.split('@')[0])))
+        .filter(Boolean)
+    )
   );
 
   // Filter calls by search and filters
@@ -340,7 +384,31 @@ function SalestrailCallsInner() {
                       <tr key={call.id || call._id || idx} className="hover:bg-slate-50 transition-colors">
                         {/* User */}
                         <td className="p-4 pl-6 font-semibold text-slate-900 text-center">
-                          {resolveCounselorName(call)}
+                          <div className="flex items-center justify-center space-x-1.5">
+                            <span>{resolveCounselorName(call)}</span>
+                            {call.deviceId && (
+                              <select
+                                className="text-[10px] bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded px-1 py-0.5 font-normal text-slate-700 focus:outline-none cursor-pointer"
+                                value=""
+                                disabled={assigningDeviceId === call.deviceId}
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    handleAssignCounselor(call.deviceId, e.target.value);
+                                  }
+                                }}
+                              >
+                                <option value="" disabled>Assign...</option>
+                                <option value="Sachin Negi">Sachin Negi</option>
+                                <option value="Shristi">Shristi</option>
+                                <option value="Himanshu">Himanshu</option>
+                                {counselorsList.map((c) => {
+                                  const cName = c.firstName ? `${c.firstName} ${c.lastName || ''}`.trim() : c.email?.split('@')[0];
+                                  if (!cName || cName === 'Sachin Negi' || cName === 'Shristi' || cName === 'Himanshu') return null;
+                                  return <option key={c._id || c.email} value={cName}>{cName}</option>;
+                                })}
+                              </select>
+                            )}
+                          </div>
                         </td>
                         {/* Phone Number */}
                         <td className="p-4 text-center font-mono font-medium text-slate-900">
