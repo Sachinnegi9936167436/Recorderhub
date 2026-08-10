@@ -384,31 +384,7 @@ function SalestrailCallsInner() {
                       <tr key={call.id || call._id || idx} className="hover:bg-slate-50 transition-colors">
                         {/* User */}
                         <td className="p-4 pl-6 font-semibold text-slate-900 text-center">
-                          <div className="flex items-center justify-center space-x-1.5">
-                            <span>{resolveCounselorName(call)}</span>
-                            {call.deviceId && (
-                              <select
-                                className="text-[10px] bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded px-1 py-0.5 font-normal text-slate-700 focus:outline-none cursor-pointer"
-                                value=""
-                                disabled={assigningDeviceId === call.deviceId}
-                                onChange={(e) => {
-                                  if (e.target.value) {
-                                    handleAssignCounselor(call.deviceId, e.target.value);
-                                  }
-                                }}
-                              >
-                                <option value="" disabled>Assign...</option>
-                                <option value="Sachin Negi">Sachin Negi</option>
-                                <option value="Shristi">Shristi</option>
-                                <option value="Himanshu">Himanshu</option>
-                                {counselorsList.map((c) => {
-                                  const cName = c.firstName ? `${c.firstName} ${c.lastName || ''}`.trim() : c.email?.split('@')[0];
-                                  if (!cName || cName === 'Sachin Negi' || cName === 'Shristi' || cName === 'Himanshu') return null;
-                                  return <option key={c._id || c.email} value={cName}>{cName}</option>;
-                                })}
-                              </select>
-                            )}
-                          </div>
+                          {resolveCounselorName(call)}
                         </td>
                         {/* Phone Number */}
                         <td className="p-4 text-center font-mono font-medium text-slate-900">
