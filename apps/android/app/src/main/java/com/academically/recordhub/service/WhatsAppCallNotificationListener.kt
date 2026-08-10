@@ -95,6 +95,16 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
 
         val combinedStr = "$title $text $subText $category $tag".lowercase()
 
+        // Explicitly ignore text/chat message notifications
+        val isTextMessage = combinedStr.contains("messages") || 
+                combinedStr.contains("message") || 
+                combinedStr.contains("unread") || 
+                combinedStr.contains("reply") || 
+                combinedStr.contains("chat") ||
+                title.lowercase().contains("messages)")
+
+        if (isTextMessage) return
+
         val actions = notification.actions
         val hasCallActions = actions != null && actions.any { action ->
             val actionTitle = action.title?.toString()?.lowercase() ?: ""
@@ -103,18 +113,21 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
             actionTitle.contains("end") || actionTitle.contains("reject")
         }
 
+        val hasExplicitCallPhrase = combinedStr.contains("whatsapp call") ||
+                combinedStr.contains("voice call") ||
+                combinedStr.contains("video call") ||
+                combinedStr.contains("ongoing voice call") ||
+                combinedStr.contains("ongoing video call") ||
+                combinedStr.contains("incoming voice call") ||
+                combinedStr.contains("incoming video call") ||
+                combinedStr.contains("calling...") ||
+                combinedStr.contains("ringing...") ||
+                combinedStr.contains("आवाज कॉल") ||
+                combinedStr.contains("वीडियो कॉल")
+
         val isCallNotification = category == Notification.CATEGORY_CALL ||
-                hasCallActions ||
-                tag.contains("call", ignoreCase = true) ||
-                combinedStr.contains("call") ||
-                combinedStr.contains("ongoing") ||
-                combinedStr.contains("incoming") ||
-                combinedStr.contains("voice") ||
-                combinedStr.contains("video") ||
-                combinedStr.contains("calling") ||
-                combinedStr.contains("in call") ||
-                combinedStr.contains("आवाज") ||
-                combinedStr.contains("वीडियो")
+                (hasCallActions && (hasExplicitCallPhrase || tag.contains("call", ignoreCase = true))) ||
+                hasExplicitCallPhrase
 
         if (isCallNotification) {
             activeCallNotificationKey = sbn.key
@@ -160,7 +173,7 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                     other.packageName.startsWith("com.whatsapp") &&
                     other.key != sbn.key &&
                     (other.notification.category == Notification.CATEGORY_CALL ||
-                     (other.notification.tag ?: "").contains("call", ignoreCase = true))
+                     (other.tag ?: "").contains("call", ignoreCase = true))
                 } == true
             } catch (e: Exception) {
                 false

@@ -4,6 +4,9 @@ import { CallModel } from '@/lib/models';
 import { promises as fs } from 'fs';
 import path from 'path';
 
+import { getS3Client } from '@/lib/aws';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -23,25 +26,75 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const arrayBuffer = await req.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // 1. Upload directly to AWS S3 Bucket
+    const s3Info = getS3Client();
+    const s3Key = `recordings/${recordingId}.m4a`;
+    let uploadedToS3 = false;
+
+    if (s3Info) {
+      try {
+        const command = new PutObjectCommand({
+          Bucket: s3Info.bucket,
+          Key: s3Key,
+          Body: buffer,
+          ContentType: 'audio/m4a',
+        });
+        await s3Info.client.send(command);
+        uploadedToS3 = true;
+        console.log(`Uploaded audio recording ${recordingId} directly to AWS S3 bucket: ${s3Info.bucket}`);
+      } catch (s3Err) {
+        console.error(`AWS S3 PutObject error for ${recordingId}:`, s3Err);
+      }
+    }
+
+    // 2. Also save to Local Disk Storage fallback
     const uploadsDir = getUploadsDir();
     await fs.mkdir(uploadsDir, { recursive: true });
-
     const filePath = path.join(uploadsDir, `${recordingId}.m4a`);
     await fs.writeFile(filePath, buffer);
 
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
 
-    // Attach recording to the latest call record
-    await (CallModel as any).findOneAndUpdate(
-      { $or: [{ recordingStatus: 'PENDING' }, { audioUrl: { $exists: false } }] },
+    // Attach recording to the specific target call record
+    let updatedCall = await (CallModel as any).findOneAndUpdate(
+      {
+        $or: [
+          { idempotencyKey: recordingId },
+          { audioUrl: { $regex: recordingId } },
+          { s3Key: { $regex: recordingId } },
+          { _id: recordingId.length === 24 ? recordingId : null }
+        ]
+      },
       {
         $set: {
           recordingStatus: 'COMPLETED',
           audioUrl: audioUrl,
+          s3Key: `recordings/${recordingId}.m4a`,
         },
       },
-      { sort: { createdAt: -1 } },
+      { new: true }
     );
+
+    if (!updatedCall) {
+      // Fallback: attach to most recent call with status PENDING_UPLOAD or missing audioUrl
+      updatedCall = await (CallModel as any).findOneAndUpdate(
+        {
+          $or: [
+            { recordingStatus: 'PENDING_UPLOAD' },
+            { recordingStatus: 'PENDING' },
+            { audioUrl: { $exists: false } }
+          ]
+        },
+        {
+          $set: {
+            recordingStatus: 'COMPLETED',
+            audioUrl: audioUrl,
+            s3Key: `recordings/${recordingId}.m4a`,
+          },
+        },
+        { sort: { startTime: -1, createdAt: -1 }, new: true }
+      );
+    }
 
     console.log(`Successfully saved uploaded audio file: ${filePath} (${buffer.length} bytes)`);
 

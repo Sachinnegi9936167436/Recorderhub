@@ -80,22 +80,29 @@ function SalestrailCallsInner() {
     if (rawName && rawName !== 'Counselor Agent' && rawName !== 'Counselor' && !rawName.startsWith('ANDROID-')) {
       return rawName;
     }
-    if (call.email) {
-      const prefix = call.email.split('@')[0];
-      return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+    const email = call.counselorEmail || call.email;
+    if (email) {
+      const prefix = email.split('@')[0];
+      return prefix.replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
     }
-    if (call.phoneNumber === '+919936167436' || call.phoneNumber === '9936167436' || call.phoneNumber === '+919467766666') {
-      return 'Sachin Negi';
+    if (call.deviceId) {
+      return `Counselor (${call.deviceId.replace('ANDROID-', '')})`;
     }
-    return 'Sachin Negi';
+    return 'Counselor Agent';
   };
 
   // Get unique list of counselor names for dropdown
   const uniqueCounselors = Array.from(
-    new Set(callsList.map((c) => resolveCounselorName(c)).concat(['Sachin Negi', 'Priya Nair', 'Ananya Sharma']))
+    new Set(callsList.map((c) => resolveCounselorName(c)).filter(Boolean))
   );
 
+  // Filter calls by search and filters
   const filteredCalls = callsList.filter((call) => {
+    // 0. Exclude non-call text/chat message entries
+    const combined = `${call.phoneNumber || ''} ${call.leadName || ''} ${call.disposition || ''}`.toLowerCase();
+    if (combined.includes('message') || combined.includes('messages') || combined.includes('unread')) {
+      return false;
+    }
     // 1. Search Query Filter
     const phone = call.phoneNumber || call.phoneNumberMasked || call.phone || '';
     const name = call.leadName || call.name || '';

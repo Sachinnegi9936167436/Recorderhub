@@ -93,7 +93,10 @@ export default function RecorderHubDashboard() {
 
   validCalls.forEach((c) => {
     if (!c) return;
-    const name = c.agentName || c.counselorName || c.deviceId || 'Counselor';
+    const email = c.counselorEmail || c.email;
+    const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
+    const rawAgentName = (c.agentName && c.agentName !== 'Sachin Negi' && c.agentName !== 'Counselor') ? c.agentName : null;
+    const name = rawAgentName || c.counselorName || derivedName || (c.deviceId ? `Counselor (${c.deviceId.replace('ANDROID-', '')})` : 'Counselor Agent');
     if (!userActivityMap[name]) {
       userActivityMap[name] = {
         name,
@@ -145,7 +148,7 @@ export default function RecorderHubDashboard() {
     }
     const headers = ['Counselor', 'PhoneNumber', 'Direction', 'Status', 'DurationSec', 'Date'];
     const rows = calls.map((c) => [
-      c.agentName || c.deviceId || 'Counselor Agent',
+      c.agentName || c.counselorName || (c.counselorEmail ? c.counselorEmail.split('@')[0] : null) || c.deviceId || 'Counselor Agent',
       c.phoneNumber || c.phoneNumberMasked || '',
       c.direction || 'INCOMING',
       c.status || 'ANSWERED',

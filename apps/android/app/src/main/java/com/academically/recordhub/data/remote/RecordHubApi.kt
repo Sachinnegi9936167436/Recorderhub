@@ -23,7 +23,9 @@ data class CallEventDto(
     val simSlot: Int,
     val isPrivate: Boolean,
     val disposition: String,
-    val channel: String = "CELLULAR"
+    val channel: String = "CELLULAR",
+    val agentName: String? = null,
+    val counselorEmail: String? = null
 )
 
 data class BatchSyncResponse(

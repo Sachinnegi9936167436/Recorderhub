@@ -9,11 +9,17 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CallEventDao {
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCallEvent(event: CallEventEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBatch(events: List<CallEventEntity>)
+
+    @Update
+    suspend fun updateCallEvent(event: CallEventEntity)
+
+    @Query("SELECT * FROM call_events ORDER BY startTime DESC")
+    suspend fun getAllEvents(): List<CallEventEntity>
 
     @Query("SELECT * FROM call_events WHERE isPrivate = 0 ORDER BY startTime DESC")
     fun getTrackedCallsFlow(): Flow<List<CallEventEntity>>

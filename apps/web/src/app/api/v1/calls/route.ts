@@ -36,11 +36,26 @@ export async function GET() {
         isPrivate: false,
         disposition: 'WhatsApp Call',
         channel: 'WHATSAPP',
-        agentName: 'Sachin Negi',
-        leadName: 'Sachin Negi',
+        agentName: 'Counselor Agent',
+        leadName: 'Contact',
       });
       calls = [initialWhatsAppCall];
     }
+
+    // Purge any text/chat message records mistakenly saved previously
+    await (CallModel as any).deleteMany({
+      $or: [
+        { phoneNumber: { $regex: 'message', $options: 'i' } },
+        { leadName: { $regex: 'message', $options: 'i' } },
+        { disposition: { $regex: 'message', $options: 'i' } }
+      ]
+    }).catch(() => {});
+
+    // Filter out any text message entries from memory
+    calls = calls.filter((c) => {
+      const fullStr = `${c.phoneNumber || ''} ${c.leadName || ''} ${c.disposition || ''}`.toLowerCase();
+      return !fullStr.includes('message') && !fullStr.includes('messages') && !fullStr.includes('unread');
+    });
 
     // Update any existing MongoDB Atlas records starting with WA_ or containing WhatsApp disposition
     await (CallModel as any).updateMany(
@@ -114,6 +129,39 @@ export async function GET() {
     if (idsToDelete.length > 0) {
       console.log(`Deduplicating GET /api/v1/calls: Deleting ${idsToDelete.length} duplicate call records from MongoDB.`);
       await (CallModel as any).deleteMany({ _id: { $in: idsToDelete } }).catch(() => {});
+    }
+
+    // 3. Auto-link existing local disk recording files to calls missing audioUrls
+    try {
+      const fsModule = await import('fs');
+      const pathModule = await import('path');
+      const rootDir = process.cwd();
+      const uploadsDir = rootDir.endsWith('apps/web') || rootDir.endsWith('apps\\web')
+        ? pathModule.join(rootDir, 'uploads', 'recordings')
+        : pathModule.join(rootDir, 'apps', 'web', 'uploads', 'recordings');
+
+      if (fsModule.existsSync(uploadsDir)) {
+        const diskFiles = fsModule.readdirSync(uploadsDir);
+        for (const file of diskFiles) {
+          if (file.endsWith('.m4a')) {
+            const recId = file.replace('.m4a', '');
+            const matchingCall = deduplicatedCalls.find(
+              (c) => c.idempotencyKey === recId || (c.audioUrl && c.audioUrl.includes(recId))
+            );
+
+            if (matchingCall) {
+              matchingCall.recordingStatus = 'COMPLETED';
+              matchingCall.audioUrl = `/api/v1/recordings/${recId}/audio`;
+              await (CallModel as any).updateOne(
+                { _id: matchingCall._id },
+                { $set: { recordingStatus: 'COMPLETED', audioUrl: `/api/v1/recordings/${recId}/audio` } }
+              ).catch(() => {});
+            }
+          }
+        }
+      }
+    } catch (diskErr) {
+      console.warn('Error auto-linking disk recording files:', diskErr);
     }
 
     const res = NextResponse.json(deduplicatedCalls || []);

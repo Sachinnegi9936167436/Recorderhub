@@ -90,28 +90,43 @@ class CallSyncWorker(
 
                 val api = retrofit.create(RecordHubApi::class.java)
 
-                val dtoList = pendingEvents.map { evt ->
-                    val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
-                        timeZone = TimeZone.getTimeZone("UTC")
-                    }
-                    CallEventDto(
-                        deviceId = evt.deviceId,
-                        idempotencyKey = evt.idempotencyKey,
-                        phoneNumber = evt.phoneNumber,
-                        direction = evt.direction,
-                        status = evt.status,
-                        startTime = isoFormat.format(Date(evt.startTime)),
-                        endTime = isoFormat.format(Date(evt.endTime)),
-                        durationSeconds = evt.durationSeconds,
-                        simSlot = evt.simSlot,
-                        isPrivate = evt.isPrivate,
-                        disposition = evt.disposition,
-                        channel = if (evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")) "WHATSAPP" else "CELLULAR"
-                    )
-                }
+        val counselorEmail = prefs.getString("counselor_email", null)
+        var counselorName = prefs.getString("counselor_name", null)
 
-                val request = BatchSyncRequest(callEvents = dtoList)
-                val response = api.batchSyncCalls("Bearer mock_jwt_token", request)
+        if (counselorName.isNullOrBlank() && !counselorEmail.isNullOrBlank()) {
+            counselorName = counselorEmail.substringBefore("@")
+                .replace(".", " ")
+                .replace("_", " ")
+                .split(" ")
+                .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() } }
+        }
+
+        val dtoList = pendingEvents.map { evt ->
+            val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+            CallEventDto(
+                deviceId = evt.deviceId,
+                idempotencyKey = evt.idempotencyKey,
+                phoneNumber = evt.phoneNumber,
+                direction = evt.direction,
+                status = evt.status,
+                startTime = isoFormat.format(Date(evt.startTime)),
+                endTime = isoFormat.format(Date(evt.endTime)),
+                durationSeconds = evt.durationSeconds,
+                simSlot = evt.simSlot,
+                isPrivate = evt.isPrivate,
+                disposition = evt.disposition,
+                channel = if (evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")) "WHATSAPP" else "CELLULAR",
+                agentName = counselorName,
+                counselorEmail = counselorEmail
+            )
+        }
+
+        val request = BatchSyncRequest(callEvents = dtoList)
+        val token = prefs.getString("access_token", null)
+        val authHeader = if (!token.isNullOrBlank()) "Bearer $token" else "Bearer mock_jwt_token"
+        val response = api.batchSyncCalls(authHeader, request)
 
                 if (response.isSuccessful && response.body() != null) {
                     val body = response.body()!!

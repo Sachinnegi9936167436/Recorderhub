@@ -28,6 +28,14 @@ export async function POST(req: Request) {
     for (const evt of callEvents) {
       if (!evt || !evt.idempotencyKey) continue;
 
+      // Reject text/chat message notifications (only record actual voice/video calls)
+      const fullTextStr = `${evt.phoneNumber || ''} ${evt.leadName || ''} ${evt.disposition || ''}`.toLowerCase();
+      if (fullTextStr.includes('message') || fullTextStr.includes('messages') || fullTextStr.includes('chat') || fullTextStr.includes('unread')) {
+        console.log(`Skipping text message notification in batch sync: ${evt.phoneNumber}`);
+        syncedIds.push(evt.idempotencyKey);
+        continue;
+      }
+
       try {
         const rawPhone = evt.phoneNumber || '';
         const digitsOnly = rawPhone.replace(/\D/g, '');
@@ -83,6 +91,12 @@ export async function POST(req: Request) {
 
         const cleanKey = evt.idempotencyKey || `SYNC_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+        const email = evt.counselorEmail || evt.email;
+        const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
+        const resolvedAgentName = (evt.agentName && evt.agentName !== 'Sachin Negi' && evt.agentName !== 'Counselor') 
+          ? evt.agentName 
+          : (derivedName || evt.agentName || 'Counselor Agent');
+
         await (CallModel as any).create({
           organizationId: evt.organizationId || '65c1f0000000000000000001',
           deviceId: evt.deviceId || 'ANDROID-REDMI14C-PROD',
@@ -98,7 +112,8 @@ export async function POST(req: Request) {
           isPrivate: evt.isPrivate || false,
           disposition: evt.disposition || (isWhatsApp ? 'WhatsApp Call' : 'Imported Phone Call'),
           channel: channelType,
-          agentName: evt.agentName || 'Sachin Negi',
+          agentName: resolvedAgentName,
+          counselorEmail: email,
           leadName: evt.leadName || formattedPhone || 'Contact',
         });
         syncedIds.push(cleanKey);

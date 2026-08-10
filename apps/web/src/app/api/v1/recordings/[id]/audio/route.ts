@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { S3Client, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { getS3Client } from '@/lib/aws';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 
@@ -19,10 +20,6 @@ function getUploadsDir() {
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
     let recordingId = params.id;
-    const region = process.env.AWS_REGION || 'ap-south-1';
-    const bucket = process.env.S3_BUCKET_NAME || 'academically-recorderhub';
-    const accessKeyId = process.env.AWS_ACCESS_KEY_ID || '';
-    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY || '';
 
     // 1. Resolve actual recordingId or s3Key from MongoDB Atlas if params.id is an idempotencyKey or _id
     let s3KeyTarget = `recordings/${recordingId}.m4a`;
@@ -52,13 +49,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     }
 
     // 2. Try fetching from AWS S3 Bucket
-    if (accessKeyId && secretAccessKey && bucket) {
+    const s3Info = getS3Client();
+    if (s3Info) {
       try {
-        const s3Client = new S3Client({
-          region,
-          credentials: { accessKeyId, secretAccessKey },
-        });
-
         // Key candidate list
         const possibleKeys = [
           s3KeyTarget,
@@ -70,8 +63,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
         for (const targetKey of possibleKeys) {
           try {
-            const command = new GetObjectCommand({ Bucket: bucket, Key: targetKey });
-            const s3Response = await s3Client.send(command);
+            const command = new GetObjectCommand({ Bucket: s3Info.bucket, Key: targetKey });
+            const s3Response = await s3Info.client.send(command);
 
             if (s3Response.Body) {
               const byteArray = await s3Response.Body.transformToByteArray();

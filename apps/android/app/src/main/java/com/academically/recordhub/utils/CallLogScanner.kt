@@ -106,32 +106,39 @@ object CallLogScanner {
                 }
             }
 
-            // Attach WhatsApp recording files to existing events instead of creating duplicate call entries
+            // Attach audio recordings to all existing calls in Room DB that are missing recording paths
+            val allDbEvents = db.callEventDao().getAllEvents()
             val waDir = File(context.filesDir, "whatsapp_recordings")
-            if (waDir.exists() && waDir.isDirectory) {
-                val files = waDir.listFiles() ?: emptyArray()
-                val pendingEvents = db.callEventDao().getPendingSyncEvents()
-                for (file in files) {
-                    if (file.name.endsWith(".m4a") && file.length() > 0) {
-                        val matchingEvent = pendingEvents.firstOrNull { evt ->
-                            (evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")) &&
-                            evt.recordingPath.isNullOrEmpty() &&
+
+            for (evt in allDbEvents) {
+                if (evt.recordingPath.isNullOrEmpty() || evt.recordingStatus == "NONE") {
+                    // Try SIM audio recording scanner
+                    var matchedFile = SimCallRecordingScanner.findAudioForCall(context, evt.phoneNumber, evt.startTime, evt.endTime)
+
+                    // Try WhatsApp audio recording folder if SIM scanner didn't match
+                    if (matchedFile == null && waDir.exists() && waDir.isDirectory) {
+                        val waFiles = waDir.listFiles() ?: emptyArray()
+                        matchedFile = waFiles.firstOrNull { file ->
+                            file.name.endsWith(".m4a") && file.length() > 0 &&
                             Math.abs(evt.startTime - (file.lastModified() - 30000L)) < 180000
                         }
-                        if (matchingEvent != null) {
-                            db.callEventDao().insertCallEvent(
-                                matchingEvent.copy(
-                                    recordingPath = file.absolutePath,
-                                    recordingStatus = "PENDING_UPLOAD"
-                                )
+                    }
+
+                    if (matchedFile != null && matchedFile.exists()) {
+                        Log.i(TAG, "Linking audio recording ${matchedFile.name} to existing call ${evt.idempotencyKey}")
+                        db.callEventDao().insertCallEvent(
+                            evt.copy(
+                                recordingPath = matchedFile.absolutePath,
+                                recordingStatus = "PENDING_UPLOAD",
+                                syncStatus = "PENDING"
                             )
-                            Log.i(TAG, "Attached whatsapp recording file ${file.name} to existing call ${matchingEvent.idempotencyKey}")
-                        }
+                        )
+                        importedCount++
                     }
                 }
             }
 
-            Log.i(TAG, "Imported $importedCount new call events from phone CallLog & WhatsApp recordings")
+            Log.i(TAG, "Imported/linked $importedCount call events with audio recordings")
         } catch (e: Exception) {
             Log.e(TAG, "Error scanning system call logs: ${e.message}", e)
         }
