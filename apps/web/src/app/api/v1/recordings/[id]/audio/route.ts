@@ -90,35 +90,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
             // try next key
           }
         }
-
-        // Search S3 Bucket objects under recordings/ if exact key failed
-        try {
-          const listCmd = new ListObjectsV2Command({ Bucket: bucket, Prefix: 'recordings/' });
-          const listRes = await s3Client.send(listCmd);
-          if (listRes.Contents && listRes.Contents.length > 0) {
-            // Pick most recent S3 recording object
-            const latestObj = listRes.Contents.sort((a, b) => (b.LastModified?.getTime() || 0) - (a.LastModified?.getTime() || 0))[0];
-            if (latestObj && latestObj.Key) {
-              const getLatestCmd = new GetObjectCommand({ Bucket: bucket, Key: latestObj.Key });
-              const latestRes = await s3Client.send(getLatestCmd);
-              if (latestRes.Body) {
-                const byteArray = await latestRes.Body.transformToByteArray();
-                const buffer = Buffer.from(byteArray);
-                return new Response(buffer as any, {
-                  status: 200,
-                  headers: {
-                    'Content-Type': latestRes.ContentType || 'audio/mp4',
-                    'Content-Length': buffer.length.toString(),
-                    'Accept-Ranges': 'bytes',
-                  },
-                });
-              }
-            }
-          }
-        } catch (listErr) {
-          console.warn('S3 list fallback error:', listErr);
-        }
-
       } catch (s3Err) {
         console.warn(`S3 Object error for ${recordingId}:`, s3Err);
       }

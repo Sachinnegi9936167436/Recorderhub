@@ -15,6 +15,29 @@ import {
   MessageSquare
 } from 'lucide-react';
 
+function AudioCell({ call, idx }: { call: any; idx: number }) {
+  const [hasError, setHasError] = useState(false);
+
+  const isAnswered = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+  const hasRecording = call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD';
+
+  if (hasError || !isAnswered || call.recordingStatus === 'NONE' || (!hasRecording && !call.audioUrl)) {
+    return <span className="text-slate-400 font-medium text-[11px]">No Recording</span>;
+  }
+
+  const audioSrc = call.audioUrl || `/api/v1/recordings/${call.idempotencyKey || call._id || call.id || idx}/audio`;
+
+  return (
+    <audio 
+      controls 
+      preload="none"
+      src={audioSrc} 
+      onError={() => setHasError(true)}
+      className="h-8 max-w-[180px] inline-block" 
+    />
+  );
+}
+
 function SalestrailCallsInner() {
   const [callsList, setCallsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -344,12 +367,7 @@ function SalestrailCallsInner() {
                         </td>
                         {/* Audio Recording */}
                         <td className="p-4 pr-6 text-center">
-                          <audio 
-                            controls 
-                            preload="none"
-                            src={call.audioUrl || `/api/v1/recordings/${call.idempotencyKey || call._id || call.id || idx}/audio`} 
-                            className="h-8 max-w-[180px] inline-block" 
-                          />
+                          <AudioCell call={call} idx={idx} />
                         </td>
                       </tr>
                     );
