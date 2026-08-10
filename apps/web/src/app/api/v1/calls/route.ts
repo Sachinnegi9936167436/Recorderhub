@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
-import { CallModel } from '@/lib/models';
+import { CallModel, DeviceModel } from '@/lib/models';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -20,6 +20,32 @@ export async function GET() {
   try {
     await connectToDatabase();
     let calls = await (CallModel as any).find().sort({ startTime: -1, createdAt: -1 }).limit(200).exec();
+
+    // Enrich calls missing agentName from registered devices in MongoDB
+    try {
+      const registeredDevices = await (DeviceModel as any).find().lean().exec();
+      if (registeredDevices && registeredDevices.length > 0) {
+        const deviceAgentMap = new Map<string, string>();
+        for (const dev of registeredDevices) {
+          if (dev.deviceId && (dev.agentName || dev.counselorEmail)) {
+            const name = (dev.agentName && dev.agentName !== 'Counselor Agent' && dev.agentName !== 'Counselor')
+              ? dev.agentName
+              : (dev.counselorEmail ? dev.counselorEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null);
+            if (name) {
+              deviceAgentMap.set(dev.deviceId, name);
+            }
+          }
+        }
+
+        for (const call of calls) {
+          if ((!call.agentName || call.agentName === 'Counselor Agent' || call.agentName === 'Counselor') && call.deviceId && deviceAgentMap.has(call.deviceId)) {
+            call.agentName = deviceAgentMap.get(call.deviceId);
+          }
+        }
+      }
+    } catch (deviceErr) {
+      console.warn('Error enriching call records from registered devices:', deviceErr);
+    }
 
     if (!calls || calls.length === 0) {
       const initialWhatsAppCall = await (CallModel as any).create({

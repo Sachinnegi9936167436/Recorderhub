@@ -86,7 +86,9 @@ function SalestrailCallsInner() {
       return prefix.replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
     }
     if (call.deviceId) {
-      return `Counselor (${call.deviceId.replace('ANDROID-', '')})`;
+      const cleanDev = call.deviceId.replace(/^ANDROID-/, '');
+      const modelTag = cleanDev.split('-')[0] || cleanDev.slice(0, 10);
+      return `Counselor (${modelTag})`;
     }
     return 'Counselor Agent';
   };

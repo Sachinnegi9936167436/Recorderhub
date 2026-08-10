@@ -95,8 +95,9 @@ export default function RecorderHubDashboard() {
     if (!c) return;
     const email = c.counselorEmail || c.email;
     const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
-    const rawAgentName = (c.agentName && c.agentName !== 'Sachin Negi' && c.agentName !== 'Counselor') ? c.agentName : null;
-    const name = rawAgentName || c.counselorName || derivedName || (c.deviceId ? `Counselor (${c.deviceId.replace('ANDROID-', '')})` : 'Counselor Agent');
+    const rawAgentName = (c.agentName && c.agentName !== 'Sachin Negi' && c.agentName !== 'Counselor' && c.agentName !== 'Counselor Agent') ? c.agentName : null;
+    const cleanDev = c.deviceId ? c.deviceId.replace(/^ANDROID-/, '').split('-')[0] : '';
+    const name = rawAgentName || c.counselorName || derivedName || (cleanDev ? `Counselor (${cleanDev})` : 'Counselor Agent');
     if (!userActivityMap[name]) {
       userActivityMap[name] = {
         name,
