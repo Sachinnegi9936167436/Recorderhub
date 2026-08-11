@@ -34,12 +34,47 @@ function CounselorsAndTeamsInner() {
   const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Teams State (Starts empty - teams added dynamically by user)
+  // Initial Teams default preset
+  const defaultInitialTeams = [
+    {
+      id: 't-1',
+      name: 'Global Sales',
+      admin: 'Mohammed Ayaan',
+      installedRatio: '3 / 3',
+      members: ['Nasreen', 'Vasantha', 'Manas Vikas'],
+      admins: ['Mohammed Ayaan']
+    },
+    {
+      id: 't-2',
+      name: 'NCLEX Counselors',
+      admin: 'Rajdeep',
+      installedRatio: '2 / 2',
+      members: ['Ananya Sharma', 'Rahul Kumar'],
+      admins: ['Rajdeep']
+    },
+    {
+      id: 't-3',
+      name: 'DHA Counselors',
+      admin: 'Dev',
+      installedRatio: '2 / 2',
+      members: ['Vasantha', 'Nasreen'],
+      admins: ['Dev']
+    }
+  ];
+
+  // Teams State (Persisted in localStorage)
   const [teamsList, setTeamsList] = useState<any[]>([]);
 
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamAdmin, setNewTeamAdmin] = useState('');
   const [newTeamAppCount, setNewTeamAppCount] = useState('5 / 5');
+  const [newTeamSelectedMembers, setNewTeamSelectedMembers] = useState<string[]>(['Nasreen', 'Vasantha']);
+  const [counselorSearchInModal, setCounselorSearchInModal] = useState('');
+
+  // Counselor Selection for Active Team Modal
+  const [isAddCounselorModalOpen, setIsAddCounselorModalOpen] = useState(false);
+  const [selectedCounselorsToAdd, setSelectedCounselorsToAdd] = useState<string[]>([]);
+  const [addCounselorSearchQuery, setAddCounselorSearchQuery] = useState('');
 
   // Filters for Teams
   const [teamRoleFilter, setTeamRoleFilter] = useState('Your team role');
@@ -73,7 +108,50 @@ function CounselorsAndTeamsInner() {
 
   useEffect(() => {
     fetchCounselors();
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('recorderhub_teams');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setTeamsList(parsed);
+            return;
+          }
+        } catch (e) {
+          console.error('Failed to parse saved teams:', e);
+        }
+      }
+    }
+    setTeamsList(defaultInitialTeams);
   }, []);
+
+  const defaultCounselorsList = [
+    { name: 'Nasreen', email: 'nasreen@academically.com', role: 'Counselor (NCLEX)' },
+    { name: 'Vasantha', email: 'vasantha@academically.com', role: 'Counselor (DHA)' },
+    { name: 'Manas Vikas', email: 'manas@academically.com', role: 'Counselor (NCLEX)' },
+    { name: 'Mohammed Ayaan', email: 'ayaan@academically.com', role: 'Team Lead' },
+    { name: 'Rajdeep', email: 'rajdeep@academically.com', role: 'Team Admin' },
+    { name: 'Ananya Sharma', email: 'ananya@academically.com', role: 'Counselor' },
+    { name: 'Rahul Kumar', email: 'rahul@academically.com', role: 'Counselor' },
+  ];
+
+  const getAvailableCounselorObjects = () => {
+    const map = new Map<string, { name: string; email: string; role: string }>();
+    defaultCounselorsList.forEach((item) => {
+      map.set(item.name.toLowerCase(), item);
+    });
+    counselors.forEach((c) => {
+      const fullName = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.email || 'Counselor';
+      if (fullName) {
+        map.set(fullName.toLowerCase(), {
+          name: fullName,
+          email: c.email || `${fullName.toLowerCase().replace(/\s+/g, '.')}@academically.com`,
+          role: c.role || 'COUNSELOR'
+        });
+      }
+    });
+    return Array.from(map.values());
+  };
 
   const getCounselorId = (counselor: any) => {
     if (!counselor) return '';
@@ -84,31 +162,68 @@ function CounselorsAndTeamsInner() {
     return counselor.id || '';
   };
 
+  const handleDeleteTeam = (teamId: string, teamName: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm(`Are you sure you want to delete team "${teamName}"?`)) return;
+
+    setTeamsList((prev) => {
+      const updated = prev.filter((t) => t.id !== teamId);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
+      }
+      return updated;
+    });
+
+    if (selectedTeam && selectedTeam.id === teamId) {
+      setSelectedTeam(null);
+    }
+
+    setToastMessage(`Deleted team "${teamName}"`);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
   const handleCreateTeam = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTeamName.trim()) return;
+    const members = newTeamSelectedMembers.length > 0 ? newTeamSelectedMembers : ['Nasreen', 'Vasantha'];
     const newTeam = {
       id: `t-${Date.now()}`,
       name: newTeamName.trim(),
       admin: newTeamAdmin.trim() || 'Mohammed Ayaan',
-      installedRatio: newTeamAppCount || '1 / 1',
-      members: ['Nasreen', 'Vasantha', 'Manas Vikas'],
+      installedRatio: `${members.length} / ${members.length}`,
+      members: members,
       admins: [newTeamAdmin.trim() || 'Mohammed Ayaan']
     };
-    setTeamsList([newTeam, ...teamsList]);
+    const updated = [newTeam, ...teamsList];
+    setTeamsList(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
+    }
     setToastMessage(`Successfully created team "${newTeam.name}"!`);
     setIsAddTeamModalOpen(false);
     setNewTeamName('');
     setNewTeamAdmin('');
+    setNewTeamSelectedMembers(['Nasreen', 'Vasantha']);
+    setCounselorSearchInModal('');
     setTimeout(() => setToastMessage(null), 4000);
   };
 
   const handleRemoveMemberFromTeam = (memberName: string) => {
     if (!selectedTeam) return;
     const updatedMembers = selectedTeam.members.filter((m: string) => m !== memberName);
-    const updatedTeam = { ...selectedTeam, members: updatedMembers };
+    const updatedTeam = { 
+      ...selectedTeam, 
+      members: updatedMembers, 
+      installedRatio: `${updatedMembers.length} / ${updatedMembers.length}` 
+    };
     setSelectedTeam(updatedTeam);
-    setTeamsList((prev) => prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t)));
+    setTeamsList((prev) => {
+      const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
+      }
+      return updated;
+    });
     setToastMessage(`Removed ${memberName} from ${selectedTeam.name}`);
     setTimeout(() => setToastMessage(null), 3000);
   };
@@ -118,20 +233,43 @@ function CounselorsAndTeamsInner() {
     const updatedAdmins = selectedTeam.admins.filter((a: string) => a !== adminName);
     const updatedTeam = { ...selectedTeam, admins: updatedAdmins };
     setSelectedTeam(updatedTeam);
-    setTeamsList((prev) => prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t)));
+    setTeamsList((prev) => {
+      const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
+      }
+      return updated;
+    });
     setToastMessage(`Removed admin ${adminName} from ${selectedTeam.name}`);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const handleAddUserToTeam = () => {
+  const handleOpenAddCounselorsModal = () => {
     if (!selectedTeam) return;
-    const availableNames = counselors.map((m: any) => m.firstName || m.email || 'Counselor');
-    const newMember = availableNames.find((n: string) => !selectedTeam.members.includes(n)) || `User ${selectedTeam.members.length + 1}`;
-    const updatedMembers = [...selectedTeam.members, newMember];
-    const updatedTeam = { ...selectedTeam, members: updatedMembers, installedRatio: `${updatedMembers.length} / ${updatedMembers.length}` };
+    setSelectedCounselorsToAdd([]);
+    setAddCounselorSearchQuery('');
+    setIsAddCounselorModalOpen(true);
+  };
+
+  const handleConfirmAddCounselorsToTeam = () => {
+    if (!selectedTeam || selectedCounselorsToAdd.length === 0) return;
+    const updatedMembers = Array.from(new Set([...selectedTeam.members, ...selectedCounselorsToAdd]));
+    const updatedTeam = {
+      ...selectedTeam,
+      members: updatedMembers,
+      installedRatio: `${updatedMembers.length} / ${updatedMembers.length}`
+    };
     setSelectedTeam(updatedTeam);
-    setTeamsList((prev) => prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t)));
-    setToastMessage(`Added ${newMember} to ${selectedTeam.name}!`);
+    setTeamsList((prev) => {
+      const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
+      }
+      return updated;
+    });
+    setToastMessage(`Added ${selectedCounselorsToAdd.length} counselor(s) to ${selectedTeam.name}!`);
+    setIsAddCounselorModalOpen(false);
+    setSelectedCounselorsToAdd([]);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
@@ -342,30 +480,33 @@ function CounselorsAndTeamsInner() {
                 <table className="w-full text-left text-sm text-slate-800">
                   <thead className="bg-white text-slate-900 font-extrabold border-b border-slate-200">
                     <tr>
-                      <th className="p-4 pl-12 font-bold w-1/3">
+                      <th className="p-4 pl-12 font-bold w-1/4">
                         <div className="flex items-center justify-center space-x-1">
                           <span>Team</span>
                           <ArrowDown className="w-3.5 h-3.5 text-slate-900" />
                         </div>
                       </th>
-                      <th className="p-4 font-bold text-center w-1/3">
+                      <th className="p-4 font-bold text-center w-1/4">
                         <div className="flex items-center justify-center space-x-1">
                           <span>Team admins</span>
                           <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                         </div>
                       </th>
-                      <th className="p-4 pr-12 font-bold text-center w-1/3">
+                      <th className="p-4 font-bold text-center w-1/4">
                         <div className="flex items-center justify-center space-x-1">
                           <span>App installed</span>
                           <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                         </div>
+                      </th>
+                      <th className="p-4 pr-12 font-bold text-center w-1/4">
+                        <span>Actions</span>
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {filteredTeams.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="p-12 text-center text-slate-500 font-medium">
+                        <td colSpan={4} className="p-12 text-center text-slate-500 font-medium">
                           No teams created yet. Click <span className="font-bold text-slate-800">"+ Add team"</span> above to create your first team!
                         </td>
                       </tr>
@@ -378,7 +519,17 @@ function CounselorsAndTeamsInner() {
                         >
                           <td className="p-5 pl-12 font-semibold text-slate-900 text-center">{t.name}</td>
                           <td className="p-5 text-center text-slate-800 font-medium">{t.admin}</td>
-                          <td className="p-5 text-center font-semibold text-slate-900 pr-12">{t.installedRatio}</td>
+                          <td className="p-5 text-center font-semibold text-slate-900">{t.installedRatio}</td>
+                          <td className="p-5 pr-12 text-center">
+                            <button
+                              onClick={(e) => handleDeleteTeam(t.id, t.name, e)}
+                              className="inline-flex items-center space-x-1 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm"
+                              title="Delete Team"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
+                            </button>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -492,10 +643,23 @@ function CounselorsAndTeamsInner() {
               <div className="space-y-6">
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                  <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">{selectedTeam.name}</h2>
-                  <button onClick={() => setSelectedTeam(null)} className="text-slate-400 hover:text-slate-900 p-1">
-                    <X className="w-6 h-6" />
-                  </button>
+                  <div>
+                    <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">{selectedTeam.name}</h2>
+                    <p className="text-xs text-slate-400">Admin: {selectedTeam.admin}</p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleDeleteTeam(selectedTeam.id, selectedTeam.name)}
+                      className="flex items-center space-x-1 text-rose-600 hover:bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                      title="Delete Team"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Team</span>
+                    </button>
+                    <button onClick={() => setSelectedTeam(null)} className="text-slate-400 hover:text-slate-900 p-1">
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Tabs */}
@@ -533,10 +697,16 @@ function CounselorsAndTeamsInner() {
                     {selectedTeam.members && selectedTeam.members.length > 0 ? (
                       selectedTeam.members.map((member: string, idx: number) => (
                         <div key={idx} className="flex items-center justify-between p-3.5 text-sm text-slate-800 font-medium hover:bg-slate-50 transition-colors">
-                          <span>{member}</span>
+                          <div className="flex items-center space-x-2">
+                            <div className="w-6 h-6 rounded-full bg-rose-100 text-rose-600 font-bold text-xs flex items-center justify-center">
+                              {member.charAt(0)}
+                            </div>
+                            <span>{member}</span>
+                          </div>
                           <button 
                             onClick={() => handleRemoveMemberFromTeam(member)}
                             className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50"
+                            title="Remove member"
                           >
                             <X className="w-4 h-4 text-rose-400" />
                           </button>
@@ -578,7 +748,7 @@ function CounselorsAndTeamsInner() {
               {/* Bottom Action Button: Add users */}
               <div className="pt-6">
                 <button
-                  onClick={handleAddUserToTeam}
+                  onClick={handleOpenAddCounselorsModal}
                   className="w-full bg-[#ff5c75] hover:bg-[#ef4c65] text-white font-bold text-sm py-3.5 rounded-xl shadow-md transition-all text-center"
                 >
                   Add users
@@ -626,14 +796,52 @@ function CounselorsAndTeamsInner() {
                   />
                 </div>
 
+                {/* Counselor Multi-Select Checklist */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">App Installation Ratio</label>
-                  <input
-                    type="text"
-                    value={newTeamAppCount}
-                    onChange={(e) => setNewTeamAppCount(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
-                  />
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Select Counselors / Members</label>
+                  <div className="relative mb-2">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Search counselors..."
+                      value={counselorSearchInModal}
+                      onChange={(e) => setCounselorSearchInModal(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500/20"
+                    />
+                  </div>
+                  <div className="border border-slate-200 rounded-lg p-2 max-h-36 overflow-y-auto space-y-1 bg-slate-50/50">
+                    {getAvailableCounselorObjects()
+                      .filter((c) => c.name.toLowerCase().includes(counselorSearchInModal.toLowerCase()) || c.email.toLowerCase().includes(counselorSearchInModal.toLowerCase()))
+                      .map((c) => {
+                        const isSelected = newTeamSelectedMembers.includes(c.name);
+                        return (
+                          <label
+                            key={c.name}
+                            className={`flex items-center justify-between p-2 rounded-md cursor-pointer text-xs transition-colors ${
+                              isSelected ? 'bg-rose-50 text-rose-700 font-semibold border border-rose-200/60' : 'hover:bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  if (isSelected) {
+                                    setNewTeamSelectedMembers(newTeamSelectedMembers.filter((m) => m !== c.name));
+                                  } else {
+                                    setNewTeamSelectedMembers([...newTeamSelectedMembers, c.name]);
+                                  }
+                                }}
+                                className="rounded text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 accent-rose-500"
+                              />
+                              <span>{c.name}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">{c.email}</span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 font-medium">{newTeamSelectedMembers.length} counselor(s) selected</p>
                 </div>
 
                 <div className="pt-2 flex items-center justify-end space-x-3">
@@ -652,6 +860,122 @@ function CounselorsAndTeamsInner() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal 1.5: Add Counselors to Team Modal (From Drawer) */}
+        {isAddCounselorModalOpen && selectedTeam && (
+          <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Add Counselors to {selectedTeam.name}</h3>
+                  <p className="text-xs text-slate-500">Select counselors to assign to this team</p>
+                </div>
+                <button onClick={() => setIsAddCounselorModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Search counselors by name or email..."
+                  value={addCounselorSearchQuery}
+                  onChange={(e) => setAddCounselorSearchQuery(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                />
+              </div>
+
+              {(() => {
+                const availableToAdd = getAvailableCounselorObjects().filter(
+                  (c) => !selectedTeam.members.includes(c.name)
+                );
+                const filteredAvailable = availableToAdd.filter(
+                  (c) => c.name.toLowerCase().includes(addCounselorSearchQuery.toLowerCase()) || c.email.toLowerCase().includes(addCounselorSearchQuery.toLowerCase())
+                );
+                return (
+                  <>
+                    <div className="flex items-center justify-between text-xs text-slate-600 px-1">
+                      <span>Available Counselors ({availableToAdd.length})</span>
+                      <div className="space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCounselorsToAdd(availableToAdd.map((c) => c.name))}
+                          className="text-rose-600 hover:underline font-semibold"
+                        >
+                          Select All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCounselorsToAdd([])}
+                          className="text-slate-400 hover:underline"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-200 rounded-xl p-2 max-h-56 overflow-y-auto space-y-1.5 bg-slate-50/30">
+                      {availableToAdd.length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-6">All available counselors are already added to this team!</p>
+                      ) : (
+                        filteredAvailable.map((c) => {
+                          const isChecked = selectedCounselorsToAdd.includes(c.name);
+                          return (
+                            <label
+                              key={c.name}
+                              className={`flex items-center justify-between p-2.5 rounded-lg cursor-pointer text-xs transition-all ${
+                                isChecked ? 'bg-rose-50 text-rose-700 font-semibold border border-rose-200' : 'hover:bg-slate-100 text-slate-700 border border-transparent'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    if (isChecked) {
+                                      setSelectedCounselorsToAdd(selectedCounselorsToAdd.filter((n) => n !== c.name));
+                                    } else {
+                                      setSelectedCounselorsToAdd([...selectedCounselorsToAdd, c.name]);
+                                    }
+                                  }}
+                                  className="rounded text-rose-600 focus:ring-rose-500 w-4 h-4 accent-rose-500"
+                                />
+                                <div>
+                                  <p className="font-bold">{c.name}</p>
+                                  <p className="text-[10px] text-slate-400">{c.email}</p>
+                                </div>
+                              </div>
+                              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">{c.role}</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-end space-x-3 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddCounselorModalOpen(false)}
+                        className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedCounselorsToAdd.length === 0}
+                        onClick={handleConfirmAddCounselorsToTeam}
+                        className="bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md shadow-rose-500/20"
+                      >
+                        Add {selectedCounselorsToAdd.length} Counselor(s)
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
