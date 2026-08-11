@@ -83,7 +83,7 @@ export default function RecorderHubDashboard() {
 
   const handleCategoryChange = (val: string) => {
     setSalesRepFilter(val);
-    if (val === 'Counselors') {
+    if (val === 'Individual' || val === 'Counselors') {
       setTeamFilter('All Counselors');
     } else {
       setTeamFilter('All Teams');
@@ -113,7 +113,7 @@ export default function RecorderHubDashboard() {
     }
 
     // Sales Rep / Team Filter
-    if (salesRepFilter === 'Counselors') {
+    if (salesRepFilter === 'Individual' || salesRepFilter === 'Counselors') {
       if (teamFilter && teamFilter !== 'All Counselors') {
         const email = c.counselorEmail || c.email;
         const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
@@ -274,7 +274,7 @@ export default function RecorderHubDashboard() {
                     className="appearance-none bg-white border border-slate-200 text-slate-800 text-sm font-medium rounded-lg px-4 py-2 pr-8 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
                   >
                     <option value="Teams">Teams</option>
-                    <option value="Counselors">Counselors</option>
+                    <option value="Individual">Individual</option>
                   </select>
                   <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-3 pointer-events-none" />
                 </div>
@@ -285,7 +285,7 @@ export default function RecorderHubDashboard() {
                     onChange={(e) => setTeamFilter(e.target.value)}
                     className="appearance-none bg-white border border-slate-200 text-slate-800 text-sm font-medium rounded-lg px-4 py-2 pr-8 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
                   >
-                    {salesRepFilter === 'Counselors' ? (
+                    {salesRepFilter === 'Individual' || salesRepFilter === 'Counselors' ? (
                       <>
                         <option value="All Counselors">All Counselors</option>
                         {uniqueCounselors.map((counselor) => (

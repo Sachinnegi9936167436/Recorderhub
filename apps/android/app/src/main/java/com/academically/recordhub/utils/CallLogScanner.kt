@@ -76,7 +76,7 @@ object CallLogScanner {
                             cachedName.lowercase().contains("whatsapp")
 
                     val direction = when (type) {
-                        CallLog.Cax`lls.INCOMING_TYPE -> "INCOMING"
+                        CallLog.Calls.INCOMING_TYPE -> "INCOMING"
                         CallLog.Calls.OUTGOING_TYPE -> "OUTGOING"
                         CallLog.Calls.MISSED_TYPE -> "MISSED"
                         else -> "INCOMING"
