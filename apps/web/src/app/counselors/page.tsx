@@ -68,7 +68,7 @@ function CounselorsAndTeamsInner() {
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamAdmin, setNewTeamAdmin] = useState('');
   const [newTeamAppCount, setNewTeamAppCount] = useState('5 / 5');
-  const [newTeamSelectedMembers, setNewTeamSelectedMembers] = useState<string[]>(['Nasreen', 'Vasantha']);
+  const [newTeamSelectedMembers, setNewTeamSelectedMembers] = useState<string[]>([]);
   const [counselorSearchInModal, setCounselorSearchInModal] = useState('');
 
   // Counselor Selection for Active Team Modal
@@ -94,13 +94,19 @@ function CounselorsAndTeamsInner() {
       const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        setCounselors(Array.isArray(data) ? data : []);
-      } else {
-        setCounselors([]);
+        setCounselors((prev) => {
+          const fetched = Array.isArray(data) ? data : [];
+          // Merge with any local counselors created in User Management
+          const map = new Map();
+          fetched.forEach((item) => map.set(item.email, item));
+          prev.forEach((item) => {
+            if (!map.has(item.email)) map.set(item.email, item);
+          });
+          return Array.from(map.values());
+        });
       }
     } catch (err) {
       console.error('Error fetching counselors:', err);
-      setCounselors([]);
     } finally {
       setLoading(false);
     }
@@ -109,6 +115,26 @@ function CounselorsAndTeamsInner() {
   useEffect(() => {
     fetchCounselors();
     if (typeof window !== 'undefined') {
+      const savedCounselors = localStorage.getItem('recorderhub_counselors');
+      if (savedCounselors) {
+        try {
+          const parsedC = JSON.parse(savedCounselors);
+          if (Array.isArray(parsedC) && parsedC.length > 0) {
+            setCounselors((prev) => {
+              const combined = [...prev];
+              parsedC.forEach((pc) => {
+                if (!combined.some((c) => c.email === pc.email)) {
+                  combined.push(pc);
+                }
+              });
+              return combined;
+            });
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
       const saved = localStorage.getItem('recorderhub_teams');
       if (saved) {
         try {
@@ -125,27 +151,14 @@ function CounselorsAndTeamsInner() {
     setTeamsList(defaultInitialTeams);
   }, []);
 
-  const defaultCounselorsList = [
-    { name: 'Nasreen', email: 'nasreen@academically.com', role: 'Counselor (NCLEX)' },
-    { name: 'Vasantha', email: 'vasantha@academically.com', role: 'Counselor (DHA)' },
-    { name: 'Manas Vikas', email: 'manas@academically.com', role: 'Counselor (NCLEX)' },
-    { name: 'Mohammed Ayaan', email: 'ayaan@academically.com', role: 'Team Lead' },
-    { name: 'Rajdeep', email: 'rajdeep@academically.com', role: 'Team Admin' },
-    { name: 'Ananya Sharma', email: 'ananya@academically.com', role: 'Counselor' },
-    { name: 'Rahul Kumar', email: 'rahul@academically.com', role: 'Counselor' },
-  ];
-
   const getAvailableCounselorObjects = () => {
     const map = new Map<string, { name: string; email: string; role: string }>();
-    defaultCounselorsList.forEach((item) => {
-      map.set(item.name.toLowerCase(), item);
-    });
     counselors.forEach((c) => {
       const fullName = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.email || 'Counselor';
       if (fullName) {
         map.set(fullName.toLowerCase(), {
           name: fullName,
-          email: c.email || `${fullName.toLowerCase().replace(/\s+/g, '.')}@academically.com`,
+          email: c.email || '',
           role: c.role || 'COUNSELOR'
         });
       }
@@ -185,14 +198,14 @@ function CounselorsAndTeamsInner() {
   const handleCreateTeam = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTeamName.trim()) return;
-    const members = newTeamSelectedMembers.length > 0 ? newTeamSelectedMembers : ['Nasreen', 'Vasantha'];
+    const members = newTeamSelectedMembers;
     const newTeam = {
       id: `t-${Date.now()}`,
       name: newTeamName.trim(),
-      admin: newTeamAdmin.trim() || 'Mohammed Ayaan',
+      admin: newTeamAdmin.trim() || 'Admin',
       installedRatio: `${members.length} / ${members.length}`,
       members: members,
-      admins: [newTeamAdmin.trim() || 'Mohammed Ayaan']
+      admins: [newTeamAdmin.trim() || 'Admin']
     };
     const updated = [newTeam, ...teamsList];
     setTeamsList(updated);
@@ -203,7 +216,7 @@ function CounselorsAndTeamsInner() {
     setIsAddTeamModalOpen(false);
     setNewTeamName('');
     setNewTeamAdmin('');
-    setNewTeamSelectedMembers(['Nasreen', 'Vasantha']);
+    setNewTeamSelectedMembers([]);
     setCounselorSearchInModal('');
     setTimeout(() => setToastMessage(null), 4000);
   };
@@ -810,36 +823,43 @@ function CounselorsAndTeamsInner() {
                     />
                   </div>
                   <div className="border border-slate-200 rounded-lg p-2 max-h-36 overflow-y-auto space-y-1 bg-slate-50/50">
-                    {getAvailableCounselorObjects()
-                      .filter((c) => c.name.toLowerCase().includes(counselorSearchInModal.toLowerCase()) || c.email.toLowerCase().includes(counselorSearchInModal.toLowerCase()))
-                      .map((c) => {
-                        const isSelected = newTeamSelectedMembers.includes(c.name);
-                        return (
-                          <label
-                            key={c.name}
-                            className={`flex items-center justify-between p-2 rounded-md cursor-pointer text-xs transition-colors ${
-                              isSelected ? 'bg-rose-50 text-rose-700 font-semibold border border-rose-200/60' : 'hover:bg-slate-100 text-slate-700'
-                            }`}
-                          >
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => {
-                                  if (isSelected) {
-                                    setNewTeamSelectedMembers(newTeamSelectedMembers.filter((m) => m !== c.name));
-                                  } else {
-                                    setNewTeamSelectedMembers([...newTeamSelectedMembers, c.name]);
-                                  }
-                                }}
-                                className="rounded text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 accent-rose-500"
-                              />
-                              <span>{c.name}</span>
-                            </div>
-                            <span className="text-[10px] text-slate-400 font-mono">{c.email}</span>
-                          </label>
-                        );
-                      })}
+                    {getAvailableCounselorObjects().length === 0 ? (
+                      <div className="p-3 text-center space-y-1">
+                        <p className="text-xs text-slate-500 font-medium">No registered counselors found.</p>
+                        <p className="text-[11px] text-slate-400">Go to User Management tab to provision Counselor IDs first.</p>
+                      </div>
+                    ) : (
+                      getAvailableCounselorObjects()
+                        .filter((c) => c.name.toLowerCase().includes(counselorSearchInModal.toLowerCase()) || c.email.toLowerCase().includes(counselorSearchInModal.toLowerCase()))
+                        .map((c) => {
+                          const isSelected = newTeamSelectedMembers.includes(c.name);
+                          return (
+                            <label
+                              key={c.name}
+                              className={`flex items-center justify-between p-2 rounded-md cursor-pointer text-xs transition-colors ${
+                                isSelected ? 'bg-rose-50 text-rose-700 font-semibold border border-rose-200/60' : 'hover:bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    if (isSelected) {
+                                      setNewTeamSelectedMembers(newTeamSelectedMembers.filter((m) => m !== c.name));
+                                    } else {
+                                      setNewTeamSelectedMembers([...newTeamSelectedMembers, c.name]);
+                                    }
+                                  }}
+                                  className="rounded text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 accent-rose-500"
+                                />
+                                <span>{c.name}</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono">{c.email}</span>
+                            </label>
+                          );
+                        })
+                    )}
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1 font-medium">{newTeamSelectedMembers.length} counselor(s) selected</p>
                 </div>
