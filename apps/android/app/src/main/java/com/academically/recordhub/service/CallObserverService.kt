@@ -4,20 +4,25 @@ import android.app.Notification
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.database.ContentObserver
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.provider.CallLog
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.academically.recordhub.R
+import androidx.core.content.ContextCompat
 import com.academically.recordhub.RecordHubApp
-import com.academically.recordhub.data.local.AppDatabase
-import com.academically.recordhub.data.local.CallEventEntity
+import com.academically.recordhub.utils.AppLogManager
+import com.academically.recordhub.utils.CallLogScanner
+import com.academically.recordhub.worker.CallSyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 class CallObserverService : Service() {
 
@@ -25,13 +30,80 @@ class CallObserverService : Service() {
     private var telephonyManager: TelephonyManager? = null
     private var lastState = TelephonyManager.CALL_STATE_IDLE
     private var callStartTimeMs: Long = 0
-    private var incomingNumber: String = "+91 98123 45678" // Default fallback for system listener
+    private var incomingNumber: String = ""
+    private var callLogContentObserver: ContentObserver? = null
 
     override fun onCreate() {
         super.onCreate()
         startForegroundServiceNotification()
         registerCallStateListener()
+        registerCallLogContentObserver()
         ensureWhatsAppListenerActive()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        registerCallStateListener()
+        registerCallLogContentObserver()
+        return START_STICKY
+    }
+
+    private fun registerCallLogContentObserver() {
+        if (callLogContentObserver != null) return
+        try {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.READ_CALL_LOG
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                val handler = Handler(Looper.getMainLooper())
+                callLogContentObserver = object : ContentObserver(handler) {
+                    override fun onChange(selfChange: Boolean) {
+                        super.onChange(selfChange)
+                        Log.i(TAG, "SIM Call Log change detected via ContentObserver. Triggering auto-scan & server sync...")
+                        triggerAutoScanAndSync()
+                    }
+                }
+                contentResolver.registerContentObserver(
+                    CallLog.Calls.CONTENT_URI,
+                    true,
+                    callLogContentObserver!!
+                )
+                AppLogManager.log("INFO", TAG, "Registered CallLog ContentObserver for automatic SIM call log sync.")
+            } else {
+                Log.w(TAG, "READ_CALL_LOG permission not granted yet for ContentObserver.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error registering CallLog ContentObserver: ${e.message}")
+        }
+    }
+
+    private fun triggerAutoScanAndSync() {
+        serviceScope.launch {
+            try {
+                // Short delay to allow Android System to finish writing call log & saving recording file to disk
+                delay(1500)
+                val count = CallLogScanner.scanRecentCallLogs(applicationContext)
+                AppLogManager.log(
+                    "SYNC",
+                    TAG,
+                    "Auto-scanned $count SIM call log(s) after call completed."
+                )
+
+                val syncRequest = androidx.work.OneTimeWorkRequestBuilder<CallSyncWorker>().build()
+                androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                    "CallSyncWorkerOneTime",
+                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    syncRequest
+                )
+                AppLogManager.log(
+                    "SYNC",
+                    TAG,
+                    "Enqueued immediate CallSyncWorker for automatic server upload."
+                )
+            } catch (e: Exception) {
+                AppLogManager.log("ERROR", TAG, "Error auto-syncing SIM calls: ${e.message}")
+            }
+        }
     }
 
     private fun ensureWhatsAppListenerActive() {
@@ -41,7 +113,7 @@ class CallObserverService : Service() {
                 android.service.notification.NotificationListenerService.requestRebind(componentName)
             }
         } catch (e: Exception) {
-            Log.e("CallObserverService", "Error requesting rebind for WhatsApp listener: ${e.message}")
+            Log.e(TAG, "Error requesting rebind for WhatsApp listener: ${e.message}")
         }
     }
 
@@ -75,7 +147,7 @@ class CallObserverService : Service() {
 
     private fun registerCallStateListener() {
         try {
-            if (androidx.core.content.ContextCompat.checkSelfPermission(
+            if (ContextCompat.checkSelfPermission(
                     this,
                     android.Manifest.permission.READ_PHONE_STATE
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -128,62 +200,10 @@ class CallObserverService : Service() {
             }
             TelephonyManager.CALL_STATE_IDLE -> {
                 if (lastState == TelephonyManager.CALL_STATE_OFFHOOK || lastState == TelephonyManager.CALL_STATE_RINGING) {
-                    val endTimeMs = System.currentTimeMillis()
-                    val durationSec = Math.max(1, ((endTimeMs - callStartTimeMs) / 1000).toInt())
-                    val direction = if (lastState == TelephonyManager.CALL_STATE_RINGING) "INCOMING" else "OUTGOING"
-
-                    saveCallEventToRoom(phone, direction, "ANSWERED", callStartTimeMs, endTimeMs, durationSec)
+                    Log.i(TAG, "SIM Call Ended (IDLE). Triggering automatic call log scan and server sync...")
+                    triggerAutoScanAndSync()
                 }
                 lastState = state
-            }
-        }
-    }
-
-    private fun saveCallEventToRoom(
-        phone: String,
-        direction: String,
-        status: String,
-        startTimeMs: Long,
-        endTimeMs: Long,
-        durationSec: Int
-    ) {
-        serviceScope.launch {
-            val db = AppDatabase.getInstance(applicationContext)
-            val idempotencyKey = "LIVE-SIM-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}"
-
-            val audioFile = com.academically.recordhub.utils.SimCallRecordingScanner.findAudioForCall(
-                applicationContext, phone, startTimeMs, endTimeMs
-            )
-
-            val entity = CallEventEntity(
-                deviceId = "ANDROID-XIAOMI-PROD",
-                idempotencyKey = idempotencyKey,
-                phoneNumber = phone,
-                direction = direction,
-                status = status,
-                startTime = startTimeMs,
-                endTime = endTimeMs,
-                durationSeconds = durationSec,
-                simSlot = 0,
-                isPrivate = false,
-                recordingPath = audioFile?.absolutePath,
-                recordingStatus = if (audioFile != null && audioFile.exists()) "PENDING_UPLOAD" else "NONE",
-                disposition = "New Call Logged",
-                syncStatus = "PENDING"
-            )
-
-            db.callEventDao().insertCallEvent(entity)
-            Log.i(TAG, "Saved Call Event to Room DB: $idempotencyKey")
-
-            try {
-                val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.academically.recordhub.worker.CallSyncWorker>().build()
-                androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                    "CallSyncWorkerOneTime",
-                    androidx.work.ExistingWorkPolicy.REPLACE,
-                    syncRequest
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Error enqueueing CallSyncWorker: ${e.message}")
             }
         }
     }
@@ -191,6 +211,13 @@ class CallObserverService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         telephonyManager?.listen(callStateListener, PhoneStateListener.LISTEN_NONE)
+        callLogContentObserver?.let {
+            try {
+                contentResolver.unregisterContentObserver(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error unregistering CallLog ContentObserver: ${e.message}")
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
