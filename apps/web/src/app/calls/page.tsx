@@ -44,9 +44,20 @@ function SalestrailCallsInner() {
 
   // Filters from Salestrail UI screenshot
   const [dateRange, setDateRange] = useState('All time');
-  const [selectedRep, setSelectedRep] = useState('All Counselors');
-  const [teamSelection, setTeamSelection] = useState('All Teams');
+  const [repCategory, setRepCategory] = useState('Teams');
+  const [subFilter, setSubFilter] = useState('All Teams');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const defaultTeams = ['Global Sales', 'NCLEX Counselors', 'DHA Counselors', 'Sales Team'];
+
+  const handleRepCategoryChange = (cat: string) => {
+    setRepCategory(cat);
+    if (cat === 'Individual') {
+      setSubFilter('All Counselors');
+    } else {
+      setSubFilter('All Teams');
+    }
+  };
 
   const [counselorsList, setCounselorsList] = useState<any[]>([]);
   const [assigningDeviceId, setAssigningDeviceId] = useState<string | null>(null);
@@ -184,10 +195,19 @@ function SalestrailCallsInner() {
       }
     }
 
-    // 3. Select Sales Rep / Counselor Filter
-    if (selectedRep !== 'All Counselors' && selectedRep !== 'Counselors') {
-      if (user.toLowerCase() !== selectedRep.toLowerCase()) {
-        return false;
+    // 3. Select Sales Rep / Team Filter
+    if (repCategory === 'Individual') {
+      if (subFilter !== 'All Counselors') {
+        if (user.toLowerCase() !== subFilter.toLowerCase()) {
+          return false;
+        }
+      }
+    } else if (repCategory === 'Teams') {
+      if (subFilter !== 'All Teams') {
+        const teamName = call.team || call.teamName || call.department || '';
+        if (teamName && teamName.toLowerCase() !== subFilter.toLowerCase()) {
+          return false;
+        }
       }
     }
 
@@ -266,28 +286,41 @@ function SalestrailCallsInner() {
             <div className="flex items-center space-x-2">
               <div className="relative">
                 <select
-                  value={selectedRep}
-                  onChange={(e) => setSelectedRep(e.target.value)}
-                  className="appearance-none bg-white border border-slate-200 text-slate-800 font-medium rounded-xl px-4 py-2.5 pr-8 shadow-sm focus:outline-none min-w-[160px] cursor-pointer hover:border-slate-300 transition-colors"
+                  value={repCategory}
+                  onChange={(e) => handleRepCategoryChange(e.target.value)}
+                  className="appearance-none bg-white border border-slate-200 text-slate-800 font-medium rounded-xl px-4 py-2.5 pr-8 shadow-sm focus:outline-none min-w-[140px] cursor-pointer hover:border-slate-300 transition-colors"
                 >
-                  <option value="All Counselors">All Counselors</option>
-                  {uniqueCounselors.map((counselor) => (
-                    <option key={counselor} value={counselor}>
-                      {counselor}
-                    </option>
-                  ))}
+                  <option value="Teams">Teams</option>
+                  <option value="Individual">Individual</option>
                 </select>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3.5 pointer-events-none" />
               </div>
 
               <div className="relative">
                 <select
-                  value={teamSelection}
-                  onChange={(e) => setTeamSelection(e.target.value)}
-                  className="appearance-none bg-white border border-slate-200 text-slate-800 font-medium rounded-xl px-4 py-2.5 pr-8 shadow-sm focus:outline-none min-w-[140px] cursor-pointer hover:border-slate-300 transition-colors"
+                  value={subFilter}
+                  onChange={(e) => setSubFilter(e.target.value)}
+                  className="appearance-none bg-white border border-slate-200 text-slate-800 font-medium rounded-xl px-4 py-2.5 pr-8 shadow-sm focus:outline-none min-w-[160px] cursor-pointer hover:border-slate-300 transition-colors"
                 >
-                  <option value="All Teams">All Teams</option>
-                  <option value="Sales Team">Sales Team</option>
+                  {repCategory === 'Individual' ? (
+                    <>
+                      <option value="All Counselors">All Counselors</option>
+                      {uniqueCounselors.map((counselor) => (
+                        <option key={counselor} value={counselor}>
+                          {counselor}
+                        </option>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <option value="All Teams">All Teams</option>
+                      {defaultTeams.map((team) => (
+                        <option key={team} value={team}>
+                          {team}
+                        </option>
+                      ))}
+                    </>
+                  )}
                 </select>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3.5 pointer-events-none" />
               </div>
