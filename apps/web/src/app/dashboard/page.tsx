@@ -18,6 +18,21 @@ export default function RecorderHubDashboard() {
   const [dateRange, setDateRange] = useState('All time');
   const [salesRepFilter, setSalesRepFilter] = useState('Teams');
   const [teamFilter, setTeamFilter] = useState('All Teams');
+  const [counselorsList, setCounselorsList] = useState<any[]>([]);
+
+  const defaultTeams = ['Global Sales', 'NCLEX Counselors', 'DHA Counselors', 'Sales Team'];
+
+  const fetchCounselors = async () => {
+    try {
+      const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setCounselorsList(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error fetching counselors:', err);
+    }
+  };
 
   const fetchCallsData = async () => {
     try {
@@ -42,28 +57,82 @@ export default function RecorderHubDashboard() {
 
   useEffect(() => {
     fetchCallsData();
+    fetchCounselors();
     const interval = setInterval(fetchCallsData, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  // Filter calls by Date Range
+  const uniqueCounselors = Array.from(
+    new Set([
+      ...counselorsList.map((c) => {
+        if (c.firstName || c.lastName) return `${c.firstName || ''} ${c.lastName || ''}`.trim();
+        if (c.name) return c.name;
+        if (c.email) return c.email.split('@')[0];
+        return null;
+      }),
+      ...calls.map((c) => {
+        if (!c) return null;
+        const email = c.counselorEmail || c.email;
+        const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
+        const rawAgentName = (c.agentName && c.agentName !== 'Sachin Negi' && c.agentName !== 'Counselor' && c.agentName !== 'Counselor Agent') ? c.agentName : null;
+        const cleanDev = c.deviceId ? c.deviceId.replace(/^ANDROID-/, '').split('-')[0] : '';
+        return rawAgentName || c.counselorName || derivedName || (cleanDev ? `Counselor (${cleanDev})` : null);
+      })
+    ].filter(Boolean))
+  ) as string[];
+
+  const handleCategoryChange = (val: string) => {
+    setSalesRepFilter(val);
+    if (val === 'Counselors') {
+      setTeamFilter('All Counselors');
+    } else {
+      setTeamFilter('All Teams');
+    }
+  };
+
+  // Filter calls by Date Range & Sales Rep / Team Selection
   const validCalls = (calls || []).filter((c) => {
     if (!c) return false;
-    if (dateRange === 'All time') return true;
-    const callDate = c.startTime ? new Date(c.startTime) : new Date();
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
-    if (dateRange === 'Today') {
-      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      return callDate >= startOfToday && callDate <= endOfToday;
-    } else if (dateRange === 'This week') {
-      const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 86400000);
-      return callDate >= sevenDaysAgo;
-    } else if (dateRange === 'This month') {
-      const thirtyDaysAgo = new Date(startOfToday.getTime() - 30 * 86400000);
-      return callDate >= thirtyDaysAgo;
+    // Date Range Filter
+    if (dateRange !== 'All time') {
+      const callDate = c.startTime ? new Date(c.startTime) : new Date();
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+      if (dateRange === 'Today') {
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        if (callDate < startOfToday || callDate > endOfToday) return false;
+      } else if (dateRange === 'This week') {
+        const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 86400000);
+        if (callDate < sevenDaysAgo) return false;
+      } else if (dateRange === 'This month') {
+        const thirtyDaysAgo = new Date(startOfToday.getTime() - 30 * 86400000);
+        if (callDate < thirtyDaysAgo) return false;
+      }
     }
+
+    // Sales Rep / Team Filter
+    if (salesRepFilter === 'Counselors') {
+      if (teamFilter && teamFilter !== 'All Counselors') {
+        const email = c.counselorEmail || c.email;
+        const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
+        const rawAgentName = (c.agentName && c.agentName !== 'Sachin Negi' && c.agentName !== 'Counselor' && c.agentName !== 'Counselor Agent') ? c.agentName : null;
+        const cleanDev = c.deviceId ? c.deviceId.replace(/^ANDROID-/, '').split('-')[0] : '';
+        const name = rawAgentName || c.counselorName || derivedName || (cleanDev ? `Counselor (${cleanDev})` : 'Counselor Agent');
+        if (name.toLowerCase() !== teamFilter.toLowerCase()) {
+          return false;
+        }
+      }
+    } else if (salesRepFilter === 'Teams') {
+      if (teamFilter && teamFilter !== 'All Teams') {
+        const callTeam = c.team || c.teamName || c.department || '';
+        if (callTeam && callTeam.toLowerCase() !== teamFilter.toLowerCase()) {
+          return false;
+        }
+      }
+    }
+
     return true;
   });
 
@@ -201,11 +270,11 @@ export default function RecorderHubDashboard() {
                 <div className="relative">
                   <select
                     value={salesRepFilter}
-                    onChange={(e) => setSalesRepFilter(e.target.value)}
-                    className="appearance-none bg-white border border-slate-200 text-slate-800 text-sm font-medium rounded-lg px-4 py-2 pr-8 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    onChange={(e) => handleCategoryChange(e.target.value)}
+                    className="appearance-none bg-white border border-slate-200 text-slate-800 text-sm font-medium rounded-lg px-4 py-2 pr-8 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
                   >
-                    <option>Teams</option>
-                    <option>Counselors</option>
+                    <option value="Teams">Teams</option>
+                    <option value="Counselors">Counselors</option>
                   </select>
                   <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-3 pointer-events-none" />
                 </div>
@@ -214,12 +283,27 @@ export default function RecorderHubDashboard() {
                   <select
                     value={teamFilter}
                     onChange={(e) => setTeamFilter(e.target.value)}
-                    className="appearance-none bg-white border border-slate-200 text-slate-800 text-sm font-medium rounded-lg px-4 py-2 pr-8 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    className="appearance-none bg-white border border-slate-200 text-slate-800 text-sm font-medium rounded-lg px-4 py-2 pr-8 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
                   >
-                    <option>All Teams</option>
-                    <option>NCLEX Counselors</option>
-                    <option>DHA Counselors</option>
-                    <option>Global Sales</option>
+                    {salesRepFilter === 'Counselors' ? (
+                      <>
+                        <option value="All Counselors">All Counselors</option>
+                        {uniqueCounselors.map((counselor) => (
+                          <option key={counselor} value={counselor}>
+                            {counselor}
+                          </option>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <option value="All Teams">All Teams</option>
+                        {defaultTeams.map((team) => (
+                          <option key={team} value={team}>
+                            {team}
+                          </option>
+                        ))}
+                      </>
+                    )}
                   </select>
                   <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-3 pointer-events-none" />
                 </div>

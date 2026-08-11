@@ -67,7 +67,6 @@ object CallLogScanner {
                     if (rawNumber.isNullOrEmpty()) continue
 
                     val type = if (typeIdx >= 0) c.getInt(typeIdx) else CallLog.Calls.INCOMING_TYPE
-                    val dateMs = if (dateIdx >= 0) c.getLong(dateIdx) else System.currentTimeMillis()
                     val durationSec = if (durationIdx >= 0) c.getInt(durationIdx) else 30
                     val accountName = if (accountIdx >= 0) c.getString(accountIdx) ?: "" else ""
                     val cachedName = if (nameIdx >= 0) c.getString(nameIdx) ?: "" else ""
@@ -77,7 +76,7 @@ object CallLogScanner {
                             cachedName.lowercase().contains("whatsapp")
 
                     val direction = when (type) {
-                        CallLog.Calls.INCOMING_TYPE -> "INCOMING"
+                        CallLog.Cax`lls.INCOMING_TYPE -> "INCOMING"
                         CallLog.Calls.OUTGOING_TYPE -> "OUTGOING"
                         CallLog.Calls.MISSED_TYPE -> "MISSED"
                         else -> "INCOMING"
