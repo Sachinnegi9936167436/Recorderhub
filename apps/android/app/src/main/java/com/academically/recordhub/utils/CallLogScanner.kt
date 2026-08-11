@@ -58,7 +58,7 @@ object CallLogScanner {
                 val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
 
                 while (c.moveToNext() && importedCount < 100) {
-                    val dateMs = if (dateIdx >= 0) c.getLong(dateIdx) else System.currentTimeMillis()
+                    val     dateMs = if (dateIdx >= 0) c.getLong(dateIdx) else System.currentTimeMillis()
                     if (dateMs < installTimeMs) {
                         // Ignore any call made before app installation
                         continue
