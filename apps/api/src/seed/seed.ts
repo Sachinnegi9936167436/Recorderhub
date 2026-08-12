@@ -30,7 +30,7 @@ async function seed() {
   console.log('✅ Created Organization:', orgId.toString());
 
   // 2. Create Password Hash
-  const passwordHash = await bcrypt.hash('Password123!', 10);
+  const passwordHash = await bcrypt.hash('Academically@01', 10);
 
   // 3. Create Users
   const usersData = [

@@ -76,15 +76,66 @@ function NavigationInner() {
         </nav>
       </div>
 
-      {/* Salestrail Bottom Banner */}
-      <div className="p-4 border-t border-slate-100">
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-center space-y-1">
+      {/* Role Switcher & Organisation Banner */}
+      <div className="p-4 border-t border-slate-100 space-y-3">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs space-y-2">
+          <div className="flex items-center justify-between font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+            <span>Current Role Access</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          </div>
+          <select
+            value={typeof window !== 'undefined' ? localStorage.getItem('userRole') || 'ADMIN' : 'ADMIN'}
+            onChange={(e) => {
+              const newRole = e.target.value;
+              localStorage.setItem('userRole', newRole);
+              if (newRole === 'COUNSELOR') {
+                localStorage.setItem('userEmail', 'shrishtik@academically.com');
+              } else if (newRole === 'TEAM_LEAD') {
+                localStorage.setItem('userEmail', 'sachinnegi@academically.com');
+              } else if (newRole === 'MANAGER') {
+                localStorage.setItem('userEmail', 'manager@academically.com');
+              } else {
+                localStorage.setItem('userEmail', 'admin@academically.com');
+              }
+              window.location.reload();
+            }}
+            className="w-full bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer shadow-xs"
+          >
+            <option value="ADMIN">👑 System Admin (Full Access)</option>
+            <option value="MANAGER">💼 Manager (View All Calls)</option>
+            <option value="TEAM_LEAD">👔 Team Lead (View Team Calls)</option>
+            <option value="COUNSELOR">🎧 Counselor (View Own Calls)</option>
+          </select>
+        </div>
+
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-center space-y-0.5">
           <p className="font-semibold text-slate-800">Academically Global</p>
-          <p className="text-[11px] text-slate-500">Organisation ID: 65c1f00</p>
+          <p className="text-[10px] text-slate-500">Organisation ID: 65c1f00</p>
         </div>
       </div>
     </aside>
   );
+}
+
+export function useUserRole() {
+  const [role, setRole] = React.useState<string>('ADMIN');
+  const [email, setEmail] = React.useState<string>('admin@academically.com');
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedRole = localStorage.getItem('userRole') || 'ADMIN';
+      const storedEmail = localStorage.getItem('userEmail') || 'admin@academically.com';
+      setRole(storedRole);
+      setEmail(storedEmail);
+    }
+  }, []);
+
+  const isAdmin = role === 'ADMIN' || role === 'COMPANY_ADMIN';
+  const isManager = role === 'MANAGER';
+  const isTeamLead = role === 'TEAM_LEAD';
+  const isCounselor = role === 'COUNSELOR' || role === 'AGENT';
+
+  return { role, email, isAdmin, isManager, isTeamLead, isCounselor };
 }
 
 export function Navigation() {

@@ -45,6 +45,6 @@
 - **MinIO Console (S3 Local Mock)**: `http://localhost:9001` (User: `minioadmin` / Pass: `minioadmin`)
 
 ### Default Seeded User Logins
-- **Company Admin**: `admin@academically.com` / `Password123!`
-- **Sales Manager**: `manager@academically.com` / `Password123!`
-- **Sales Agent**: `agent@academically.com` / `Password123!`
+- **Company Admin**: `admin@academically.com` / `Academically@01`
+- **Sales Manager**: `manager@academically.com` / `Academically@01`
+- **Sales Agent**: `agent@academically.com` / `Academically@01`

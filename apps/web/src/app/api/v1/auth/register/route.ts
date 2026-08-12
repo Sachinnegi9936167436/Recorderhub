@@ -13,7 +13,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: 'Email and First Name are required' }, { status: 400 });
     }
 
-    const rawPass = pass || 'Password123!';
+    const rawPass = pass || 'Academically@01';
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(rawPass, salt);
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense } from 'react';
-import { Navigation } from '@/components/Navigation';
+import { Navigation, useUserRole } from '@/components/Navigation';
 import { useSearchParams } from 'next/navigation';
 import { 
   Users, 
@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 function CounselorsAndTeamsInner() {
+  const { role: userRole, email: userEmail, isAdmin, isManager, isCounselor } = useUserRole();
   const searchParams = useSearchParams();
   const currentView = searchParams.get('view') || 'teams';
 
@@ -39,10 +40,10 @@ function CounselorsAndTeamsInner() {
     {
       id: 't-1',
       name: 'Global Sales',
-      admin: 'Mohammed Ayaan',
+      admin: 'Sachin Negi',
       installedRatio: '3 / 3',
       members: ['Nasreen', 'Vasantha', 'Manas Vikas'],
-      admins: ['Mohammed Ayaan']
+      admins: ['Sachin Negi']
     },
     {
       id: 't-2',
@@ -86,7 +87,7 @@ function CounselorsAndTeamsInner() {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('COUNSELOR');
-  const [password, setPassword] = useState('Password123!');
+  const [password, setPassword] = useState('Academically@01');
 
   const fetchCounselors = async () => {
     try {
@@ -383,7 +384,7 @@ function CounselorsAndTeamsInner() {
     setLastName('');
     setEmail('');
     setRole('COUNSELOR');
-    setPassword('Password123!');
+    setPassword('Academically@01');
     setTimeout(() => setToastMessage(null), 4000);
   };
 
@@ -428,15 +429,22 @@ function CounselorsAndTeamsInner() {
 
             {/* Primary Action Button: + Add team */}
             <div>
-              <button
-                onClick={() => setIsAddTeamModalOpen(true)}
-                className="inline-flex items-center space-x-3 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-sm px-6 py-3 rounded-xl transition-all shadow-md"
-              >
-                <div className="w-5 h-5 rounded-full border-2 border-white/80 flex items-center justify-center">
-                  <Plus className="w-3.5 h-3.5 text-white stroke-[3]" />
+              {isAdmin ? (
+                <button
+                  onClick={() => setIsAddTeamModalOpen(true)}
+                  className="inline-flex items-center space-x-3 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-sm px-6 py-3 rounded-xl transition-all shadow-md"
+                >
+                  <div className="w-5 h-5 rounded-full border-2 border-white/80 flex items-center justify-center">
+                    <Plus className="w-3.5 h-3.5 text-white stroke-[3]" />
+                  </div>
+                  <span>Add team</span>
+                </button>
+              ) : (
+                <div className="inline-flex items-center space-x-2 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xs">
+                  <Info className="w-4 h-4 text-amber-600" />
+                  <span>Manager View • Only System Admin can create new teams or edit team members</span>
                 </div>
-                <span>Add team</span>
-              </button>
+              )}
             </div>
 
             {/* Filter and Search Bar */}
@@ -560,16 +568,23 @@ function CounselorsAndTeamsInner() {
                 <p className="text-xs text-slate-500 mt-1">Admin Console • Provision, Update & Revoke Counselor Credentials</p>
               </div>
 
-              <button
-                onClick={() => {
-                  resetForm();
-                  setIsCreateModalOpen(true);
-                }}
-                className="flex items-center space-x-2 bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-rose-500/20"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Create New Counselor ID</span>
-              </button>
+              {isAdmin ? (
+                <button
+                  onClick={() => {
+                    resetForm();
+                    setIsCreateModalOpen(true);
+                  }}
+                  className="flex items-center space-x-2 bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-rose-500/20"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create New Counselor ID</span>
+                </button>
+              ) : (
+                <div className="inline-flex items-center space-x-2 bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-semibold">
+                  <Info className="w-4 h-4 text-slate-500" />
+                  <span>Manager View • Only System Admin can add or edit users</span>
+                </div>
+              )}
             </div>
 
             {/* Counselors Table */}
@@ -636,20 +651,26 @@ function CounselorsAndTeamsInner() {
                           </span>
                         </td>
                         <td className="p-4 text-right space-x-2">
-                          <button
-                            onClick={() => openEditModal(c)}
-                            className="inline-flex items-center space-x-1 bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all"
-                          >
-                            <Edit2 className="w-3.5 h-3.5 text-white" />
-                            <span>Edit Role</span>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCounselor(c)}
-                            className="inline-flex items-center space-x-1 bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg text-xs font-semibold border border-rose-200 transition-all"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                            <span>Delete</span>
-                          </button>
+                          {isAdmin ? (
+                            <>
+                              <button
+                                onClick={() => openEditModal(c)}
+                                className="inline-flex items-center space-x-1 bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all"
+                              >
+                                <Edit2 className="w-3.5 h-3.5 text-white" />
+                                <span>Edit Role</span>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCounselor(c)}
+                                className="inline-flex items-center space-x-1 bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg text-xs font-semibold border border-rose-200 transition-all"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                                <span>Delete</span>
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-[11px] font-semibold text-slate-400">Read-only</span>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -764,7 +785,7 @@ function CounselorsAndTeamsInner() {
                         </div>
                       ))
                     ) : (
-                      <div className="text-xs text-slate-400">Mohammed Ayaan</div>
+                      <div className="text-xs text-slate-400">Sachin Negi</div>
                     )}
                   </div>
                 </div>
@@ -814,7 +835,7 @@ function CounselorsAndTeamsInner() {
                   <label className="block text-xs font-bold text-slate-700 mb-1">Team Admin</label>
                   <input
                     type="text"
-                    placeholder="e.g. Mohammed Ayaan"
+                    placeholder="e.g. Sachin Negi"
                     value={newTeamAdmin}
                     onChange={(e) => setNewTeamAdmin(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
@@ -1070,8 +1091,9 @@ function CounselorsAndTeamsInner() {
                     onChange={(e) => setRole(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                   >
-                    <option value="COUNSELOR">Counselor (NCLEX & DHA)</option>
-                    <option value="TEAM_LEAD">Team Lead / Manager</option>
+                    <option value="COUNSELOR">Counselor</option>
+                    <option value="TEAM_LEAD">Team Lead</option>
+                    <option value="MANAGER">Manager</option>
                     <option value="ADMIN">System Admin</option>
                   </select>
                 </div>
@@ -1163,8 +1185,9 @@ function CounselorsAndTeamsInner() {
                     onChange={(e) => setRole(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                   >
-                    <option value="COUNSELOR">Counselor (NCLEX & DHA)</option>
-                    <option value="TEAM_LEAD">Team Lead / Manager</option>
+                    <option value="COUNSELOR">Counselor</option>
+                    <option value="TEAM_LEAD">Team Lead</option>
+                    <option value="MANAGER">Manager</option>
                     <option value="ADMIN">System Admin</option>
                   </select>
                 </div>

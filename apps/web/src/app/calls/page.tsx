@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, useMemo } from 'react';
-import { Navigation } from '@/components/Navigation';
+import { Navigation, useUserRole } from '@/components/Navigation';
 import Link from 'next/link';
 import {
   Search,
@@ -28,20 +28,27 @@ function AudioCell({ call, idx }: { call: any; idx: number }) {
     return <span className="text-slate-400 font-medium text-[11px]">No Recording</span>;
   }
 
-  const audioSrc = call.audioUrl || `/api/v1/recordings/${call.idempotencyKey || call._id || call.id || idx}/audio`;
+  const audioSrc = call.audioUrl || (call.s3Key ? `/api/v1/recordings/stream?key=${encodeURIComponent(call.s3Key)}` : null);
+
+  if (!audioSrc) {
+    return <span className="text-slate-400 font-medium text-[11px]">No Recording</span>;
+  }
 
   return (
-    <audio
-      controls
-      preload="none"
-      src={audioSrc}
-      onError={() => setHasError(true)}
-      className="h-8 max-w-[180px] inline-block"
-    />
+    <div className="flex items-center space-x-2 py-1">
+      <audio
+        controls
+        preload="metadata"
+        src={audioSrc}
+        onError={() => setHasError(true)}
+        className="h-7 w-48 rounded-md bg-slate-100 border border-slate-200 shadow-xs focus:outline-none"
+      />
+    </div>
   );
 }
 
 function SalestrailCallsInner() {
+  const { role, email: userEmail, isAdmin, isManager, isTeamLead, isCounselor } = useUserRole();
   const [callsList, setCallsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -181,6 +188,32 @@ function SalestrailCallsInner() {
 
   // Filter calls by search and filters
   const filteredCalls = callsList.filter((call) => {
+    // RBAC check: Counselor role can view ONLY their own call logs, Team Lead can view ALL calls in their team
+    if (isCounselor) {
+      const resolvedUser = resolveCounselorName(call).toLowerCase();
+      const callEmail = (call.counselorEmail || call.email || '').toLowerCase();
+      const myEmailPrefix = userEmail ? userEmail.split('@')[0].toLowerCase() : '';
+
+      const isMyCall =
+        (callEmail && callEmail === userEmail.toLowerCase()) ||
+        (myEmailPrefix && resolvedUser.includes(myEmailPrefix)) ||
+        (resolvedUser.includes('shristi') && myEmailPrefix.includes('shris'));
+
+      if (!isMyCall) return false;
+    } else if (isTeamLead) {
+      // Team Lead can view ALL call logs & recordings for counselors in their team
+      const resolvedUser = resolveCounselorName(call).toLowerCase();
+      const callEmail = (call.counselorEmail || call.email || '').toLowerCase();
+
+      const myTeamMembers = ['nasreen', 'vasantha', 'manas vikas', 'sachin negi', 'shristi', 'shrishtik', 'rajdeep', 'ananya', 'rahul', 'dev', 'himanshu', 'raja', 'prakhar', 'bilal', 'shalini', 'shruti'];
+
+      const isTeamCall =
+        (callEmail && callEmail === userEmail.toLowerCase()) ||
+        myTeamMembers.some((m) => resolvedUser.includes(m) || callEmail.includes(m));
+
+      if (!isTeamCall) return false;
+    }
+
     // 0. Exclude non-call text/chat message entries
     const combined = `${call.phoneNumber || ''} ${call.leadName || ''} ${call.disposition || ''}`.toLowerCase();
     if (combined.includes('message') || combined.includes('messages') || combined.includes('unread')) {

@@ -7,7 +7,7 @@ import { Shield, Lock, Mail, ArrowRight, UserCheck } from 'lucide-react';
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('admin@academically.com');
-  const [password, setPassword] = useState('Password123!');
+  const [password, setPassword] = useState('Academically@01');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -20,7 +20,7 @@ export default function LoginPage() {
 
   const setRoleDemo = (roleEmail: string) => {
     setEmail(roleEmail);
-    setPassword('Password123!');
+    setPassword('Academically@01');
   };
 
   return (

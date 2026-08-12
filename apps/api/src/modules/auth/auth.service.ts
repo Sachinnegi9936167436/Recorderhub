@@ -48,7 +48,7 @@ export class AuthService {
     if (existing) {
       return existing;
     }
-    const rawPass = dto.pass || 'Password123!';
+    const rawPass = dto.pass || 'Academically@01';
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(rawPass, salt);
 
