@@ -555,14 +555,18 @@ function CounselorsAndTeamsInner() {
                           <td className="p-5 text-center text-slate-800 font-medium">{t.admin}</td>
                           <td className="p-5 text-center font-semibold text-slate-900">{t.installedRatio}</td>
                           <td className="p-5 pr-12 text-center">
-                            <button
-                              onClick={(e) => handleDeleteTeam(t.id, t.name, e)}
-                              className="inline-flex items-center space-x-1 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm"
-                              title="Delete Team"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete</span>
-                            </button>
+                            {isAdmin ? (
+                              <button
+                                onClick={(e) => handleDeleteTeam(t.id, t.name, e)}
+                                className="inline-flex items-center space-x-1 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm"
+                                title="Delete Team"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete</span>
+                              </button>
+                            ) : (
+                              <span className="text-[11px] font-semibold text-slate-400">Read-only</span>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -762,13 +766,15 @@ function CounselorsAndTeamsInner() {
                             </div>
                             <span>{member}</span>
                           </div>
-                          <button 
-                            onClick={() => handleRemoveMemberFromTeam(member)}
-                            className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50"
-                            title="Remove member"
-                          >
-                            <X className="w-4 h-4 text-rose-400" />
-                          </button>
+                          {isAdmin && (
+                            <button 
+                              onClick={() => handleRemoveMemberFromTeam(member)}
+                              className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50"
+                              title="Remove member"
+                            >
+                              <X className="w-4 h-4 text-rose-400" />
+                            </button>
+                          )}
                         </div>
                       ))
                     ) : (
@@ -789,12 +795,14 @@ function CounselorsAndTeamsInner() {
                       selectedTeam.admins.map((admin: string, idx: number) => (
                         <div key={idx} className="flex items-center justify-between py-1 text-sm text-slate-800 font-medium">
                           <span>{admin}</span>
-                          <button 
-                            onClick={() => handleRemoveAdminFromTeam(admin)}
-                            className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50"
-                          >
-                            <X className="w-4 h-4 text-rose-400" />
-                          </button>
+                          {isAdmin && (
+                            <button 
+                              onClick={() => handleRemoveAdminFromTeam(admin)}
+                              className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50"
+                            >
+                              <X className="w-4 h-4 text-rose-400" />
+                            </button>
+                          )}
                         </div>
                       ))
                     ) : (
@@ -806,12 +814,18 @@ function CounselorsAndTeamsInner() {
 
               {/* Bottom Action Button: Add users */}
               <div className="pt-6">
-                <button
-                  onClick={handleOpenAddCounselorsModal}
-                  className="w-full bg-[#ff5c75] hover:bg-[#ef4c65] text-white font-bold text-sm py-3.5 rounded-xl shadow-md transition-all text-center"
-                >
-                  Add users
-                </button>
+                {isAdmin ? (
+                  <button
+                    onClick={handleOpenAddCounselorsModal}
+                    className="w-full bg-[#ff5c75] hover:bg-[#ef4c65] text-white font-bold text-sm py-3.5 rounded-xl shadow-md transition-all text-center"
+                  >
+                    Add users
+                  </button>
+                ) : (
+                  <div className="w-full bg-slate-100 border border-slate-200 text-slate-500 font-semibold text-xs py-3 rounded-xl text-center">
+                    Read-only mode • Only System Admin can add or remove team members
+                  </div>
+                )}
               </div>
             </div>
           </div>
