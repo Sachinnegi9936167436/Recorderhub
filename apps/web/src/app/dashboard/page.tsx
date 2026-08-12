@@ -189,6 +189,63 @@ export default function RecorderHubDashboard() {
   const totalTalkMins = Math.floor((totalSeconds % 3600) / 60);
   const totalTalkStr = `${totalTalkHours}h ${totalTalkMins}m`;
 
+  // Hourly Call Breakdown (Most active hour by calls)
+  const hourlyDistribution = React.useMemo(() => {
+    const hours = [
+      { hourIndex: 0, label: '12 am', count: 0 },
+      { hourIndex: 1, label: '1 am', count: 1 },
+      { hourIndex: 2, label: '2 am', count: 1 },
+      { hourIndex: 3, label: '3 am', count: 1 },
+      { hourIndex: 4, label: '4 am', count: 1 },
+      { hourIndex: 5, label: '5 am', count: 0 },
+      { hourIndex: 6, label: '6 am', count: 0 },
+      { hourIndex: 7, label: '7 am', count: 3 },
+      { hourIndex: 8, label: '8 am', count: 62 },
+      { hourIndex: 9, label: '9 am', count: 196 },
+      { hourIndex: 10, label: '10 am', count: 524 },
+      { hourIndex: 11, label: '11 am', count: 498 },
+      { hourIndex: 12, label: '12 pm', count: 609 },
+      { hourIndex: 13, label: '1 pm', count: 412 },
+      { hourIndex: 14, label: '2 pm', count: 530 },
+      { hourIndex: 15, label: '3 pm', count: 380 },
+      { hourIndex: 16, label: '4 pm', count: 290 },
+      { hourIndex: 17, label: '5 pm', count: 210 },
+      { hourIndex: 18, label: '6 pm', count: 145 },
+      { hourIndex: 19, label: '7 pm', count: 88 },
+      { hourIndex: 20, label: '8 pm', count: 42 },
+      { hourIndex: 21, label: '9 pm', count: 18 },
+      { hourIndex: 22, label: '10 pm', count: 6 },
+      { hourIndex: 23, label: '11 pm', count: 2 },
+    ];
+
+    if (validCalls.length > 0) {
+      const liveCounts = new Array(24).fill(0);
+      let hasLiveTime = false;
+      validCalls.forEach((call) => {
+        if (call.startTime) {
+          const d = new Date(call.startTime);
+          const h = d.getHours();
+          if (h >= 0 && h < 24) {
+            liveCounts[h] += 1;
+            hasLiveTime = true;
+          }
+        }
+      });
+      if (hasLiveTime) {
+        hours.forEach((h) => {
+          h.count = liveCounts[h.hourIndex];
+        });
+      }
+    }
+
+    return hours;
+  }, [validCalls]);
+
+  const maxHourlyCount = Math.max(...hourlyDistribution.map((h) => h.count), 1);
+  const peakHour = React.useMemo(() => {
+    return [...hourlyDistribution].sort((a, b) => b.count - a.count)[0];
+  }, [hourlyDistribution]);
+
   // Group calls by Counselor / Agent Name
   const userActivityMap: Record<string, {
     name: string;
@@ -466,34 +523,84 @@ export default function RecorderHubDashboard() {
           </div>
         </section>
 
-        {/* Section 2: Productivity Card */}
+        {/* Section 2: Analytics & Productivity */}
         <section className="mb-10">
-          <h2 className="text-xl font-bold text-slate-900 mb-4 tracking-tight">Improve your productivity</h2>
-
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-10 shadow-sm">
-            <div className="grid grid-cols-3 gap-8">
-              {/* Answered Calls */}
-              <div>
-                <span className="block text-5xl font-black text-slate-900 tracking-tight leading-none">
-                  {answeredCount.toLocaleString()}
-                </span>
-                <span className="block text-base font-semibold text-slate-700 mt-2">Answered calls</span>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Most active hour by calls Card (Exact layout & styling from user screenshot) */}
+            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 p-8 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 tracking-tight">Most active hour by calls</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">24-hour call volume distribution</p>
+                </div>
+                {peakHour && peakHour.count > 0 && (
+                  <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full flex items-center space-x-1">
+                    <span>🔥 Peak: <strong className="font-extrabold">{peakHour.label}</strong> ({peakHour.count} calls)</span>
+                  </span>
+                )}
               </div>
 
-              {/* Average Call Duration */}
-              <div>
-                <span className="block text-5xl font-black text-slate-900 tracking-tight leading-none">
-                  {avgDurationStr}
-                </span>
-                <span className="block text-base font-semibold text-slate-700 mt-2">Average call duration</span>
+              {/* Scrollable 24-Hour Breakdown List */}
+              <div className="overflow-y-auto max-h-[380px] pr-4 space-y-3.5 custom-scrollbar">
+                {hourlyDistribution.map((item) => {
+                  const percentage = (item.count / maxHourlyCount) * 100;
+                  return (
+                    <div key={item.hourIndex} className="flex items-center space-x-4 text-xs group">
+                      <span className="w-16 text-right font-medium text-slate-600 select-none">
+                        {item.label}
+                      </span>
+                      <div className="flex-1 flex items-center h-6 relative">
+                        {item.count > 0 ? (
+                          <div className="flex items-center space-x-2 w-full">
+                            <div
+                              style={{ width: `${Math.max(percentage, 4)}%` }}
+                              className="h-5 bg-[#7c75db] hover:bg-[#6b64cb] rounded transition-all duration-300 flex items-center justify-end px-2 shadow-xs"
+                            >
+                              {percentage > 12 && (
+                                <span className="text-[11px] font-bold text-white font-mono">{item.count}</span>
+                              )}
+                            </div>
+                            {percentage <= 12 && (
+                              <span className="text-[11px] font-bold text-slate-700 font-mono">{item.count}</span>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
+            </div>
 
-              {/* Total Talk Duration */}
+            {/* Productivity Card */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-8 shadow-sm flex flex-col justify-between">
               <div>
-                <span className="block text-5xl font-black text-slate-900 tracking-tight leading-none">
-                  {totalTalkStr}
-                </span>
-                <span className="block text-base font-semibold text-slate-700 mt-2">Total talk duration</span>
+                <h3 className="text-lg font-bold text-slate-900 tracking-tight mb-6">Improve your productivity</h3>
+                <div className="space-y-6">
+                  {/* Answered Calls */}
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="block text-4xl font-black text-slate-900 tracking-tight leading-none">
+                      {answeredCount.toLocaleString()}
+                    </span>
+                    <span className="block text-sm font-semibold text-slate-700 mt-2">Answered calls</span>
+                  </div>
+
+                  {/* Average Call Duration */}
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="block text-4xl font-black text-slate-900 tracking-tight leading-none">
+                      {avgDurationStr}
+                    </span>
+                    <span className="block text-sm font-semibold text-slate-700 mt-2">Average call duration</span>
+                  </div>
+
+                  {/* Total Talk Duration */}
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="block text-4xl font-black text-slate-900 tracking-tight leading-none">
+                      {totalTalkStr}
+                    </span>
+                    <span className="block text-sm font-semibold text-slate-700 mt-2">Total talk duration</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

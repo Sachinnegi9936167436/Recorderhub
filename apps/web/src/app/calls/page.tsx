@@ -129,13 +129,36 @@ function SalestrailCallsInner() {
   };
 
   const resolveCounselorName = (call: any) => {
+    // 1. Match by counselor email in counselorsList directory
+    const callEmail = (call.counselorEmail || call.email || '').toLowerCase();
+    if (callEmail && counselorsList.length > 0) {
+      const user = counselorsList.find((u) => u.email?.toLowerCase() === callEmail);
+      if (user) {
+        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+        if (fullName) return fullName;
+      }
+    }
+
+    // 2. Match device ID or agent name alias with directory email
+    if (counselorsList.length > 0) {
+      const rawName = (call.agentName || call.counselorName || '').toLowerCase();
+      const user = counselorsList.find((u) => {
+        const prefix = u.email ? u.email.split('@')[0].toLowerCase() : '';
+        const fName = (u.firstName || '').toLowerCase();
+        return (prefix && rawName.includes(prefix)) || (fName && rawName.includes(fName));
+      });
+      if (user) {
+        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+        if (fullName) return fullName;
+      }
+    }
+
     const rawName = call.agentName || call.counselorName || call.userName || call.user || '';
     if (rawName && rawName !== 'Counselor Agent' && rawName !== 'Counselor' && !rawName.startsWith('ANDROID-')) {
       return rawName;
     }
-    const email = call.counselorEmail || call.email;
-    if (email) {
-      const prefix = email.split('@')[0];
+    if (callEmail) {
+      const prefix = callEmail.split('@')[0];
       return prefix.replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
     }
     if (call.deviceId) {
