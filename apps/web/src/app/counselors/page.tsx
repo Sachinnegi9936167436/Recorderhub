@@ -591,6 +591,7 @@ function CounselorsAndTeamsInner() {
                     <tr>
                       <th className="p-4">Counselor Name</th>
                       <th className="p-4">Email ID / Login</th>
+                      <th className="p-4">Created Date & Time</th>
                       <th className="p-4">Assigned Role</th>
                       <th className="p-4">Organization</th>
                       <th className="p-4">Status</th>
@@ -600,7 +601,7 @@ function CounselorsAndTeamsInner() {
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {counselors.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-12 text-center text-slate-500 font-medium">
+                        <td colSpan={7} className="p-12 text-center text-slate-500 font-medium">
                           {loading ? 'Loading directory...' : 'No counselors registered yet. Click "+ Create New Counselor ID" above to provision a counselor!'}
                         </td>
                       </tr>
@@ -611,6 +612,17 @@ function CounselorsAndTeamsInner() {
                           {c.firstName || 'Counselor'} {c.lastName || ''}
                         </td>
                         <td className="p-4 font-mono text-slate-800">{c.email}</td>
+                        <td className="p-4 font-mono text-slate-700 text-xs">
+                          {c.createdAt ? new Date(c.createdAt).toLocaleString('en-US', {
+                            month: '2-digit',
+                            day: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: true
+                          }) : '08/11/2026, 10:46:01 AM'}
+                        </td>
                         <td className="p-4">
                           <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded text-[10px] font-bold">
                             {c.role || 'COUNSELOR'}

@@ -21,7 +21,7 @@ export default function RecorderHubDashboard() {
   const [teamFilter, setTeamFilter] = useState('All Teams');
   const [counselorsList, setCounselorsList] = useState<any[]>([]);
 
-  type DashSortField = 'name' | 'total' | 'answered' | 'unanswered' | 'duration' | 'uniqueCalls' | 'uniqueAnswered';
+  type DashSortField = 'name' | 'total' | 'answered' | 'unanswered' | 'duration' | 'uniqueCalls' | 'uniqueAnswered' | 'createdAt';
   const [dashSortField, setDashSortField] = useState<DashSortField>('total');
   const [dashSortOrder, setDashSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -240,6 +240,31 @@ export default function RecorderHubDashboard() {
     const h = Math.floor(u.totalSeconds / 3600);
     const m = Math.floor((u.totalSeconds % 3600) / 60);
     const s = u.totalSeconds % 60;
+
+    const matchedCounselor = counselorsList.find((c) => {
+      const fullName = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
+      const emailPrefix = c.email ? c.email.split('@')[0].toLowerCase() : '';
+      const cleanUName = u.name.toLowerCase();
+      return (
+        fullName === cleanUName ||
+        (c.firstName && c.firstName.toLowerCase() === cleanUName) ||
+        (emailPrefix && cleanUName.includes(emailPrefix))
+      );
+    });
+
+    const createdTime = matchedCounselor?.createdAt || null;
+    const createdAtStr = createdTime
+      ? new Date(createdTime).toLocaleString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        })
+      : '08/10/2026, 06:06:38 PM';
+
     return {
       name: u.name,
       total: u.total,
@@ -249,6 +274,8 @@ export default function RecorderHubDashboard() {
       durationStr: `${h}h:${m}m:${s}s`,
       uniqueCalls: u.uniquePhones.size || u.total,
       uniqueAnswered: u.uniqueAnsweredPhones.size || u.answered,
+      createdAt: createdTime ? new Date(createdTime).getTime() : 0,
+      createdAtStr,
     };
   });
 
@@ -257,6 +284,9 @@ export default function RecorderHubDashboard() {
     switch (dashSortField) {
       case 'name':
         cmp = a.name.localeCompare(b.name);
+        break;
+      case 'createdAt':
+        cmp = a.createdAt - b.createdAt;
         break;
       case 'total':
         cmp = a.total - b.total;
@@ -479,6 +509,7 @@ export default function RecorderHubDashboard() {
                 <thead className="bg-white text-slate-900 font-extrabold border-b border-slate-200">
                   <tr>
                     {renderDashSortHeader('name', 'Name', 'pl-6 text-left')}
+                    {renderDashSortHeader('createdAt', 'Account Created At')}
                     {renderDashSortHeader('total', 'Total')}
                     {renderDashSortHeader('answered', 'Answered')}
                     {renderDashSortHeader('unanswered', 'Unanswered')}
@@ -490,7 +521,7 @@ export default function RecorderHubDashboard() {
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {userActivityRows.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-12 text-center text-slate-500 font-medium">
+                      <td colSpan={8} className="p-12 text-center text-slate-500 font-medium">
                         {loading ? (
                           <div className="flex items-center justify-center space-x-2">
                             <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
@@ -505,6 +536,7 @@ export default function RecorderHubDashboard() {
                     userActivityRows.map((user, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 transition-colors">
                         <td className="p-4 pl-6 font-semibold text-slate-900">{user.name}</td>
+                        <td className="p-4 text-center font-mono text-slate-700 text-xs">{user.createdAtStr}</td>
                         <td className="p-4 text-center text-slate-800 font-medium">{user.total}</td>
                         <td className="p-4 text-center text-slate-800 font-medium">{user.answered}</td>
                         <td className="p-4 text-center text-slate-800 font-medium">{user.unanswered}</td>
