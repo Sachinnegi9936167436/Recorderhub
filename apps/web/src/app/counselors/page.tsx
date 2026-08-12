@@ -67,10 +67,23 @@ function CounselorsAndTeamsInner() {
   const [teamsList, setTeamsList] = useState<any[]>([]);
 
   const [newTeamName, setNewTeamName] = useState('');
-  const [newTeamAdmin, setNewTeamAdmin] = useState('');
+  const [newTeamAdmin, setNewTeamAdmin] = useState('Sachin Negi');
   const [newTeamAppCount, setNewTeamAppCount] = useState('5 / 5');
   const [newTeamSelectedMembers, setNewTeamSelectedMembers] = useState<string[]>([]);
   const [counselorSearchInModal, setCounselorSearchInModal] = useState('');
+
+  // Team Leads Dropdown Options
+  const teamLeadsOptions = React.useMemo(() => {
+    const teamLeadsSet = new Set<string>(['Sachin Negi', 'Himanshu Gusain', 'Rajdeep', 'Dev admin']);
+    counselors.forEach((c) => {
+      const roleUpper = (c.role || '').toUpperCase();
+      if (roleUpper === 'TEAM_LEAD' || roleUpper === 'MANAGER' || roleUpper === 'ADMIN' || roleUpper === 'COMPANY_ADMIN') {
+        const name = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.email?.split('@')[0];
+        if (name) teamLeadsSet.add(name);
+      }
+    });
+    return Array.from(teamLeadsSet);
+  }, [counselors]);
 
   // Counselor Selection for Active Team Modal
   const [isAddCounselorModalOpen, setIsAddCounselorModalOpen] = useState(false);
@@ -832,14 +845,18 @@ function CounselorsAndTeamsInner() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Team Admin</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Sachin Negi"
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Team Admin / Team Lead</label>
+                  <select
                     value={newTeamAdmin}
                     onChange={(e) => setNewTeamAdmin(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
-                  />
+                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-xs font-medium rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer shadow-xs"
+                  >
+                    {teamLeadsOptions.map((tl) => (
+                      <option key={tl} value={tl}>
+                        {tl}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Counselor Multi-Select Checklist */}
