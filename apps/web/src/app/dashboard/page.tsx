@@ -9,7 +9,8 @@ import {
   MessageSquare, 
   RefreshCw,
   ArrowUpDown,
-  ArrowUp
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 
 export default function RecorderHubDashboard() {
@@ -19,6 +20,45 @@ export default function RecorderHubDashboard() {
   const [salesRepFilter, setSalesRepFilter] = useState('Teams');
   const [teamFilter, setTeamFilter] = useState('All Teams');
   const [counselorsList, setCounselorsList] = useState<any[]>([]);
+
+  type DashSortField = 'name' | 'total' | 'answered' | 'unanswered' | 'duration' | 'uniqueCalls' | 'uniqueAnswered';
+  const [dashSortField, setDashSortField] = useState<DashSortField>('total');
+  const [dashSortOrder, setDashSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  const handleDashSort = (field: DashSortField) => {
+    if (dashSortField === field) {
+      setDashSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setDashSortField(field);
+      setDashSortOrder(field === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  const renderDashSortHeader = (field: DashSortField, label: string, extraClasses = '') => {
+    const isActive = dashSortField === field;
+    return (
+      <th
+        onClick={() => handleDashSort(field)}
+        className={`p-4 font-bold text-center cursor-pointer select-none group hover:bg-slate-100/70 transition-colors ${extraClasses}`}
+        title={`Sort by ${label} (${isActive ? (dashSortOrder === 'asc' ? 'Ascending' : 'Descending') : 'Click to sort'})`}
+      >
+        <div className="flex items-center justify-center space-x-1.5">
+          <span>{label}</span>
+          <span className="inline-flex items-center">
+            {isActive ? (
+              dashSortOrder === 'asc' ? (
+                <ArrowUp className="w-3.5 h-3.5 text-brand-600 font-bold transition-transform duration-200" />
+              ) : (
+                <ArrowDown className="w-3.5 h-3.5 text-brand-600 font-bold transition-transform duration-200" />
+              )
+            ) : (
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 opacity-60 group-hover:opacity-100 transition-all duration-200" />
+            )}
+          </span>
+        </div>
+      </th>
+    );
+  };
 
   const defaultTeams = ['Global Sales', 'NCLEX Counselors', 'DHA Counselors', 'Sales Team'];
 
@@ -196,7 +236,7 @@ export default function RecorderHubDashboard() {
     }
   });
 
-  const userActivityRows = Object.values(userActivityMap).map((u) => {
+  const rawActivityRows = Object.values(userActivityMap).map((u) => {
     const h = Math.floor(u.totalSeconds / 3600);
     const m = Math.floor((u.totalSeconds % 3600) / 60);
     const s = u.totalSeconds % 60;
@@ -205,11 +245,40 @@ export default function RecorderHubDashboard() {
       total: u.total,
       answered: u.answered,
       unanswered: u.unanswered,
+      totalSeconds: u.totalSeconds,
       durationStr: `${h}h:${m}m:${s}s`,
       uniqueCalls: u.uniquePhones.size || u.total,
       uniqueAnswered: u.uniqueAnsweredPhones.size || u.answered,
     };
-  }).sort((a, b) => b.total - a.total);
+  });
+
+  const userActivityRows = rawActivityRows.sort((a, b) => {
+    let cmp = 0;
+    switch (dashSortField) {
+      case 'name':
+        cmp = a.name.localeCompare(b.name);
+        break;
+      case 'total':
+        cmp = a.total - b.total;
+        break;
+      case 'answered':
+        cmp = a.answered - b.answered;
+        break;
+      case 'unanswered':
+        cmp = a.unanswered - b.unanswered;
+        break;
+      case 'duration':
+        cmp = a.totalSeconds - b.totalSeconds;
+        break;
+      case 'uniqueCalls':
+        cmp = a.uniqueCalls - b.uniqueCalls;
+        break;
+      case 'uniqueAnswered':
+        cmp = a.uniqueAnswered - b.uniqueAnswered;
+        break;
+    }
+    return dashSortOrder === 'asc' ? cmp : -cmp;
+  });
 
   const exportCSV = () => {
     if (calls.length === 0) {
@@ -409,48 +478,13 @@ export default function RecorderHubDashboard() {
               <table className="w-full text-left text-sm text-slate-800">
                 <thead className="bg-white text-slate-900 font-extrabold border-b border-slate-200">
                   <tr>
-                    <th className="p-4 pl-6 font-bold">
-                      <div className="flex items-center space-x-1">
-                        <span>Name</span>
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      </div>
-                    </th>
-                    <th className="p-4 text-center font-bold">
-                      <div className="flex items-center justify-center space-x-1">
-                        <span>Total</span>
-                        <ArrowUp className="w-3.5 h-3.5 text-slate-800" />
-                      </div>
-                    </th>
-                    <th className="p-4 text-center font-bold">
-                      <div className="flex items-center justify-center space-x-1">
-                        <span>Answered</span>
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      </div>
-                    </th>
-                    <th className="p-4 text-center font-bold">
-                      <div className="flex items-center justify-center space-x-1">
-                        <span>Unanswered</span>
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      </div>
-                    </th>
-                    <th className="p-4 text-center font-bold">
-                      <div className="flex items-center justify-center space-x-1">
-                        <span>Duration</span>
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      </div>
-                    </th>
-                    <th className="p-4 text-center font-bold">
-                      <div className="flex items-center justify-center space-x-1">
-                        <span>Unique Calls</span>
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      </div>
-                    </th>
-                    <th className="p-4 text-center font-bold pr-6">
-                      <div className="flex items-center justify-center space-x-1">
-                        <span>Unique Answered Calls</span>
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                      </div>
-                    </th>
+                    {renderDashSortHeader('name', 'Name', 'pl-6 text-left')}
+                    {renderDashSortHeader('total', 'Total')}
+                    {renderDashSortHeader('answered', 'Answered')}
+                    {renderDashSortHeader('unanswered', 'Unanswered')}
+                    {renderDashSortHeader('duration', 'Duration')}
+                    {renderDashSortHeader('uniqueCalls', 'Unique Calls')}
+                    {renderDashSortHeader('uniqueAnswered', 'Unique Answered Calls', 'pr-6')}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">

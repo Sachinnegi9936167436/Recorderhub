@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense, useMemo } from 'react';
 import { Navigation } from '@/components/Navigation';
 import Link from 'next/link';
 import {
@@ -12,7 +12,10 @@ import {
   ShieldCheck,
   ShieldAlert,
   PlayCircle,
-  MessageSquare
+  MessageSquare,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown
 } from 'lucide-react';
 
 function AudioCell({ call, idx }: { call: any; idx: number }) {
@@ -214,6 +217,118 @@ function SalestrailCallsInner() {
     return true;
   });
 
+  type SortField = 'user' | 'phone' | 'name' | 'type' | 'startTime' | 'direction' | 'status' | 'duration' | 'audio';
+  type SortOrder = 'asc' | 'desc';
+
+  const [sortField, setSortField] = useState<SortField>('startTime');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortOrder(field === 'startTime' || field === 'duration' ? 'desc' : 'asc');
+    }
+  };
+
+  const sortedCalls = useMemo(() => {
+    return [...filteredCalls].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'user': {
+          const uA = resolveCounselorName(a);
+          const uB = resolveCounselorName(b);
+          cmp = uA.localeCompare(uB);
+          break;
+        }
+        case 'phone': {
+          const pA = a.phoneNumber || a.phoneNumberMasked || a.phone || '';
+          const pB = b.phoneNumber || b.phoneNumberMasked || b.phone || '';
+          cmp = pA.localeCompare(pB);
+          break;
+        }
+        case 'name': {
+          const pA = a.phoneNumber || a.phoneNumberMasked || a.phone || '';
+          const pB = b.phoneNumber || b.phoneNumberMasked || b.phone || '';
+          const nA = a.leadName || a.name || pA;
+          const nB = b.leadName || b.name || pB;
+          cmp = nA.localeCompare(nB);
+          break;
+        }
+        case 'type': {
+          const isWAA = (a.channel || '').toUpperCase() === 'WHATSAPP' || (a.disposition || '').toLowerCase().includes('whatsapp') || (a.idempotencyKey || '').startsWith('WA_');
+          const isWAB = (b.channel || '').toUpperCase() === 'WHATSAPP' || (b.disposition || '').toLowerCase().includes('whatsapp') || (b.idempotencyKey || '').startsWith('WA_');
+          const tA = isWAA ? 'WhatsApp' : 'SIM';
+          const tB = isWAB ? 'WhatsApp' : 'SIM';
+          cmp = tA.localeCompare(tB);
+          break;
+        }
+        case 'startTime': {
+          const timeA = a.startTime ? new Date(a.startTime).getTime() : 0;
+          const timeB = b.startTime ? new Date(b.startTime).getTime() : 0;
+          cmp = timeA - timeB;
+          break;
+        }
+        case 'direction': {
+          const isOutA = (a.direction || 'OUTGOING').toUpperCase() === 'OUTGOING' || (a.direction || '').toUpperCase() === 'OUTBOUND';
+          const isOutB = (b.direction || 'OUTGOING').toUpperCase() === 'OUTGOING' || (b.direction || '').toUpperCase() === 'OUTBOUND';
+          const dA = isOutA ? 'Outbound' : 'Inbound';
+          const dB = isOutB ? 'Outbound' : 'Inbound';
+          cmp = dA.localeCompare(dB);
+          break;
+        }
+        case 'status': {
+          const isAnsA = (a.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+          const isAnsB = (b.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+          const sA = isAnsA ? 'Answered' : 'Unanswered';
+          const sB = isAnsB ? 'Answered' : 'Unanswered';
+          cmp = sA.localeCompare(sB);
+          break;
+        }
+        case 'duration': {
+          const durA = Number(a.durationSeconds || 0);
+          const durB = Number(b.durationSeconds || 0);
+          cmp = durA - durB;
+          break;
+        }
+        case 'audio': {
+          const hasA = a.audioUrl || a.s3Key || a.recordingStatus === 'COMPLETED' ? 1 : 0;
+          const hasB = b.audioUrl || b.s3Key || b.recordingStatus === 'COMPLETED' ? 1 : 0;
+          cmp = hasA - hasB;
+          break;
+        }
+      }
+      return sortOrder === 'asc' ? cmp : -cmp;
+    });
+  }, [filteredCalls, sortField, sortOrder]);
+
+  const renderSortHeader = (field: SortField, label: string, extraClasses = '') => {
+    const isActive = sortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        className={`p-4 text-center font-bold cursor-pointer select-none group hover:bg-slate-100/70 transition-colors ${extraClasses}`}
+        title={`Sort by ${label} (${isActive ? (sortOrder === 'asc' ? 'Ascending' : 'Descending') : 'Click to sort'})`}
+      >
+        <div className="flex items-center justify-center space-x-1.5">
+          <span>{label}</span>
+          <span className="inline-flex items-center">
+            {isActive ? (
+              sortOrder === 'asc' ? (
+                <ArrowUp className="w-3.5 h-3.5 text-brand-600 font-extrabold transition-transform duration-200" />
+              ) : (
+                <ArrowDown className="w-3.5 h-3.5 text-brand-600 font-extrabold transition-transform duration-200" />
+              )
+            ) : (
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 opacity-60 group-hover:opacity-100 transition-all duration-200" />
+            )}
+          </span>
+        </div>
+      </th>
+    );
+  };
+
   const exportCSV = () => {
     if (callsList.length === 0) {
       alert('No call records available to export.');
@@ -361,19 +476,19 @@ function SalestrailCallsInner() {
             <table className="w-full text-left text-xs text-slate-800">
               <thead className="bg-white text-slate-900 font-extrabold border-b border-slate-200">
                 <tr>
-                  <th className="p-4 pl-6 text-center font-bold">User</th>
-                  <th className="p-4 text-center font-bold">Phone Number</th>
-                  <th className="p-4 text-center font-bold">Name</th>
-                  <th className="p-4 text-center font-bold">Type</th>
-                  <th className="p-4 text-center font-bold">Call Time</th>
-                  <th className="p-4 text-center font-bold">Direction</th>
-                  <th className="p-4 text-center font-bold">Status</th>
-                  <th className="p-4 text-center font-bold">Duration</th>
-                  <th className="p-4 pr-6 text-center font-bold">Audio Recording</th>
+                  {renderSortHeader('user', 'User', 'pl-6')}
+                  {renderSortHeader('phone', 'Phone Number')}
+                  {renderSortHeader('name', 'Name')}
+                  {renderSortHeader('type', 'Type')}
+                  {renderSortHeader('startTime', 'Call Time')}
+                  {renderSortHeader('direction', 'Direction')}
+                  {renderSortHeader('status', 'Status')}
+                  {renderSortHeader('duration', 'Duration')}
+                  {renderSortHeader('audio', 'Audio Recording', 'pr-6')}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredCalls.length === 0 ? (
+                {sortedCalls.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="p-12 text-center text-slate-500 font-medium">
                       {loading ? (
@@ -387,7 +502,7 @@ function SalestrailCallsInner() {
                     </td>
                   </tr>
                 ) : (
-                  filteredCalls.map((call, idx) => {
+                  sortedCalls.map((call, idx) => {
                     const rawPhoneInput = call.phoneNumber || call.phoneNumberMasked || call.phone || '';
                     const digitsOnly = rawPhoneInput.replace(/\D/g, '');
                     const cleanPhone = digitsOnly.length >= 10 ? `+91 ${digitsOnly.slice(-10, -5)} ${digitsOnly.slice(-5)}` : (rawPhoneInput || '+91 99361 67436');
