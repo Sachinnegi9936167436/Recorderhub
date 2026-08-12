@@ -19,7 +19,7 @@ export async function OPTIONS() {
 export async function GET() {
   try {
     await connectToDatabase();
-    let calls = await (CallModel as any).find().sort({ startTime: -1, createdAt: -1 }).limit(200).exec();
+    let calls = await (CallModel as any).find().sort({ startTime: -1, createdAt: -1 }).limit(5000).exec();
 
     // Enrich calls missing agentName from registered devices in MongoDB
     try {
@@ -128,6 +128,8 @@ export async function GET() {
         const existingChannel = (existing.channel || '').toUpperCase();
 
         return (
+          callDigits.length >= 10 &&
+          existingDigits.length >= 10 &&
           existingDigits === callDigits &&
           existingChannel === channel &&
           Math.abs(existingTime - callTime) <= 120000

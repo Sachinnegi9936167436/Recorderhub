@@ -3,13 +3,13 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { Navigation } from '@/components/Navigation';
 import Link from 'next/link';
-import { 
-  Search, 
-  ChevronDown, 
-  User, 
-  Download, 
-  RefreshCw, 
-  ShieldCheck, 
+import {
+  Search,
+  ChevronDown,
+  User,
+  Download,
+  RefreshCw,
+  ShieldCheck,
   ShieldAlert,
   PlayCircle,
   MessageSquare
@@ -28,12 +28,12 @@ function AudioCell({ call, idx }: { call: any; idx: number }) {
   const audioSrc = call.audioUrl || `/api/v1/recordings/${call.idempotencyKey || call._id || call.id || idx}/audio`;
 
   return (
-    <audio 
-      controls 
+    <audio
+      controls
       preload="none"
-      src={audioSrc} 
+      src={audioSrc}
       onError={() => setHasError(true)}
-      className="h-8 max-w-[180px] inline-block" 
+      className="h-8 max-w-[180px] inline-block"
     />
   );
 }
@@ -401,14 +401,14 @@ function SalestrailCallsInner() {
                       second: '2-digit',
                       hour12: false
                     }) : '08/08/2026 23:15:56';
-                    
+
                     const durationMins = call.durationSeconds ? Math.floor(call.durationSeconds / 60) : 0;
                     const durationSecs = call.durationSeconds ? call.durationSeconds % 60 : 0;
                     const durationStr = durationMins > 0 ? `${durationMins}m:${durationSecs}s` : `${durationSecs}s`;
 
                     const isAnswered = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
                     const isOutbound = (call.direction || 'OUTGOING').toUpperCase() === 'OUTGOING' || (call.direction || '').toUpperCase() === 'OUTBOUND';
-                    const isWhatsApp = 
+                    const isWhatsApp =
                       (call.channel || '').toUpperCase() === 'WHATSAPP' ||
                       (call.disposition || '').toLowerCase().includes('whatsapp') ||
                       (call.idempotencyKey || '').startsWith('WA_');
@@ -429,9 +429,8 @@ function SalestrailCallsInner() {
                         </td>
                         {/* Type */}
                         <td className="p-4 text-center">
-                          <span className={`inline-block px-2.5 py-1 rounded-md text-[11px] font-semibold ${
-                            isWhatsApp ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-800'
-                          }`}>
+                          <span className={`inline-block px-2.5 py-1 rounded-md text-[11px] font-semibold ${isWhatsApp ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-800'
+                            }`}>
                             {isWhatsApp ? 'WhatsApp' : 'SIM'}
                           </span>
                         </td>
