@@ -57,6 +57,7 @@ class WhatsAppAudioRecorder(private val context: Context) {
         return currentOutputFile
     }
 
+    @SuppressLint("MissingPermission")
     private fun recordAudioPcm(outputFile: File) {
         val sampleRate = 16000
         val channelConfig = AudioFormat.CHANNEL_IN_MONO
@@ -80,7 +81,7 @@ class WhatsAppAudioRecorder(private val context: Context) {
 
         for (source in sourcesToTry) {
             try {
-                val candidate = @SuppressLint("MissingPermission") AudioRecord(
+                val candidate = AudioRecord(
                     source,
                     sampleRate,
                     channelConfig,
