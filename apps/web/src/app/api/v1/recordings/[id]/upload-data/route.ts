@@ -26,18 +26,25 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const arrayBuffer = await req.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 1. Upload directly to AWS S3 Bucket
-    const s3Info = getS3Client();
-    const s3Key = `recordings/${recordingId}.m4a`;
+    const reqContentType = req.headers.get('content-type') || '';
+    const ext = reqContentType.includes('wav') ? 'wav'
+              : reqContentType.includes('mpeg') || reqContentType.includes('mp3') ? 'mp3'
+              : reqContentType.includes('3gp') ? '3gp'
+              : reqContentType.includes('amr') ? 'amr' : 'm4a';
+
+    const contentType = reqContentType || (ext === 'wav' ? 'audio/wav' : 'audio/m4a');
+    let s3Key = `recordings/${recordingId}.${ext}`;
     let uploadedToS3 = false;
 
+    // 1. Upload directly to AWS S3 Bucket
+    const s3Info = getS3Client();
     if (s3Info) {
       try {
         const command = new PutObjectCommand({
           Bucket: s3Info.bucket,
           Key: s3Key,
           Body: buffer,
-          ContentType: 'audio/m4a',
+          ContentType: contentType,
         });
         await s3Info.client.send(command);
         uploadedToS3 = true;
@@ -50,8 +57,14 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     // 2. Also save to Local Disk Storage fallback
     const uploadsDir = getUploadsDir();
     await fs.mkdir(uploadsDir, { recursive: true });
-    const filePath = path.join(uploadsDir, `${recordingId}.m4a`);
+    const filePath = path.join(uploadsDir, `${recordingId}.${ext}`);
     await fs.writeFile(filePath, buffer);
+
+    // Save fallback file with .m4a extension as well if ext is different to guarantee legacy URL compatibility
+    if (ext !== 'm4a') {
+      const fallbackM4aPath = path.join(uploadsDir, `${recordingId}.m4a`);
+      await fs.writeFile(fallbackM4aPath, buffer).catch(() => {});
+    }
 
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
 
@@ -69,7 +82,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         $set: {
           recordingStatus: 'COMPLETED',
           audioUrl: audioUrl,
-          s3Key: `recordings/${recordingId}.m4a`,
+          s3Key: s3Key,
         },
       },
       { new: true }
@@ -89,7 +102,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
           $set: {
             recordingStatus: 'COMPLETED',
             audioUrl: audioUrl,
-            s3Key: `recordings/${recordingId}.m4a`,
+            s3Key: s3Key,
           },
         },
         { sort: { startTime: -1, createdAt: -1 }, new: true }

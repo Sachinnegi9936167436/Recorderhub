@@ -37,14 +37,19 @@ class CallSyncWorker(
 
     override suspend fun doWork(): Result {
         val db = AppDatabase.getInstance(applicationContext)
-        val pendingEvents = db.callEventDao().getPendingSyncEvents()
+        val pendingEvents = db.callEventDao().getPendingSyncAndRecordingEvents()
 
         if (pendingEvents.isEmpty()) {
-            Log.d("CallSyncWorker", "No pending call events to sync.")
+            Log.d("CallSyncWorker", "No pending call events or audio recordings to sync.")
             return Result.success()
         }
 
-        AppLogManager.log("SYNC", "CallSyncWorker", "Found ${pendingEvents.size} pending call events to sync.")
+        val pendingCallSyncs = pendingEvents.filter { it.syncStatus == "PENDING" }
+        val pendingAudioUploads = pendingEvents.filter { 
+            !it.recordingPath.isNullOrEmpty() && File(it.recordingPath).exists() && it.recordingStatus != "SYNCED" 
+        }
+
+        AppLogManager.log("SYNC", "CallSyncWorker", "Found ${pendingCallSyncs.size} call logs and ${pendingAudioUploads.size} audio recordings pending sync.")
 
         val prefs = applicationContext.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
         val customApiUrl = prefs.getString("custom_api_url", null)
@@ -90,62 +95,69 @@ class CallSyncWorker(
 
                 val api = retrofit.create(RecordHubApi::class.java)
 
-        val counselorEmail = prefs.getString("counselor_email", null)
-        var counselorName = prefs.getString("counselor_name", null)
+                val counselorEmail = prefs.getString("counselor_email", null)
+                var counselorName = prefs.getString("counselor_name", null)
 
-        if (counselorName.isNullOrBlank() && !counselorEmail.isNullOrBlank()) {
-            counselorName = counselorEmail.substringBefore("@")
-                .replace(".", " ")
-                .replace("_", " ")
-                .split(" ")
-                .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() } }
-        }
-
-        val dtoList = pendingEvents.map { evt ->
-            val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
-                timeZone = TimeZone.getTimeZone("UTC")
-            }
-            CallEventDto(
-                deviceId = evt.deviceId,
-                idempotencyKey = evt.idempotencyKey,
-                phoneNumber = evt.phoneNumber,
-                direction = evt.direction,
-                status = evt.status,
-                startTime = isoFormat.format(Date(evt.startTime)),
-                endTime = isoFormat.format(Date(evt.endTime)),
-                durationSeconds = evt.durationSeconds,
-                simSlot = evt.simSlot,
-                isPrivate = evt.isPrivate,
-                disposition = evt.disposition,
-                channel = if (evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")) "WHATSAPP" else "CELLULAR",
-                agentName = counselorName,
-                counselorEmail = counselorEmail
-            )
-        }
-
-        val request = BatchSyncRequest(callEvents = dtoList)
-        val token = prefs.getString("access_token", null)
-        val authHeader = if (!token.isNullOrBlank()) "Bearer $token" else "Bearer mock_jwt_token"
-        val response = api.batchSyncCalls(authHeader, request)
-
-                if (response.isSuccessful && response.body() != null) {
-                    val body = response.body()!!
-                    val syncedKeys = body.syncedIds + body.duplicates
-                    if (syncedKeys.isNotEmpty()) {
-                        db.callEventDao().markEventsSynced(syncedKeys)
-                        AppLogManager.log("SYNC", "CallSyncWorker", "SUCCESSFULLY synced ${syncedKeys.size} call events to API ($baseUrl)")
-                    }
-
-                    // Upload Audio Recording files if available
-                    for (evt in pendingEvents) {
-                        if (!evt.recordingPath.isNullOrEmpty()) {
-                            uploadAudioFile(api, baseUrl, evt)
-                        }
-                    }
-                    syncSuccessful = true
-                } else {
-                    AppLogManager.log("WARN", "CallSyncWorker", "API sync to $baseUrl status ${response.code()}")
+                if (counselorName.isNullOrBlank() && !counselorEmail.isNullOrBlank()) {
+                    counselorName = counselorEmail.substringBefore("@")
+                        .replace(".", " ")
+                        .replace("_", " ")
+                        .split(" ")
+                        .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() } }
                 }
+
+                val token = prefs.getString("access_token", null)
+                val authHeader = if (!token.isNullOrBlank()) "Bearer $token" else "Bearer mock_jwt_token"
+
+                if (pendingCallSyncs.isNotEmpty()) {
+                    val dtoList = pendingCallSyncs.map { evt ->
+                        val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+                            timeZone = TimeZone.getTimeZone("UTC")
+                        }
+                        CallEventDto(
+                            deviceId = evt.deviceId,
+                            idempotencyKey = evt.idempotencyKey,
+                            phoneNumber = evt.phoneNumber,
+                            direction = evt.direction,
+                            status = evt.status,
+                            startTime = isoFormat.format(Date(evt.startTime)),
+                            endTime = isoFormat.format(Date(evt.endTime)),
+                            durationSeconds = evt.durationSeconds,
+                            simSlot = evt.simSlot,
+                            isPrivate = evt.isPrivate,
+                            disposition = evt.disposition,
+                            channel = if (evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")) "WHATSAPP" else "CELLULAR",
+                            agentName = counselorName,
+                            counselorEmail = counselorEmail
+                        )
+                    }
+
+                    val request = BatchSyncRequest(callEvents = dtoList)
+                    val response = api.batchSyncCalls(authHeader, request)
+
+                    if (response.isSuccessful && response.body() != null) {
+                        val body = response.body()!!
+                        val syncedKeys = body.syncedIds + body.duplicates
+                        if (syncedKeys.isNotEmpty()) {
+                            db.callEventDao().markEventsSynced(syncedKeys)
+                            AppLogManager.log("SYNC", "CallSyncWorker", "SUCCESSFULLY synced ${syncedKeys.size} call events to API ($baseUrl)")
+                        }
+                        syncSuccessful = true
+                    } else {
+                        AppLogManager.log("WARN", "CallSyncWorker", "API batch call sync to $baseUrl status ${response.code()}")
+                    }
+                } else {
+                    syncSuccessful = true
+                }
+
+                // Upload Audio Recording files if available
+                if (syncSuccessful && pendingAudioUploads.isNotEmpty()) {
+                    for (evt in pendingAudioUploads) {
+                        uploadAudioFile(api, baseUrl, authHeader, db, evt)
+                    }
+                }
+
+                if (syncSuccessful) break
             } catch (e: Exception) {
                 AppLogManager.log("ERROR", "CallSyncWorker", "Could not reach $baseUrl: ${e.message}")
             }
@@ -159,7 +171,13 @@ class CallSyncWorker(
         }
     }
 
-    private suspend fun uploadAudioFile(api: RecordHubApi, baseUrl: String, evt: CallEventEntity) {
+    private suspend fun uploadAudioFile(
+        api: RecordHubApi,
+        baseUrl: String,
+        authHeader: String,
+        db: AppDatabase,
+        evt: CallEventEntity
+    ) {
         try {
             val file = File(evt.recordingPath ?: return)
             if (!file.exists() || file.length() == 0L) return
@@ -173,7 +191,7 @@ class CallSyncWorker(
                 "amr" -> "audio/amr"
                 "wav" -> "audio/wav"
                 "3gp" -> "audio/3gpp"
-                else -> "audio/mp4"
+                else -> "audio/wav"
             }
 
             val initReq = UploadInitiateRequest(
@@ -184,7 +202,7 @@ class CallSyncWorker(
                 durationSeconds = evt.durationSeconds
             )
 
-            val initRes = api.initiateUpload("Bearer mock_jwt_token", initReq)
+            val initRes = api.initiateUpload(authHeader, initReq)
             if (initRes.isSuccessful && initRes.body() != null) {
                 val uploadInfo = initRes.body()!!
                 val putUrl = uploadInfo.presignedPutUrl
@@ -212,8 +230,12 @@ class CallSyncWorker(
 
                 // Attempt 2: Server Fallback Upload
                 if (!uploadSuccess) {
-                    val fallbackTargetUrl = uploadInfo.fallbackUploadUrl 
-                        ?: "${baseUrl.removeSuffix("/")}/recordings/${uploadInfo.recordingId}/upload-data"
+                    val rawFallback = uploadInfo.fallbackUploadUrl ?: ""
+                    val fallbackTargetUrl = if (rawFallback.isNotBlank() && !rawFallback.contains("localhost")) {
+                        rawFallback
+                    } else {
+                        "${baseUrl.removeSuffix("/")}/recordings/${uploadInfo.recordingId}/upload-data"
+                    }
 
                     AppLogManager.log("SYNC", "ServerFallback", "Uploading binary audio to server endpoint: $fallbackTargetUrl")
 
@@ -233,9 +255,12 @@ class CallSyncWorker(
 
                 if (uploadSuccess) {
                     val compReq = com.academically.recordhub.data.remote.UploadCompleteRequest(callId = evt.idempotencyKey)
-                    api.completeUpload("Bearer mock_jwt_token", uploadInfo.recordingId, compReq)
+                    api.completeUpload(authHeader, uploadInfo.recordingId, compReq)
+                    db.callEventDao().updateRecordingStatus(evt.idempotencyKey, "SYNCED")
                     AppLogManager.log("SYNC", "RecordingSync", "Uploaded & linked audio recording ${file.name} successfully!")
                 }
+            } else {
+                AppLogManager.log("ERROR", "RecordingSync", "initiateUpload failed with status code ${initRes.code()}")
             }
         } catch (e: Exception) {
             AppLogManager.log("ERROR", "RecordingSync", "Audio upload error: ${e.message}")

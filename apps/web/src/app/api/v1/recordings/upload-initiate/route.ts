@@ -15,7 +15,10 @@ export async function POST(req: Request) {
     const { callId, fileSizeBytes, mimeType, checksumSha256, durationSeconds } = body;
 
     const recordingId = `REC-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    const ext = mimeType?.includes('mpeg') || mimeType?.includes('mp3') ? 'mp3' : 'm4a';
+    const ext = mimeType?.includes('mpeg') || mimeType?.includes('mp3') ? 'mp3'
+              : mimeType?.includes('wav') ? 'wav'
+              : mimeType?.includes('3gpp') || mimeType?.includes('3gp') ? '3gp'
+              : mimeType?.includes('amr') ? 'amr' : 'm4a';
     const s3Key = `recordings/${recordingId}.${ext}`;
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
 
@@ -32,7 +35,7 @@ export async function POST(req: Request) {
         const command = new PutObjectCommand({
           Bucket: s3Info.bucket,
           Key: s3Key,
-          ContentType: mimeType || 'audio/m4a',
+          ContentType: mimeType || (ext === 'wav' ? 'audio/wav' : 'audio/m4a'),
         });
 
         // Generate 15-minute AWS S3 presigned URL for direct APK upload
@@ -47,8 +50,13 @@ export async function POST(req: Request) {
     // Immediately link audioUrl and s3Key to the Call document in MongoDB Atlas
     if (callId) {
       try {
-        await (CallModel as any).findOneAndUpdate(
-          { idempotencyKey: callId },
+        let updatedCall = await (CallModel as any).findOneAndUpdate(
+          {
+            $or: [
+              { idempotencyKey: callId },
+              { _id: callId.length === 24 ? callId : null }
+            ]
+          },
           {
             $set: {
               recordingStatus: 'PENDING_UPLOAD',
@@ -58,7 +66,32 @@ export async function POST(req: Request) {
           },
           { new: true }
         ).exec();
-        console.log(`Linked audioUrl ${audioUrl} to call idempotencyKey ${callId}`);
+
+        if (!updatedCall) {
+          const digitsOnly = callId.replace(/\D/g, '');
+          const cleanDigits = digitsOnly.slice(-10);
+          if (cleanDigits.length === 10) {
+            const regexPattern = new RegExp(`${cleanDigits}$`);
+            updatedCall = await (CallModel as any).findOneAndUpdate(
+              {
+                phoneNumber: { $regex: regexPattern },
+                $or: [
+                  { recordingStatus: { $in: ['PENDING', 'PENDING_UPLOAD', 'NONE'] } },
+                  { audioUrl: { $exists: false } }
+                ]
+              },
+              {
+                $set: {
+                  recordingStatus: 'PENDING_UPLOAD',
+                  audioUrl: audioUrl,
+                  s3Key: s3Key,
+                },
+              },
+              { sort: { startTime: -1, createdAt: -1 }, new: true }
+            ).exec();
+          }
+        }
+        console.log(`Linked audioUrl ${audioUrl} to call ${callId}`);
       } catch (linkErr) {
         console.error(`Error linking audioUrl to call ${callId}:`, linkErr);
       }

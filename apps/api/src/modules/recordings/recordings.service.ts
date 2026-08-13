@@ -15,10 +15,27 @@ export class RecordingsService {
   ) {}
 
   async initiateUpload(organizationId: string, callId: string, payload: { fileSizeBytes: number; mimeType: string; checksumSha256: string; durationSeconds: number }) {
-    const call = await this.callModel.findOne({
-      _id: new Types.ObjectId(callId),
+    const isObjectId = Types.ObjectId.isValid(callId);
+    let call = await this.callModel.findOne({
+      $or: [
+        { idempotencyKey: callId },
+        { _id: isObjectId ? new Types.ObjectId(callId) : null }
+      ],
       organizationId: new Types.ObjectId(organizationId),
     });
+
+    if (!call) {
+      // Fallback matching by clean 10-digit phone number if call was deduplicated on batch sync
+      const digitsOnly = callId.replace(/\D/g, '');
+      const cleanDigits = digitsOnly.slice(-10);
+      if (cleanDigits.length === 10) {
+        const regexPattern = new RegExp(`${cleanDigits}$`);
+        call = await this.callModel.findOne({
+          phoneNumber: { $regex: regexPattern },
+          organizationId: new Types.ObjectId(organizationId),
+        }).sort({ startTime: -1 });
+      }
+    }
 
     if (!call) throw new NotFoundException('Call record not found');
 

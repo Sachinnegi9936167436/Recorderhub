@@ -230,14 +230,14 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Check if a call for the same number was created in local DB within the last 90 seconds
-                val recentEvents = db.callEventDao().getPendingSyncEvents()
+                // Check if a call for the same number was created in local DB within the last 120 seconds
+                val recentEvents = db.callEventDao().getAllEvents()
                 val existingMatch = recentEvents.firstOrNull { existing ->
                     val existingDigits = existing.phoneNumber.replace("\\D".toRegex(), "").takeLast(10)
                     val currentDigits = cleanPhone.replace("\\D".toRegex(), "").takeLast(10)
                     (existing.disposition.contains("WhatsApp", ignoreCase = true) || existing.idempotencyKey.startsWith("WA_")) &&
                     existingDigits == currentDigits &&
-                    Math.abs(existing.startTime - callStartTimeMs) < 90000
+                    Math.abs(existing.startTime - callStartTimeMs) < 120000
                 }
 
                 if (existingMatch != null) {

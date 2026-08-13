@@ -88,9 +88,11 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       try {
         const possibleKeys = [
           s3KeyTarget,
+          `recordings/${recordingId}.wav`,
           `recordings/${recordingId}.mp3`,
           `recordings/${recordingId}.m4a`,
           `recordings/${recordingId}`,
+          `${recordingId}.wav`,
           `${recordingId}.mp3`,
           `${recordingId}.m4a`,
           `${recordingId}`
@@ -105,8 +107,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
               const byteArray = await s3Response.Body.transformToByteArray();
               const buffer = Buffer.from(byteArray);
               if (buffer.length > 0) {
+                const isWav = targetKey.endsWith('.wav') || s3Response.ContentType?.includes('wav');
                 const isMp3 = targetKey.endsWith('.mp3') || s3Response.ContentType?.includes('mpeg') || s3Response.ContentType?.includes('mp3');
-                const contentType = isMp3 ? 'audio/mpeg' : 'audio/mp4';
+                const contentType = isWav ? 'audio/wav' : isMp3 ? 'audio/mpeg' : 'audio/mp4';
                 return createAudioResponse(buffer, contentType);
               }
             }
@@ -121,17 +124,30 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
     // 3. Try fetching from Local Disk Storage
     const uploadsDir = getUploadsDir();
-    const filePath = path.join(uploadsDir, `${recordingId}.m4a`);
+    const possibleLocalFiles = [
+      path.join(uploadsDir, `${recordingId}.wav`),
+      path.join(uploadsDir, `${recordingId}.mp3`),
+      path.join(uploadsDir, `${recordingId}.m4a`),
+      path.join(uploadsDir, `${recordingId}.3gp`),
+      path.join(uploadsDir, `${recordingId}`)
+    ];
 
-    try {
-      const buffer = await fs.readFile(filePath);
-      if (buffer.length > 0) {
-        return createAudioResponse(buffer, 'audio/mp4');
+    for (const filePath of possibleLocalFiles) {
+      try {
+        const buffer = await fs.readFile(filePath);
+        if (buffer.length > 0) {
+          const mime = filePath.endsWith('.wav') ? 'audio/wav'
+                     : filePath.endsWith('.mp3') ? 'audio/mpeg'
+                     : filePath.endsWith('.3gp') ? 'audio/3gpp'
+                     : 'audio/mp4';
+          return createAudioResponse(buffer, mime);
+        }
+      } catch {
+        // try next local path
       }
-      return NextResponse.json({ message: 'Audio recording file is 0 bytes (empty recording)' }, { status: 404 });
-    } catch {
-      return NextResponse.json({ message: 'Audio recording file not found in S3 or local storage' }, { status: 404 });
     }
+
+    return NextResponse.json({ message: 'Audio recording file not found in S3 or local storage' }, { status: 404 });
   } catch (err: any) {
     return NextResponse.json({ message: err.message || 'Error streaming audio' }, { status: 500 });
   }

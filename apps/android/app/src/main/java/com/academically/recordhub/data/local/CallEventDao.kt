@@ -30,8 +30,14 @@ interface CallEventDao {
     @Query("SELECT * FROM call_events WHERE syncStatus = 'PENDING'")
     suspend fun getPendingSyncEvents(): List<CallEventEntity>
 
+    @Query("SELECT * FROM call_events WHERE syncStatus = 'PENDING' OR (recordingPath IS NOT NULL AND recordingPath != '' AND recordingStatus != 'SYNCED')")
+    suspend fun getPendingSyncAndRecordingEvents(): List<CallEventEntity>
+
     @Query("UPDATE call_events SET syncStatus = 'SYNCED' WHERE idempotencyKey IN (:idempotencyKeys)")
     suspend fun markEventsSynced(idempotencyKeys: List<String>)
+
+    @Query("UPDATE call_events SET recordingStatus = :status WHERE idempotencyKey = :idempotencyKey")
+    suspend fun updateRecordingStatus(idempotencyKey: String, status: String)
 
     @Query("UPDATE call_events SET syncStatus = 'PENDING'")
     suspend fun resetAllToPendingSync()
