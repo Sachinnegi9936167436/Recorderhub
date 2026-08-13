@@ -72,17 +72,22 @@ function CounselorsAndTeamsInner() {
   const [newTeamSelectedMembers, setNewTeamSelectedMembers] = useState<string[]>([]);
   const [counselorSearchInModal, setCounselorSearchInModal] = useState('');
 
-  // Team Leads Dropdown Options
+  // Team Leads Dropdown Options (Strictly TEAM_LEAD, MANAGER, or ADMIN roles)
   const teamLeadsOptions = React.useMemo(() => {
-    const teamLeadsSet = new Set<string>(['Sachin Negi', 'Himanshu Gusain', 'Rajdeep', 'Dev admin']);
-    counselors.forEach((c) => {
-      const roleUpper = (c.role || '').toUpperCase();
-      if (roleUpper === 'TEAM_LEAD' || roleUpper === 'MANAGER' || roleUpper === 'ADMIN' || roleUpper === 'COMPANY_ADMIN') {
-        const name = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.email?.split('@')[0];
-        if (name) teamLeadsSet.add(name);
-      }
-    });
-    return Array.from(teamLeadsSet);
+    const leads = counselors
+      .filter((c) => {
+        const roleUpper = (c.role || '').toUpperCase();
+        return roleUpper === 'TEAM_LEAD' || roleUpper === 'MANAGER' || roleUpper === 'ADMIN' || roleUpper === 'COMPANY_ADMIN';
+      })
+      .map((c) => `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.email?.split('@')[0])
+      .filter(Boolean);
+
+    if (leads.length > 0) {
+      return Array.from(new Set(leads));
+    }
+
+    // Default Team Leads fallback (Excludes regular Counselors)
+    return ['Sachin Negi', 'Rajdeep', 'Dev admin'];
   }, [counselors]);
 
   // Counselor Selection for Active Team Modal
