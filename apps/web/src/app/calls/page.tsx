@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, Suspense, useMemo } from 'react';
 import { Navigation, useUserRole } from '@/components/Navigation';
+import { UserProfileMenu } from '@/components/UserProfileMenu';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   Search,
@@ -15,7 +17,11 @@ import {
   MessageSquare,
   ArrowUp,
   ArrowDown,
-  ArrowUpDown
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 
 function AudioCell({ call, idx }: { call: any; idx: number }) {
@@ -49,6 +55,9 @@ function AudioCell({ call, idx }: { call: any; idx: number }) {
 
 function SalestrailCallsInner() {
   const { role, email: userEmail, isAdmin, isManager, isTeamLead, isCounselor } = useUserRole();
+  const searchParams = useSearchParams();
+  const isRecordingsOnly = searchParams.get('filter') === 'recordings';
+
   const [callsList, setCallsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -219,6 +228,15 @@ function SalestrailCallsInner() {
     if (combined.includes('message') || combined.includes('messages') || combined.includes('unread')) {
       return false;
     }
+
+    // 0.5. Filter for recordings view if ?filter=recordings query param is active
+    if (isRecordingsOnly) {
+      const hasRecording = call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD';
+      if (!hasRecording || call.recordingStatus === 'NONE') {
+        return false;
+      }
+    }
+
     // 1. Search Query Filter
     const phone = call.phoneNumber || call.phoneNumberMasked || call.phone || '';
     const name = call.leadName || call.name || '';
@@ -272,6 +290,15 @@ function SalestrailCallsInner() {
 
     return true;
   });
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Reset to Page 1 when any filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, dateRange, repCategory, subFilter, isRecordingsOnly]);
 
   type SortField = 'user' | 'phone' | 'name' | 'type' | 'startTime' | 'direction' | 'status' | 'duration' | 'audio';
   type SortOrder = 'asc' | 'desc';
@@ -359,6 +386,14 @@ function SalestrailCallsInner() {
     });
   }, [filteredCalls, sortField, sortOrder]);
 
+  const totalRecords = sortedCalls.length;
+  const totalPages = Math.ceil(totalRecords / pageSize) || 1;
+
+  const paginatedCalls = useMemo(() => {
+    const startIdx = (currentPage - 1) * pageSize;
+    return sortedCalls.slice(startIdx, startIdx + pageSize);
+  }, [sortedCalls, currentPage, pageSize]);
+
   const renderSortHeader = (field: SortField, label: string, extraClasses = '') => {
     const isActive = sortField === field;
     return (
@@ -419,15 +454,9 @@ function SalestrailCallsInner() {
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto p-8 space-y-6">
-        {/* Header Right Bar: US Flag & Profile */}
-        <div className="flex items-center justify-end space-x-3">
-          <div className="flex items-center space-x-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 px-2.5 py-1.5 rounded-md shadow-sm">
-            <span>🇺🇸 US</span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-          </div>
-          <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center text-slate-700 font-bold text-sm shadow-sm">
-            <User className="w-5 h-5 text-slate-600" />
-          </div>
+        {/* Header Right Bar: Profile Menu */}
+        <div className="flex items-center justify-end">
+          <UserProfileMenu />
         </div>
 
         {/* Top Filter Toolbar (Matching Salestrail Screenshot) */}
@@ -511,7 +540,9 @@ function SalestrailCallsInner() {
 
         {/* Title & Search Bar */}
         <div className="flex items-center justify-between pt-2">
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Calls</h1>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+            {isRecordingsOnly ? 'Audio Recordings' : 'Calls'}
+          </h1>
 
           {/* Search Box (Right Aligned) */}
           <div className="relative w-full max-w-sm">
@@ -527,7 +558,7 @@ function SalestrailCallsInner() {
         </div>
 
         {/* Calls Table (Matching Salestrail Order) */}
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-800">
               <thead className="bg-white text-slate-900 font-extrabold border-b border-slate-200">
@@ -544,7 +575,7 @@ function SalestrailCallsInner() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {sortedCalls.length === 0 ? (
+                {paginatedCalls.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="p-12 text-center text-slate-500 font-medium">
                       {loading ? (
@@ -553,12 +584,12 @@ function SalestrailCallsInner() {
                           <span>Syncing live call records from mobile...</span>
                         </div>
                       ) : (
-                        <span>No calls found matching filter. Make a call on your Android phone to log calls live!</span>
+                        <span>No {isRecordingsOnly ? 'recordings' : 'calls'} found matching filter. Make a call on your Android phone to log calls live!</span>
                       )}
                     </td>
                   </tr>
                 ) : (
-                  sortedCalls.map((call, idx) => {
+                  paginatedCalls.map((call, idx) => {
                     const rawPhoneInput = call.phoneNumber || call.phoneNumberMasked || call.phone || '';
                     const digitsOnly = rawPhoneInput.replace(/\D/g, '');
                     const cleanPhone = digitsOnly.length >= 10 ? `+91 ${digitsOnly.slice(-10, -5)} ${digitsOnly.slice(-5)}` : (rawPhoneInput || '+91 99361 67436');
@@ -631,6 +662,96 @@ function SalestrailCallsInner() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination Footer */}
+          <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-medium text-slate-700">
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <span className="text-slate-500">Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-white border border-slate-200 text-slate-800 font-semibold rounded-lg px-2.5 py-1 focus:outline-none shadow-xs cursor-pointer"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+
+              <span className="text-slate-500 font-medium">
+                Showing <strong className="text-slate-900">{totalRecords > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to{' '}
+                <strong className="text-slate-900">{Math.min(currentPage * pageSize, totalRecords)}</strong> of{' '}
+                <strong className="text-slate-900">{totalRecords}</strong> {isRecordingsOnly ? 'recordings' : 'calls'}
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-1.5">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title="First Page"
+              >
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title="Previous Page"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-center space-x-1 px-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((pg) => pg === 1 || pg === totalPages || Math.abs(pg - currentPage) <= 1)
+                  .map((pg, i, arr) => {
+                    const prevPg = arr[i - 1];
+                    const showEllipsis = prevPg && pg - prevPg > 1;
+                    return (
+                      <React.Fragment key={pg}>
+                        {showEllipsis && <span className="px-1 text-slate-400 font-bold">...</span>}
+                        <button
+                          onClick={() => setCurrentPage(pg)}
+                          className={`min-w-[32px] h-8 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            currentPage === pg
+                              ? 'bg-rose-500 text-white shadow-sm shadow-rose-500/20'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {pg}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title="Next Page"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title="Last Page"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </main>

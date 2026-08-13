@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { Navigation, useUserRole } from '@/components/Navigation';
+import { UserProfileMenu } from '@/components/UserProfileMenu';
 import { useSearchParams } from 'next/navigation';
 import { 
   Users, 
@@ -429,15 +430,9 @@ function CounselorsAndTeamsInner() {
           </div>
         )}
 
-        {/* Header Right Bar: US Flag & Profile */}
-        <div className="flex items-center justify-end space-x-3">
-          <div className="flex items-center space-x-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 px-2.5 py-1.5 rounded-md shadow-sm">
-            <span>🇺🇸 US</span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-          </div>
-          <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center text-slate-700 font-bold text-sm shadow-sm">
-            <User className="w-5 h-5 text-slate-600" />
-          </div>
+        {/* Header Right Bar: Profile Menu */}
+        <div className="flex items-center justify-end">
+          <UserProfileMenu />
         </div>
 
         {/* VIEW 1: TEAMS (Team Management) */}
