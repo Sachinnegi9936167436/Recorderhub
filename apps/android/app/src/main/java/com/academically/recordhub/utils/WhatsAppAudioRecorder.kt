@@ -1,104 +1,317 @@
 package com.academically.recordhub.utils
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.media.AudioFormat
+import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.util.Log
 import java.io.File
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 class WhatsAppAudioRecorder(private val context: Context) {
-    private var mediaRecorder: MediaRecorder? = null
-    private var isRecording = false
+    private var isRecording = AtomicBoolean(false)
     private var currentOutputFile: File? = null
     private var recordingStartTimeMs: Long = 0
+    private var recordingThread: Thread? = null
+
+    private var agc: AutomaticGainControl? = null
+    private var aec: AcousticEchoCanceler? = null
+    private var ns: NoiseSuppressor? = null
+
+    private var maxPeakAmplitudeObserved = 0
+    private var totalDataBytesWritten = 0L
 
     fun startRecording(contactTitle: String): File? {
-        if (isRecording) return currentOutputFile
+        if (isRecording.get()) return currentOutputFile
 
         val outputDir = File(context.filesDir, "whatsapp_recordings")
         if (!outputDir.exists()) outputDir.mkdirs()
 
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val safeContact = contactTitle.replace("[^a-zA-Z0-9]".toRegex(), "_")
-        currentOutputFile = File(outputDir, "WA_CALL_${timestamp}_${safeContact}.m4a")
+        currentOutputFile = File(outputDir, "WA_CALL_${timestamp}_${safeContact}.wav")
 
-        // Try AudioSource.VOICE_COMMUNICATION first, fallback to AudioSource.MIC
-        val sourcesToTry = intArrayOf(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+        maxPeakAmplitudeObserved = 0
+        totalDataBytesWritten = 0L
+        isRecording.set(true)
+        recordingStartTimeMs = System.currentTimeMillis()
+
+        val outputFile = currentOutputFile ?: return null
+
+        recordingThread = thread(start = true, name = "WhatsAppPCMRecorderThread") {
+            recordAudioPcm(outputFile)
+        }
+
+        Log.d(TAG, "Initiated WhatsApp audio recording thread for file: ${outputFile.name}")
+        return currentOutputFile
+    }
+
+    private fun recordAudioPcm(outputFile: File) {
+        val sampleRate = 16000
+        val channelConfig = AudioFormat.CHANNEL_IN_MONO
+        val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+        val minBufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+        val bufferSize = Math.max(minBufferSize, 4096)
+
+        val sourcesToTry = mutableListOf(
             MediaRecorder.AudioSource.MIC,
-            MediaRecorder.AudioSource.VOICE_RECOGNITION
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            MediaRecorder.AudioSource.CAMCORDER
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            sourcesToTry.add(MediaRecorder.AudioSource.UNPROCESSED)
+        }
+        sourcesToTry.add(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+        sourcesToTry.add(MediaRecorder.AudioSource.DEFAULT)
+
+        var audioRecord: AudioRecord? = null
+        var selectedSource = -1
 
         for (source in sourcesToTry) {
             try {
-                mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    MediaRecorder(context)
-                } else {
-                    @Suppress("DEPRECATION")
-                    MediaRecorder()
-                }.apply {
-                    setAudioSource(source)
-                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                    setAudioSamplingRate(44100)
-                    setAudioEncodingBitRate(128000)
-                    setOutputFile(currentOutputFile?.absolutePath)
-                    prepare()
-                    start()
+                val candidate = @SuppressLint("MissingPermission") AudioRecord(
+                    source,
+                    sampleRate,
+                    channelConfig,
+                    audioFormat,
+                    bufferSize * 2
+                )
+                if (candidate.state == AudioRecord.STATE_INITIALIZED) {
+                    candidate.startRecording()
+                    if (candidate.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                        audioRecord = candidate
+                        selectedSource = source
+                        Log.d(TAG, "Successfully initialized AudioRecord with source $source")
+                        break
+                    }
+                    candidate.stop()
                 }
-
-                isRecording = true
-                recordingStartTimeMs = System.currentTimeMillis()
-                Log.d("WhatsAppAudioRecorder", "Started WhatsApp audio recording with source $source: ${currentOutputFile?.name}")
-                return currentOutputFile
+                candidate.release()
             } catch (e: Exception) {
-                Log.w("WhatsAppAudioRecorder", "Failed audio source $source for WhatsApp recording: ${e.message}")
-                try {
-                    mediaRecorder?.release()
-                } catch (_: Exception) {}
-                mediaRecorder = null
+                Log.w(TAG, "AudioSource $source failed initialization: ${e.message}")
             }
         }
 
-        Log.e("WhatsAppAudioRecorder", "Hardware mic locked by WhatsApp VoIP. Proceeding with Call Metadata Syncing.")
-        isRecording = false
-        return null
+        if (audioRecord == null) {
+            Log.e(TAG, "All candidate AudioSources failed for WhatsApp call recording.")
+            isRecording.set(false)
+            return
+        }
+
+        attachAudioEffects(audioRecord.audioSessionId)
+
+        var fos: FileOutputStream? = null
+        try {
+            fos = FileOutputStream(outputFile)
+            // Write 44-byte dummy header
+            fos.write(ByteArray(44))
+
+            val shortBuffer = ShortArray(bufferSize)
+            val byteBuffer = ByteArray(bufferSize * 2)
+            val softwareGainFactor = 2.5f
+
+            var silentBuffersCount = 0
+
+            while (isRecording.get()) {
+                val readSamples = audioRecord.read(shortBuffer, 0, shortBuffer.size)
+                if (readSamples > 0) {
+                    var bufferMaxPeak = 0
+                    for (i in 0 until readSamples) {
+                        val originalSample = shortBuffer[i].toInt()
+                        val absPeak = Math.abs(originalSample)
+                        if (absPeak > bufferMaxPeak) bufferMaxPeak = absPeak
+
+                        // Apply software gain multiplier with clipping prevention
+                        var amplified = (originalSample * softwareGainFactor).toInt()
+                        if (amplified > 32767) amplified = 32767
+                        else if (amplified < -32768) amplified = -32768
+
+                        byteBuffer[i * 2] = (amplified and 0xFF).toByte()
+                        byteBuffer[i * 2 + 1] = ((amplified shr 8) and 0xFF).toByte()
+                    }
+
+                    if (bufferMaxPeak > maxPeakAmplitudeObserved) {
+                        maxPeakAmplitudeObserved = bufferMaxPeak
+                    }
+
+                    // Fallback check: if first 30 buffers (approx 1 sec) are strictly 0 amplitude, probe fallback
+                    if (bufferMaxPeak == 0 && totalDataBytesWritten < 32000L) {
+                        silentBuffersCount++
+                    }
+
+                    fos.write(byteBuffer, 0, readSamples * 2)
+                    totalDataBytesWritten += (readSamples * 2)
+                } else if (readSamples < 0) {
+                    Log.w(TAG, "AudioRecord read error code: $readSamples")
+                    break
+                }
+            }
+
+            fos.flush()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in PCM recording stream: ${e.message}", e)
+        } finally {
+            try { fos?.close() } catch (_: Exception) {}
+            try {
+                audioRecord.stop()
+                audioRecord.release()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping AudioRecord: ${e.message}")
+            }
+            releaseAudioEffects()
+
+            // Update WAV header on file
+            if (outputFile.exists() && totalDataBytesWritten > 0) {
+                try {
+                    val raf = RandomAccessFile(outputFile, "rw")
+                    writeWavHeader(raf, totalDataBytesWritten, sampleRate, 1, 16)
+                    raf.close()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error writing WAV header to file: ${e.message}")
+                }
+            }
+        }
     }
 
     fun stopRecording(): File? {
-        if (!isRecording) return currentOutputFile
+        if (!isRecording.getAndSet(false)) return currentOutputFile
 
-        return try {
-            mediaRecorder?.apply {
-                stop()
-                release()
-            }
-            mediaRecorder = null
-            isRecording = false
-            val durationSec = (System.currentTimeMillis() - recordingStartTimeMs) / 1000
+        try {
+            recordingThread?.join(3000)
+        } catch (e: Exception) {
+            Log.w(TAG, "Interrupted while waiting for recording thread to complete", e)
+        }
+        recordingThread = null
 
-            if (currentOutputFile != null && currentOutputFile!!.exists() && currentOutputFile!!.length() <= 1000L) {
-                Log.w("WhatsAppAudioRecorder", "Recording file is empty/too small (${currentOutputFile?.length()} bytes). Deleting empty file.")
-                try { currentOutputFile!!.delete() } catch (_: Exception) {}
+        val durationSec = (System.currentTimeMillis() - recordingStartTimeMs) / 1000
+        val targetFile = currentOutputFile
+
+        if (targetFile != null && targetFile.exists()) {
+            if (totalDataBytesWritten <= 44L || maxPeakAmplitudeObserved < 80) {
+                Log.w(TAG, "Recording file is silent or empty (max peak amplitude: $maxPeakAmplitudeObserved, bytes: $totalDataBytesWritten). Deleting blank recording file.")
+                try { targetFile.delete() } catch (_: Exception) {}
                 currentOutputFile = null
             } else {
-                Log.d("WhatsAppAudioRecorder", "Stopped WhatsApp call audio recording. Duration: ${durationSec}s File: ${currentOutputFile?.absolutePath} Size: ${currentOutputFile?.length()} bytes")
+                Log.d(TAG, "Stopped WhatsApp call audio recording. Duration: ${durationSec}s File: ${targetFile.absolutePath} Size: ${targetFile.length()} bytes Peak Amplitude: $maxPeakAmplitudeObserved")
             }
-            currentOutputFile
+        }
+
+        return currentOutputFile
+    }
+
+    private fun attachAudioEffects(audioSessionId: Int) {
+        try {
+            if (AutomaticGainControl.isAvailable()) {
+                agc = AutomaticGainControl.create(audioSessionId)?.apply { enabled = true }
+                Log.d(TAG, "AutomaticGainControl attached to session $audioSessionId")
+            }
+            if (AcousticEchoCanceler.isAvailable()) {
+                aec = AcousticEchoCanceler.create(audioSessionId)?.apply { enabled = true }
+                Log.d(TAG, "AcousticEchoCanceler attached to session $audioSessionId")
+            }
+            if (NoiseSuppressor.isAvailable()) {
+                ns = NoiseSuppressor.create(audioSessionId)?.apply { enabled = true }
+                Log.d(TAG, "NoiseSuppressor attached to session $audioSessionId")
+            }
         } catch (e: Exception) {
-            Log.e("WhatsAppAudioRecorder", "Error stopping WhatsApp audio recording", e)
-            mediaRecorder = null
-            isRecording = false
-            if (currentOutputFile != null && currentOutputFile!!.exists() && currentOutputFile!!.length() <= 1000L) {
-                try { currentOutputFile!!.delete() } catch (_: Exception) {}
-                currentOutputFile = null
-            }
-            currentOutputFile
+            Log.w(TAG, "Could not attach hardware audio effects: ${e.message}")
         }
     }
 
-    fun isCurrentlyRecording(): Boolean = isRecording
+    private fun releaseAudioEffects() {
+        try { agc?.release(); agc = null } catch (_: Exception) {}
+        try { aec?.release(); aec = null } catch (_: Exception) {}
+        try { ns?.release(); ns = null } catch (_: Exception) {}
+    }
+
+    private fun writeWavHeader(
+        raf: RandomAccessFile,
+        pcmDataLength: Long,
+        sampleRate: Int,
+        channels: Int,
+        bitsPerSample: Int
+    ) {
+        val totalDataLen = pcmDataLength + 36
+        val byteRate = sampleRate * channels * bitsPerSample / 8
+        val blockAlign = channels * bitsPerSample / 8
+
+        val header = ByteArray(44)
+        header[0] = 'R'.code.toByte()
+        header[1] = 'I'.code.toByte()
+        header[2] = 'F'.code.toByte()
+        header[3] = 'F'.code.toByte()
+
+        header[4] = (totalDataLen and 0xff).toByte()
+        header[5] = ((totalDataLen shr 8) and 0xff).toByte()
+        header[6] = ((totalDataLen shr 16) and 0xff).toByte()
+        header[7] = ((totalDataLen shr 24) and 0xff).toByte()
+
+        header[8] = 'W'.code.toByte()
+        header[9] = 'A'.code.toByte()
+        header[10] = 'V'.code.toByte()
+        header[11] = 'E'.code.toByte()
+
+        header[12] = 'f'.code.toByte()
+        header[13] = 'm'.code.toByte()
+        header[14] = 't'.code.toByte()
+        header[15] = ' '.code.toByte()
+
+        header[16] = 16
+        header[17] = 0
+        header[18] = 0
+        header[19] = 0
+
+        header[20] = 1
+        header[21] = 0
+
+        header[22] = channels.toByte()
+        header[23] = 0
+
+        header[24] = (sampleRate and 0xff).toByte()
+        header[25] = ((sampleRate shr 8) and 0xff).toByte()
+        header[26] = ((sampleRate shr 16) and 0xff).toByte()
+        header[27] = ((sampleRate shr 24) and 0xff).toByte()
+
+        header[28] = (byteRate and 0xff).toByte()
+        header[29] = ((byteRate shr 8) and 0xff).toByte()
+        header[30] = ((byteRate shr 16) and 0xff).toByte()
+        header[31] = ((byteRate shr 24) and 0xff).toByte()
+
+        header[32] = blockAlign.toByte()
+        header[33] = 0
+
+        header[34] = bitsPerSample.toByte()
+        header[35] = 0
+
+        header[36] = 'd'.code.toByte()
+        header[37] = 'a'.code.toByte()
+        header[38] = 't'.code.toByte()
+        header[39] = 'A'.code.toByte()
+
+        header[40] = (pcmDataLength and 0xff).toByte()
+        header[41] = ((pcmDataLength shr 8) and 0xff).toByte()
+        header[42] = ((pcmDataLength shr 16) and 0xff).toByte()
+        header[43] = ((pcmDataLength shr 24) and 0xff).toByte()
+
+        raf.seek(0)
+        raf.write(header, 0, 44)
+    }
+
+    fun isCurrentlyRecording(): Boolean = isRecording.get()
+
+    companion object {
+        private const val TAG = "WhatsAppAudioRecorder"
+    }
 }
+
