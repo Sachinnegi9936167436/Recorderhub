@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Shield, Lock, Mail, ArrowRight, UserCheck } from 'lucide-react';
+import { Shield, Lock, Mail, ArrowRight } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,11 +16,6 @@ export default function LoginPage() {
     setTimeout(() => {
       router.push('/dashboard');
     }, 600);
-  };
-
-  const setRoleDemo = (roleEmail: string) => {
-    setEmail(roleEmail);
-    setPassword('Academically@01');
   };
 
   return (
@@ -77,40 +72,6 @@ export default function LoginPage() {
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
-
-        {/* Role Demo Quick Switcher */}
-        <div className="pt-4 border-t border-slate-800/80 space-y-2">
-          <p className="text-xs text-slate-400 font-medium text-center flex items-center justify-center space-x-1">
-            <UserCheck className="w-3.5 h-3.5 text-brand-400" />
-            <span>Select Demo Role to Quick Login</span>
-          </p>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <button
-              onClick={() => setRoleDemo('admin@academically.com')}
-              className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded text-slate-300 hover:text-white text-left font-medium transition-all"
-            >
-              👑 Admin
-            </button>
-            <button
-              onClick={() => setRoleDemo('manager@academically.com')}
-              className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded text-slate-300 hover:text-white text-left font-medium transition-all"
-            >
-              👔 Manager
-            </button>
-            <button
-              onClick={() => setRoleDemo('qa@academically.com')}
-              className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded text-slate-300 hover:text-white text-left font-medium transition-all"
-            >
-              🎓 QA Trainer
-            </button>
-            <button
-              onClick={() => setRoleDemo('agent@academically.com')}
-              className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded text-slate-300 hover:text-white text-left font-medium transition-all"
-            >
-              🎧 Sales Counselor
-            </button>
-          </div>
-        </div>
 
         <div className="text-center pt-2">
           <p className="text-[11px] text-slate-500 flex items-center justify-center space-x-1">

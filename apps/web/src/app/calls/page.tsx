@@ -21,7 +21,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Calendar,
+  X
 } from 'lucide-react';
 
 function AudioCell({ call, idx }: { call: any; idx: number }) {
@@ -63,6 +65,8 @@ function SalestrailCallsInner() {
 
   // Filters from Salestrail UI screenshot
   const [dateRange, setDateRange] = useState('All time');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [repCategory, setRepCategory] = useState('Teams');
   const [subFilter, setSubFilter] = useState('All Teams');
   const [searchQuery, setSearchQuery] = useState('');
@@ -251,7 +255,7 @@ function SalestrailCallsInner() {
     if (!matchesSearch) return false;
 
     // 2. Date Range Filter
-    if (dateRange !== 'All time' && dateRange !== 'Custom') {
+    if (dateRange !== 'All time') {
       const callDate = call.startTime ? new Date(call.startTime) : new Date();
       const now = new Date();
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -269,6 +273,17 @@ function SalestrailCallsInner() {
       } else if (dateRange === 'This month') {
         const thirtyDaysAgo = new Date(startOfToday.getTime() - 30 * 86400000);
         if (callDate < thirtyDaysAgo) return false;
+      } else if (dateRange === 'Custom') {
+        if (customStartDate) {
+          const [sYear, sMonth, sDay] = customStartDate.split('-').map(Number);
+          const startCustom = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
+          if (callDate < startCustom) return false;
+        }
+        if (customEndDate) {
+          const [eYear, eMonth, eDay] = customEndDate.split('-').map(Number);
+          const endCustom = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999);
+          if (callDate > endCustom) return false;
+        }
       }
     }
 
@@ -298,7 +313,7 @@ function SalestrailCallsInner() {
   // Reset to Page 1 when any filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, dateRange, repCategory, subFilter, isRecordingsOnly]);
+  }, [searchQuery, dateRange, customStartDate, customEndDate, repCategory, subFilter, isRecordingsOnly]);
 
   type SortField = 'user' | 'phone' | 'name' | 'type' | 'startTime' | 'direction' | 'status' | 'duration' | 'audio';
   type SortOrder = 'asc' | 'desc';
@@ -421,12 +436,12 @@ function SalestrailCallsInner() {
   };
 
   const exportCSV = () => {
-    if (callsList.length === 0) {
-      alert('No call records available to export.');
+    if (sortedCalls.length === 0) {
+      alert('No call records match the current filter selection to export.');
       return;
     }
     const headers = ['User', 'Phone Number', 'Name', 'Type', 'Call Time', 'Direction', 'Status', 'Duration'];
-    const rows = callsList.map((c) => [
+    const rows = sortedCalls.map((c) => [
       resolveCounselorName(c),
       c.phoneNumber || c.phoneNumberMasked || '',
       c.leadName || c.phoneNumber || '',
@@ -464,19 +479,57 @@ function SalestrailCallsInner() {
           {/* Date Range Dropdown */}
           <div className="space-y-1.5">
             <label className="block text-slate-900 font-bold text-sm">Date range</label>
-            <div className="relative">
-              <select
-                value={dateRange}
-                onChange={(e) => setDateRange(e.target.value)}
-                className="appearance-none bg-white border border-slate-200 text-slate-800 font-medium rounded-xl px-4 py-2.5 pr-8 shadow-sm focus:outline-none min-w-[140px] cursor-pointer hover:border-slate-300 transition-colors"
-              >
-                <option value="This week">This week</option>
-                <option value="Today">Today</option>
-                <option value="Yesterday">Yesterday</option>
-                <option value="This month">This month</option>
-                <option value="All time">All time</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3.5 pointer-events-none" />
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <select
+                  value={dateRange}
+                  onChange={(e) => setDateRange(e.target.value)}
+                  className="appearance-none bg-white border border-slate-200 text-slate-800 font-medium rounded-xl px-4 py-2.5 pr-8 shadow-sm focus:outline-none min-w-[140px] cursor-pointer hover:border-slate-300 transition-colors"
+                >
+                  <option value="This week">This week</option>
+                  <option value="Today">Today</option>
+                  <option value="Yesterday">Yesterday</option>
+                  <option value="This month">This month</option>
+                  <option value="All time">All time</option>
+                  <option value="Custom">Custom</option>
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3.5 pointer-events-none" />
+              </div>
+
+              {dateRange === 'Custom' && (
+                <div className="flex items-center space-x-2 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm animate-in fade-in duration-200">
+                  <div className="flex items-center space-x-1.5 text-xs text-slate-600">
+                    <span className="font-semibold text-slate-500">From:</span>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex items-center space-x-1.5 text-xs text-slate-600">
+                    <span className="font-semibold text-slate-500">To:</span>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer"
+                    />
+                  </div>
+                  {(customStartDate || customEndDate) && (
+                    <button
+                      onClick={() => {
+                        setCustomStartDate('');
+                        setCustomEndDate('');
+                      }}
+                      className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 transition-colors"
+                      title="Clear custom dates"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

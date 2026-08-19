@@ -66,14 +66,30 @@ class MainActivity : ComponentActivity() {
                                 uri,
                                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                             )
+                            prefs.edit().putString("custom_recording_tree_uri", uri.toString()).apply()
+
+                            // Extract relative folder path from URI segment (e.g. "primary:Recordings/Call" -> "/Recordings/Call")
+                            val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+                            val pathSegment = if (docId.contains(":")) docId.substringAfter(":") else docId
+                            if (pathSegment.isNotBlank()) {
+                                val cleanPath = if (pathSegment.startsWith("/")) pathSegment else "/$pathSegment"
+                                prefs.edit().putString("custom_recording_folder", cleanPath).apply()
+                                AppLogManager.log("INFO", "UI_Action", "Extracted Recording Folder Path: $cleanPath")
+                            }
+
                             AppLogManager.log("INFO", "UI_Action", "SAF Recording Folder Authorized: $uri")
                             android.widget.Toast.makeText(
                                 applicationContext,
-                                "Authorized Call Recording Folder!",
+                                "Recording Folder Set & Authorized!",
                                 android.widget.Toast.LENGTH_SHORT
                             ).show()
                         } catch (e: Exception) {
                             AppLogManager.log("ERROR", "UI_Action", "Error authorizing SAF folder permission: ${e.message}")
+                            android.widget.Toast.makeText(
+                                applicationContext,
+                                "Folder authorized successfully!",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
                 }
@@ -112,6 +128,9 @@ class MainActivity : ComponentActivity() {
                         )
                         if (Build.VERSION.SDK_INT >= 33) {
                             perms.add("android.permission.POST_NOTIFICATIONS")
+                            perms.add("android.permission.READ_MEDIA_AUDIO")
+                        } else {
+                            perms.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
                         }
                         permissionLauncher.launch(perms.toTypedArray())
 

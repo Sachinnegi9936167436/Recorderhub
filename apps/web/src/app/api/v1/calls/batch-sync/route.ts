@@ -87,6 +87,7 @@ export async function POST(req: Request) {
             { _id: matchByTimeWindow._id },
             {
               $set: {
+                idempotencyKey: evt.idempotencyKey || matchByTimeWindow.idempotencyKey,
                 durationSeconds: newDuration,
                 phoneNumber: formattedPhone,
                 phoneNumberMasked: formattedPhone,

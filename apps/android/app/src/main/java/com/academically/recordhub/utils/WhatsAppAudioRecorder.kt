@@ -298,7 +298,7 @@ class WhatsAppAudioRecorder(private val context: Context) {
         header[36] = 'd'.code.toByte()
         header[37] = 'a'.code.toByte()
         header[38] = 't'.code.toByte()
-        header[39] = 'A'.code.toByte()
+        header[39] = 'a'.code.toByte()
 
         header[40] = (pcmDataLength and 0xff).toByte()
         header[41] = ((pcmDataLength shr 8) and 0xff).toByte()

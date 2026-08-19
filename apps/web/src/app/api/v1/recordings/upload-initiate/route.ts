@@ -13,12 +13,23 @@ export async function POST(req: Request) {
     await connectToDatabase();
     const body = await req.json().catch(() => ({}));
     const { callId, fileSizeBytes, mimeType, checksumSha256, durationSeconds } = body;
+    const digitsOnly = (callId || '').replace(/\D/g, '');
+    const cleanPhone = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : 'CALL';
 
-    const recordingId = `REC-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const parts = (callId || '').split('-');
+    const timestampMs = parts.length >= 2 ? Number(parts[1]) : Date.now();
+    const callDate = !isNaN(timestampMs) && timestampMs > 1000000000000 ? new Date(timestampMs) : new Date();
+
+    // Format timestamp as YYYYMMDDHHmmss to mirror native phone recording naming
+    const dateStr = callDate.toISOString().replace(/\D/g, '').slice(0, 14);
+    const uniqueSuffix = Math.random().toString(36).substring(2, 6);
+
+    const recordingId = `${cleanPhone}_${dateStr}_${uniqueSuffix}`;
     const ext = mimeType?.includes('mpeg') || mimeType?.includes('mp3') ? 'mp3'
               : mimeType?.includes('wav') ? 'wav'
               : mimeType?.includes('3gpp') || mimeType?.includes('3gp') ? '3gp'
               : mimeType?.includes('amr') ? 'amr' : 'm4a';
+
     const s3Key = `recordings/${recordingId}.${ext}`;
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
 
@@ -47,7 +58,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Immediately link audioUrl and s3Key to the Call document in MongoDB Atlas
+    // Immediately link audioUrl and s3Key strictly to the specific Call document in MongoDB Atlas
     if (callId) {
       try {
         let updatedCall = await (CallModel as any).findOneAndUpdate(
@@ -68,18 +79,32 @@ export async function POST(req: Request) {
         ).exec();
 
         if (!updatedCall) {
+          const parts = callId.split('-');
+          const timestampMs = parts.length >= 2 ? Number(parts[1]) : NaN;
           const digitsOnly = callId.replace(/\D/g, '');
           const cleanDigits = digitsOnly.slice(-10);
+
           if (cleanDigits.length === 10) {
             const regexPattern = new RegExp(`${cleanDigits}$`);
+            const query: any = {
+              phoneNumber: { $regex: regexPattern },
+              $or: [
+                { recordingStatus: { $in: ['PENDING', 'PENDING_UPLOAD', 'NONE'] } },
+                { audioUrl: { $exists: false } }
+              ]
+            };
+
+            // If idempotencyKey contains embedded timestamp, enforce strict 2-minute time window match
+            if (!isNaN(timestampMs) && timestampMs > 1000000000000) {
+              const callTime = new Date(timestampMs);
+              query.startTime = {
+                $gte: new Date(callTime.getTime() - 120000),
+                $lte: new Date(callTime.getTime() + 120000)
+              };
+            }
+
             updatedCall = await (CallModel as any).findOneAndUpdate(
-              {
-                phoneNumber: { $regex: regexPattern },
-                $or: [
-                  { recordingStatus: { $in: ['PENDING', 'PENDING_UPLOAD', 'NONE'] } },
-                  { audioUrl: { $exists: false } }
-                ]
-              },
+              query,
               {
                 $set: {
                   recordingStatus: 'PENDING_UPLOAD',
@@ -91,7 +116,11 @@ export async function POST(req: Request) {
             ).exec();
           }
         }
-        console.log(`Linked audioUrl ${audioUrl} to call ${callId}`);
+        if (updatedCall) {
+          console.log(`Linked audioUrl ${audioUrl} strictly to call ${updatedCall.idempotencyKey || updatedCall._id}`);
+        } else {
+          console.warn(`Could not find matching call for audio upload: ${callId}`);
+        }
       } catch (linkErr) {
         console.error(`Error linking audioUrl to call ${callId}:`, linkErr);
       }

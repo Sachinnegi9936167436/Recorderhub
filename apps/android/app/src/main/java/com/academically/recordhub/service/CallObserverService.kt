@@ -80,14 +80,18 @@ class CallObserverService : Service() {
     private fun triggerAutoScanAndSync() {
         serviceScope.launch {
             try {
-                // Short delay to allow Android System to finish writing call log & saving recording file to disk
+                // Initial scan after 1.5s
                 delay(1500)
-                val count = CallLogScanner.scanRecentCallLogs(applicationContext)
-                AppLogManager.log(
-                    "SYNC",
-                    TAG,
-                    "Auto-scanned $count SIM call log(s) after call completed."
-                )
+                var count = CallLogScanner.scanRecentCallLogs(applicationContext)
+                AppLogManager.log("SYNC", TAG, "Auto-scanned $count SIM call log(s) on initial pass.")
+
+                // Secondary scan after 3.5s to catch delayed native audio file encoding
+                delay(3500)
+                val retryCount = CallLogScanner.scanRecentCallLogs(applicationContext)
+                if (retryCount > 0) {
+                    count += retryCount
+                    AppLogManager.log("SYNC", TAG, "Linked $retryCount additional audio recording(s) on secondary scan pass.")
+                }
 
                 val syncRequest = androidx.work.OneTimeWorkRequestBuilder<CallSyncWorker>().build()
                 androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
@@ -95,11 +99,7 @@ class CallObserverService : Service() {
                     androidx.work.ExistingWorkPolicy.REPLACE,
                     syncRequest
                 )
-                AppLogManager.log(
-                    "SYNC",
-                    TAG,
-                    "Enqueued immediate CallSyncWorker for automatic server upload."
-                )
+                AppLogManager.log("SYNC", TAG, "Enqueued immediate CallSyncWorker for automatic server upload.")
             } catch (e: Exception) {
                 AppLogManager.log("ERROR", TAG, "Error auto-syncing SIM calls: ${e.message}")
             }

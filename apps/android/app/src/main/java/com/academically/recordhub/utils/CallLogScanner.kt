@@ -125,26 +125,40 @@ object CallLogScanner {
                 }
             }
 
-            // Attach audio recordings to all existing calls in Room DB that are missing recording paths
+            // Attach audio recordings strictly 1-to-1 to existing calls in Room DB missing recording paths
             val allDbEvents = db.callEventDao().getAllEvents()
+            val claimedPaths = allDbEvents
+                .mapNotNull { it.recordingPath }
+                .filter { it.isNotBlank() }
+                .toMutableSet()
+
             val waDir = File(context.filesDir, "whatsapp_recordings")
 
             for (evt in allDbEvents) {
                 if (evt.recordingPath.isNullOrEmpty() || evt.recordingStatus == "NONE") {
-                    // Try SIM audio recording scanner
-                    var matchedFile = SimCallRecordingScanner.findAudioForCall(context, evt.phoneNumber, evt.startTime, evt.endTime)
+                    // Try SIM audio recording scanner with claimedPaths set
+                    var matchedFile = SimCallRecordingScanner.findAudioForCall(
+                        context, 
+                        evt.phoneNumber, 
+                        evt.startTime, 
+                        evt.endTime,
+                        claimedPaths
+                    )
 
                     // Try WhatsApp audio recording folder if SIM scanner didn't match
                     if (matchedFile == null && waDir.exists() && waDir.isDirectory) {
                         val waFiles = waDir.listFiles() ?: emptyArray()
                         matchedFile = waFiles.firstOrNull { file ->
-                            file.name.endsWith(".m4a") && file.length() > 0 &&
-                            Math.abs(evt.startTime - (file.lastModified() - 30000L)) < 180000
+                            !claimedPaths.contains(file.absolutePath) && !claimedPaths.contains(file.name) &&
+                            (file.name.endsWith(".wav") || file.name.endsWith(".m4a")) && file.length() > 0 &&
+                            Math.abs(evt.startTime - file.lastModified()) < 120000
                         }
                     }
 
                     if (matchedFile != null && matchedFile.exists()) {
-                        Log.i(TAG, "Linking audio recording ${matchedFile.name} to existing call ${evt.idempotencyKey}")
+                        claimedPaths.add(matchedFile.absolutePath)
+                        claimedPaths.add(matchedFile.name)
+                        Log.i(TAG, "Linking audio recording ${matchedFile.name} strictly to call ${evt.idempotencyKey}")
                         db.callEventDao().insertCallEvent(
                             evt.copy(
                                 recordingPath = matchedFile.absolutePath,

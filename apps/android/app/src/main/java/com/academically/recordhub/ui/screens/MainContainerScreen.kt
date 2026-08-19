@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.sp
 import com.academically.recordhub.data.local.CallEventEntity
 import com.academically.recordhub.ui.theme.*
 
@@ -38,7 +39,7 @@ fun MainContainerScreen(
                         com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 0: Tracked Calls")
                     },
                     icon = { Icon(Icons.Default.Call, contentDescription = "Calls") },
-                    label = { Text("Tracked") },
+                    label = { Text("Tracked", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
@@ -48,7 +49,7 @@ fun MainContainerScreen(
                         com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 1: Private Calls")
                     },
                     icon = { Icon(Icons.Default.Lock, contentDescription = "Private") },
-                    label = { Text("Private") },
+                    label = { Text("Private", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = Amber400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
@@ -58,7 +59,7 @@ fun MainContainerScreen(
                         com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 2: Uploads & Recordings")
                     },
                     icon = { Icon(Icons.Default.CloudUpload, contentDescription = "Uploads") },
-                    label = { Text("Uploads") },
+                    label = { Text("Uploads", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
@@ -68,7 +69,7 @@ fun MainContainerScreen(
                         com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 3: System & Sync Logs")
                     },
                     icon = { Icon(Icons.Default.ListAlt, contentDescription = "Logs") },
-                    label = { Text("Logs") },
+                    label = { Text("Logs", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = Emerald400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
@@ -78,7 +79,7 @@ fun MainContainerScreen(
                         com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 4: Device Health")
                     },
                     icon = { Icon(Icons.Default.Smartphone, contentDescription = "Health") },
-                    label = { Text("Health") },
+                    label = { Text("Health", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
@@ -88,7 +89,7 @@ fun MainContainerScreen(
                         com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 5: Settings")
                     },
                     icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings") },
+                    label = { Text("Settings", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
                 )
             }
@@ -112,7 +113,7 @@ fun MainContainerScreen(
                 )
                 3 -> AppLogsScreen(onScanLogsTrigger = onScanCallLogs)
                 4 -> DeviceHealthScreen()
-                5 -> SettingsScreen(onLogout = onLogout)
+                5 -> SettingsScreen(onLogout = onLogout, onSelectSafFolder = onSelectSafFolder)
             }
         }
     }
