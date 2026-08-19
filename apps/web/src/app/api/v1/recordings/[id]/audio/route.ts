@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { getS3Client } from '@/lib/aws';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 
@@ -20,15 +20,16 @@ function getUploadsDir() {
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
     let recordingId = params.id;
-
-    // 1. Resolve actual recordingId or s3Key from MongoDB Atlas if params.id is an idempotencyKey or _id
     let s3KeyTarget = `recordings/${recordingId}.m4a`;
+
+    // 1. Resolve actual recordingId or s3Key from MongoDB Atlas
     try {
       await connectToDatabase();
       const callDoc = await (CallModel as any).findOne({
         $or: [
           { idempotencyKey: params.id },
           { audioUrl: { $regex: params.id } },
+          { s3Key: { $regex: params.id } },
           { _id: params.id.length === 24 ? params.id : null }
         ]
       }).exec();
@@ -37,10 +38,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         if (callDoc.s3Key) {
           s3KeyTarget = callDoc.s3Key;
         } else if (callDoc.audioUrl) {
-          const match = callDoc.audioUrl.match(/REC-[A-Za-z0-9_-]+/);
-          if (match) {
-            recordingId = match[0];
-            s3KeyTarget = `recordings/${recordingId}.m4a`;
+          const match = callDoc.audioUrl.match(/recordings\/([^\/]+)\/audio/);
+          if (match && match[1]) {
+            recordingId = match[1];
           }
         }
       }
@@ -86,19 +86,29 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const s3Info = getS3Client();
     if (s3Info) {
       try {
+        const devicePrefix = recordingId.includes('_') ? recordingId.split('_')[0] : '';
         const possibleKeys = [
           s3KeyTarget,
-          `recordings/${recordingId}.wav`,
           `recordings/${recordingId}.mp3`,
           `recordings/${recordingId}.m4a`,
+          `recordings/${recordingId}.wav`,
+          `recordings/${recordingId}.3gp`,
           `recordings/${recordingId}`,
-          `${recordingId}.wav`,
-          `${recordingId}.mp3`,
-          `${recordingId}.m4a`,
-          `${recordingId}`
         ];
 
-        for (const targetKey of possibleKeys) {
+        if (devicePrefix) {
+          possibleKeys.push(
+            `recordings/${devicePrefix}/${recordingId}.mp3`,
+            `recordings/${devicePrefix}/${recordingId}.m4a`,
+            `recordings/${devicePrefix}/${recordingId}.wav`,
+            `recordings/${devicePrefix}/${recordingId}.3gp`,
+            `recordings/${devicePrefix}/${recordingId}`
+          );
+        }
+
+        const uniqueKeys = Array.from(new Set(possibleKeys));
+
+        for (const targetKey of uniqueKeys) {
           try {
             const command = new GetObjectCommand({ Bucket: s3Info.bucket, Key: targetKey });
             const s3Response = await s3Info.client.send(command);
@@ -117,12 +127,45 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
             // try next key
           }
         }
+
+        // Fallback: search S3 bucket with prefix for matching recordingId
+        try {
+          const listCommand = new ListObjectsV2Command({
+            Bucket: s3Info.bucket,
+            Prefix: 'recordings/',
+            MaxKeys: 50,
+          });
+          const listRes = await s3Info.client.send(listCommand);
+          if (listRes.Contents) {
+            const cleanTargetId = recordingId.replace(/\.[^/.]+$/, '');
+            const matchedContent = listRes.Contents.find(
+              (c) => c.Key && (c.Key.includes(cleanTargetId) || (cleanTargetId.length >= 10 && c.Key.includes(cleanTargetId.slice(-10))))
+            );
+
+            if (matchedContent && matchedContent.Key) {
+              const command = new GetObjectCommand({ Bucket: s3Info.bucket, Key: matchedContent.Key });
+              const s3Response = await s3Info.client.send(command);
+              if (s3Response.Body) {
+                const byteArray = await s3Response.Body.transformToByteArray();
+                const buffer = Buffer.from(byteArray);
+                if (buffer.length > 0) {
+                  const isWav = matchedContent.Key.endsWith('.wav') || s3Response.ContentType?.includes('wav');
+                  const isMp3 = matchedContent.Key.endsWith('.mp3') || s3Response.ContentType?.includes('mpeg') || s3Response.ContentType?.includes('mp3');
+                  const contentType = isWav ? 'audio/wav' : isMp3 ? 'audio/mpeg' : 'audio/mp4';
+                  return createAudioResponse(buffer, contentType);
+                }
+              }
+            }
+          }
+        } catch (searchErr) {
+          console.warn('S3 prefix search fallback error:', searchErr);
+        }
       } catch (s3Err) {
         console.warn(`S3 Object error for ${recordingId}:`, s3Err);
       }
     }
 
-    // 3. Try fetching from Local Disk Storage
+    // 3. Try fetching from Local Disk Storage fallback
     const uploadsDir = getUploadsDir();
     const possibleLocalFiles = [
       path.join(uploadsDir, `${recordingId}.wav`),

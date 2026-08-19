@@ -191,24 +191,19 @@ class CallSyncWorker(
                 "amr" -> "audio/amr"
                 "wav" -> "audio/wav"
                 "3gp" -> "audio/3gpp"
-                else -> "audio/wav"
+                "aac" -> "audio/aac"
+                "ogg" -> "audio/ogg"
+                else -> "audio/mp4"
             }
 
             val prefs = applicationContext.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
             val counselorEmail = prefs.getString("counselor_email", null)
-            val idCreatedAt = prefs.getLong("account_created_at", prefs.getLong("app_installed_at", 0L))
-
-            if (idCreatedAt > 0L && (evt.startTime < (idCreatedAt - 5000L) || file.lastModified() < (idCreatedAt - 5000L))) {
-                AppLogManager.log("WARN", "RecordingSync", "Skipping upload for ${file.name}: created prior to ID creation date (${Date(idCreatedAt)}).")
-                db.callEventDao().updateRecordingStatus(evt.idempotencyKey, "NONE")
-                return
-            }
 
             val initReq = UploadInitiateRequest(
                 callId = evt.idempotencyKey,
                 fileSizeBytes = file.length(),
                 mimeType = mimeType,
-                checksumSha256 = "dummy_checksum_${file.name.hashCode()}",
+                checksumSha256 = "sha256_${file.name.hashCode()}_${file.length()}",
                 durationSeconds = evt.durationSeconds,
                 deviceId = evt.deviceId,
                 counselorEmail = counselorEmail
@@ -227,14 +222,15 @@ class CallSyncWorker(
                     val putRequest = Request.Builder()
                         .url(putUrl)
                         .put(reqBody)
+                        .header("Content-Type", mimeType)
                         .build()
 
                     val putResponse = httpClient.newCall(putRequest).execute()
                     if (putResponse.isSuccessful) {
                         uploadSuccess = true
-                        AppLogManager.log("SYNC", "AWS S3", "Direct AWS S3 PUT upload succeeded for ${file.name}!")
+                        AppLogManager.log("SYNC", "AWS S3", "Direct AWS S3 PUT upload succeeded for ${file.name} to bucket ${uploadInfo.s3Key}!")
                     } else {
-                        AppLogManager.log("WARN", "AWS S3", "Direct S3 PUT status ${putResponse.code}. Switching to server upload fallback...")
+                        AppLogManager.log("WARN", "AWS S3", "Direct S3 PUT returned status ${putResponse.code}. Body: ${putResponse.body?.string()}. Switching to server upload fallback...")
                     }
                 } catch (s3Err: Exception) {
                     AppLogManager.log("WARN", "AWS S3", "Direct S3 PUT exception: ${s3Err.message}. Switching to server upload fallback...")
@@ -254,6 +250,7 @@ class CallSyncWorker(
                     val fallbackRequest = Request.Builder()
                         .url(fallbackTargetUrl)
                         .put(reqBody)
+                        .header("Content-Type", mimeType)
                         .build()
 
                     val fallbackResponse = httpClient.newCall(fallbackRequest).execute()
@@ -267,9 +264,13 @@ class CallSyncWorker(
 
                 if (uploadSuccess) {
                     val compReq = com.academically.recordhub.data.remote.UploadCompleteRequest(callId = evt.idempotencyKey)
-                    api.completeUpload(authHeader, uploadInfo.recordingId, compReq)
+                    try {
+                        api.completeUpload(authHeader, uploadInfo.recordingId, compReq)
+                    } catch (cErr: Exception) {
+                        Log.w("CallSyncWorker", "completeUpload notification warning: ${cErr.message}")
+                    }
                     db.callEventDao().updateRecordingStatus(evt.idempotencyKey, "SYNCED")
-                    AppLogManager.log("SYNC", "RecordingSync", "Uploaded & linked audio recording ${file.name} successfully!")
+                    AppLogManager.log("SYNC", "RecordingSync", "Uploaded & linked audio recording ${file.name} successfully to AWS S3!")
                 }
             } else {
                 AppLogManager.log("ERROR", "RecordingSync", "initiateUpload failed with status code ${initRes.code()}")

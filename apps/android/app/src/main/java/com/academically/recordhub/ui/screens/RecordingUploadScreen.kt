@@ -236,7 +236,7 @@ fun RecordingUploadScreen(
                 items(recordingsWithFiles) { item ->
                     val file = File(item.recordingPath!!)
                     val isPlaying = playingFilePath == item.recordingPath
-                    val isSynced = item.syncStatus == "SYNCED"
+                    val isSynced = item.recordingStatus == "SYNCED"
 
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Navy900),

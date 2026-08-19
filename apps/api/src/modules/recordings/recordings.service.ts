@@ -5,14 +5,34 @@ import { Recording, RecordingDocument } from '../../schemas/recording.schema';
 import { Call, CallDocument } from '../../schemas/call.schema';
 import { AuditLog, AuditLogDocument } from '../../schemas/audit-log.schema';
 import { RecordingUploadStatus } from '@recordhub/shared';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
 export class RecordingsService {
+  private s3Client: S3Client | null = null;
+  private s3Bucket: string;
+
   constructor(
     @InjectModel(Recording.name) private recordingModel: Model<RecordingDocument>,
     @InjectModel(Call.name) private callModel: Model<CallDocument>,
     @InjectModel(AuditLog.name) private auditLogModel: Model<AuditLogDocument>,
-  ) {}
+  ) {
+    const region = process.env.AWS_REGION || 'ap-south-1';
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    this.s3Bucket = process.env.S3_BUCKET_NAME || 'academically-recorderhub';
+
+    if (accessKeyId && secretAccessKey) {
+      this.s3Client = new S3Client({
+        region,
+        credentials: {
+          accessKeyId,
+          secretAccessKey,
+        },
+      });
+    }
+  }
 
   async initiateUpload(organizationId: string, callId: string, payload: { fileSizeBytes: number; mimeType: string; checksumSha256: string; durationSeconds: number }) {
     const isObjectId = Types.ObjectId.isValid(callId);
@@ -41,14 +61,18 @@ export class RecordingsService {
 
     const year = new Date().getFullYear();
     const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    const s3Key = `organizations/${organizationId}/recordings/${year}/${month}/${callId}/recording.m4a`;
+    const ext = payload.mimeType?.includes('mpeg') || payload.mimeType?.includes('mp3') ? 'mp3'
+              : payload.mimeType?.includes('wav') ? 'wav'
+              : payload.mimeType?.includes('3gp') ? '3gp' : 'm4a';
+
+    const s3Key = `organizations/${organizationId}/recordings/${year}/${month}/${callId}/recording.${ext}`;
 
     let recording = await this.recordingModel.findOne({ callId: call._id });
     if (!recording) {
       recording = new this.recordingModel({
         organizationId: new Types.ObjectId(organizationId),
         callId: call._id,
-        s3Bucket: process.env.S3_BUCKET_NAME || 'recordhub-audio-recordings',
+        s3Bucket: this.s3Bucket,
         s3Key,
         fileSizeBytes: payload.fileSizeBytes,
         mimeType: payload.mimeType || 'audio/m4a',
@@ -61,23 +85,50 @@ export class RecordingsService {
 
     call.recordingStatus = RecordingUploadStatus.PENDING_UPLOAD;
     call.recordingId = recording._id as any;
+    (call as any).s3Key = s3Key;
+    (call as any).audioUrl = `/api/v1/recordings/${recording._id}/audio`;
     await call.save();
 
-    // Mock S3 presigned PUT URL generator for local dev / testing
-    const presignedPutUrl = `${process.env.S3_ENDPOINT || 'http://localhost:9000'}/${process.env.S3_BUCKET_NAME || 'recordhub-audio-recordings'}/${s3Key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=900`;
+    let presignedPutUrl = '';
+    if (this.s3Client) {
+      try {
+        const command = new PutObjectCommand({
+          Bucket: this.s3Bucket,
+          Key: s3Key,
+          ContentType: payload.mimeType || 'audio/mp4',
+        });
+        presignedPutUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 900 });
+      } catch (s3Err) {
+        console.error('Error generating S3 presigned URL in NestJS API:', s3Err);
+      }
+    }
+
+    if (!presignedPutUrl) {
+      presignedPutUrl = `${process.env.S3_ENDPOINT || 'http://localhost:9000'}/${this.s3Bucket}/${s3Key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=900`;
+    }
 
     return {
       recordingId: recording._id.toString(),
       s3Key,
       presignedPutUrl,
+      fallbackUploadUrl: `/api/v1/recordings/${recording._id}/upload-data`,
     };
   }
 
   async completeUpload(organizationId: string, recordingId: string) {
-    const recording = await this.recordingModel.findOne({
+    const isObjectId = Types.ObjectId.isValid(recordingId);
+    let recording = isObjectId ? await this.recordingModel.findOne({
       _id: new Types.ObjectId(recordingId),
       organizationId: new Types.ObjectId(organizationId),
-    });
+    }) : null;
+
+    if (!recording) {
+      recording = await this.recordingModel.findOne({
+        organizationId: new Types.ObjectId(organizationId),
+        s3Key: { $regex: recordingId },
+      });
+    }
+
     if (!recording) throw new NotFoundException('Recording not found');
 
     recording.uploadStatus = RecordingUploadStatus.UPLOADED;
@@ -85,17 +136,26 @@ export class RecordingsService {
 
     await this.callModel.updateOne(
       { _id: recording.callId },
-      { $set: { recordingStatus: RecordingUploadStatus.UPLOADED } },
+      { $set: { recordingStatus: RecordingUploadStatus.UPLOADED, s3Key: recording.s3Key, audioUrl: `/api/v1/recordings/${recording._id}/audio` } },
     );
 
     return { success: true, uploadStatus: RecordingUploadStatus.UPLOADED };
   }
 
   async getStreamUrl(organizationId: string, recordingId: string, actorUserId: string, actorName: string) {
-    const recording = await this.recordingModel.findOne({
+    const isObjectId = Types.ObjectId.isValid(recordingId);
+    let recording = isObjectId ? await this.recordingModel.findOne({
       _id: new Types.ObjectId(recordingId),
       organizationId: new Types.ObjectId(organizationId),
-    });
+    }) : null;
+
+    if (!recording) {
+      recording = await this.recordingModel.findOne({
+        organizationId: new Types.ObjectId(organizationId),
+        s3Key: { $regex: recordingId },
+      });
+    }
+
     if (!recording) throw new NotFoundException('Recording not found');
 
     // Create audit log entry for playback
@@ -107,9 +167,24 @@ export class RecordingsService {
       targetResource: `Recording:${recordingId}`,
     });
 
-    // Generate 5-minute GET signed URL
+    let streamUrl = '';
+    if (this.s3Client) {
+      try {
+        const command = new GetObjectCommand({
+          Bucket: recording.s3Bucket || this.s3Bucket,
+          Key: recording.s3Key,
+        });
+        streamUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 300 });
+      } catch (err) {
+        console.error('Error generating GET presigned URL:', err);
+      }
+    }
+
+    if (!streamUrl) {
+      streamUrl = `${process.env.S3_ENDPOINT || 'http://localhost:9000'}/${recording.s3Bucket || this.s3Bucket}/${recording.s3Key}?X-Amz-Expires=300`;
+    }
+
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const streamUrl = `${process.env.S3_ENDPOINT || 'http://localhost:9000'}/${process.env.S3_BUCKET_NAME || 'recordhub-audio-recordings'}/${recording.s3Key}?X-Amz-Expires=300`;
 
     return {
       streamUrl,

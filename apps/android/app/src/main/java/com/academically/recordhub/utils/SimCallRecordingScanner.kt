@@ -1,9 +1,17 @@
 package com.academically.recordhub.utils
 
+import android.content.ContentUris
 import android.content.Context
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 object SimCallRecordingScanner {
 
@@ -21,37 +29,76 @@ object SimCallRecordingScanner {
         "/Record/Call",
         "/Sounds/CallRecordings",
         "/VoiceRecorder",
-        "/PhoneRecordings"
+        "/PhoneRecordings",
+        "/Recordings/Standard"
     )
 
     fun findAudioForCall(
-        context: Context, 
-        phoneNumber: String, 
-        startTimeMs: Long, 
+        context: Context,
+        phoneNumber: String,
+        startTimeMs: Long,
         endTimeMs: Long,
         claimedPaths: Set<String> = emptySet()
     ): File? {
-        val root = Environment.getExternalStorageDirectory()
         val cleanPhone = phoneNumber.replace("\\D".toRegex(), "").takeLast(10)
-
         val prefs = context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
         val treeUriStr = prefs.getString("custom_recording_tree_uri", null)
-        val idCreatedAt = prefs.getLong("account_created_at", prefs.getLong("app_installed_at", 0L))
 
         fun parseTimestampFromFileName(fileName: String): Long? {
-            // Extracts 14-digit timestamp like 20260808011704 from filename formats (e.g. 9936167436(9936167436)_20260808011704.mp3)
-            val regex = "(\\d{14})\\.[a-zA-Z0-9]+$".toRegex()
-            val match = regex.find(fileName)
-            if (match != null) {
-                val dateStr = match.groupValues[1]
-                return try {
-                    val sdf = java.text.SimpleDateFormat("yyyyMMddHHmmss", java.util.Locale.US)
-                    sdf.timeZone = java.util.TimeZone.getDefault()
-                    sdf.parse(dateStr)?.time
-                } catch (e: Exception) {
-                    null
-                }
+            // Format 1: 14 consecutive digits anywhere (e.g. 20260819113214)
+            val regex14 = "(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})".toRegex()
+            val match14 = regex14.find(fileName)
+            if (match14 != null) {
+                try {
+                    val sdf = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
+                        timeZone = TimeZone.getDefault()
+                    }
+                    return sdf.parse(match14.value)?.time
+                } catch (_: Exception) {}
             }
+
+            // Format 2: YYYYMMDD_HHMMSS or YYYYMMDD-HHMMSS (e.g. 20260819_113214)
+            val regexUnderscore = "(\\d{8})[_\\-](\\d{6})".toRegex()
+            val matchUnder = regexUnderscore.find(fileName)
+            if (matchUnder != null) {
+                try {
+                    val datePart = matchUnder.groupValues[1]
+                    val timePart = matchUnder.groupValues[2]
+                    val sdf = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
+                        timeZone = TimeZone.getDefault()
+                    }
+                    return sdf.parse("$datePart$timePart")?.time
+                } catch (_: Exception) {}
+            }
+
+            // Format 3: YYYY-MM-DD_HH-MM-SS (e.g. 2026-08-19_11-32-14 or 2026-08-19 11.32.14)
+            val regexDashed = "(\\d{4})[\\-](\\d{2})[\\-](\\d{2})[_\\-\\s](\\d{2})[\\-\\.:](\\d{2})[\\-\\.:](\\d{2})".toRegex()
+            val matchDashed = regexDashed.find(fileName)
+            if (matchDashed != null) {
+                try {
+                    val g = matchDashed.groupValues
+                    val formatted = "${g[1]}${g[2]}${g[3]}${g[4]}${g[5]}${g[6]}"
+                    val sdf = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
+                        timeZone = TimeZone.getDefault()
+                    }
+                    return sdf.parse(formatted)?.time
+                } catch (_: Exception) {}
+            }
+
+            // Format 4: YYMMDD_HHMMSS (e.g. Samsung: 260819_113214)
+            val regexSamsung = "(\\d{2})(\\d{2})(\\d{2})[_\\-](\\d{2})(\\d{2})(\\d{2})".toRegex()
+            val matchSamsung = regexSamsung.find(fileName)
+            if (matchSamsung != null) {
+                try {
+                    val g = matchSamsung.groupValues
+                    val formatted = "20${g[1]}${g[2]}${g[3]}${g[4]}${g[5]}${g[6]}"
+                    val sdf = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
+                        timeZone = TimeZone.getDefault()
+                    }
+                    return sdf.parse(formatted)?.time
+                } catch (_: Exception) {}
+            }
+
             return null
         }
 
@@ -59,13 +106,8 @@ object SimCallRecordingScanner {
             val parsedTs = parseTimestampFromFileName(fileName)
             val effectiveTime = parsedTs ?: fileLastModified
 
-            // Reject any recording file created/modified before the account or app ID creation date
-            if (idCreatedAt > 0L && effectiveTime < (idCreatedAt - 5000L)) {
-                return false
-            }
-
-            // Reject any recording file created/modified before the call even started
-            if (effectiveTime < (startTimeMs - 60_000L)) {
+            // Reject files created more than 10 minutes before the call started
+            if (effectiveTime < (startTimeMs - 10 * 60 * 1000L)) {
                 return false
             }
 
@@ -73,24 +115,113 @@ object SimCallRecordingScanner {
             val timeDiffEndMs = Math.abs(effectiveTime - endTimeMs)
             val timeDiffStartMs = Math.abs(effectiveTime - startTimeMs)
 
-            // 1. If filename contains the call's 10-digit phone number, accept if modified/timestamped within 5 minutes of call
+            // 1. If filename contains the call's phone number digits, accept within a 15-minute window
             if (cleanPhone.length >= 7 && fileNameCleanDigits.contains(cleanPhone)) {
-                return timeDiffEndMs <= 5 * 60 * 1000L || timeDiffStartMs <= 5 * 60 * 1000L
+                return timeDiffEndMs <= 15 * 60 * 1000L || timeDiffStartMs <= 15 * 60 * 1000L
             }
 
-            // 2. If filename contains a DIFFERENT phone number (7+ digits that don't match cleanPhone) -> DO NOT MATCH!
+            // 2. If filename contains a DIFFERENT 7+ digit phone number, reject
             if (fileNameCleanDigits.length >= 7 && cleanPhone.length >= 7 && !fileNameCleanDigits.contains(cleanPhone)) {
                 return false
             }
 
-            // 3. Generic filename with no phone digits (e.g. REC_001.mp3) -> require modification strictly within 60 seconds of call start or end
-            return timeDiffEndMs <= 60_000L || timeDiffStartMs <= 60_000L
+            // 3. Generic filename (e.g. REC_001.mp3 or timestamp-only) -> require modification within 3 minutes of call
+            return timeDiffEndMs <= 180_000L || timeDiffStartMs <= 180_000L
         }
 
-        // 1. Scan User-Selected SAF Directory Tree URI if selected via folder picker
+        // 1. Scan Android System MediaStore (Works on all Android versions: 10, 11, 12, 13, 14, 15)
+        try {
+            val mediaUris = mutableListOf(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    mediaUris.add(MediaStore.Audio.Media.getContentUri("external"))
+                } catch (_: Exception) {}
+            }
+
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.DATE_ADDED,
+                MediaStore.Audio.Media.DATE_MODIFIED,
+                MediaStore.Audio.Media.SIZE,
+                MediaStore.Audio.Media.DATA
+            )
+
+            for (collectionUri in mediaUris) {
+                val cursor = context.contentResolver.query(
+                    collectionUri,
+                    projection,
+                    "${MediaStore.Audio.Media.SIZE} > 0",
+                    null,
+                    "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
+                )
+
+                cursor?.use { c ->
+                    val idIdx = c.getColumnIndex(MediaStore.Audio.Media._ID)
+                    val nameIdx = c.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
+                    val modIdx = c.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
+                    val addIdx = c.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
+                    val sizeIdx = c.getColumnIndex(MediaStore.Audio.Media.SIZE)
+                    val dataIdx = c.getColumnIndex(MediaStore.Audio.Media.DATA)
+
+                    var checkedCount = 0
+                    while (c.moveToNext() && checkedCount < 100) {
+                        checkedCount++
+                        val id = if (idIdx >= 0) c.getLong(idIdx) else -1L
+                        val name = if (nameIdx >= 0) c.getString(nameIdx) ?: "" else ""
+                        val size = if (sizeIdx >= 0) c.getLong(sizeIdx) else 0L
+                        val rawPath = if (dataIdx >= 0) c.getString(dataIdx) ?: "" else ""
+                        val modSec = if (modIdx >= 0) c.getLong(modIdx) else 0L
+                        val addSec = if (addIdx >= 0) c.getLong(addIdx) else 0L
+                        val effectiveModMs = if (modSec > 0) modSec * 1000L else if (addSec > 0) addSec * 1000L else System.currentTimeMillis()
+
+                        if (!isAudioFile(name) && !isAudioFile(rawPath)) continue
+                        if (size <= 0L) continue
+
+                        val fileUri = ContentUris.withAppendedId(collectionUri, id)
+                        val uriStr = fileUri.toString()
+                        if (claimedPaths.contains(uriStr) || claimedPaths.contains(name) || (rawPath.isNotBlank() && claimedPaths.contains(rawPath))) {
+                            continue
+                        }
+
+                        if (isConfidentMatch(name.ifEmpty { rawPath }, effectiveModMs)) {
+                            // If raw file path is accessible directly, return it
+                            if (rawPath.isNotBlank()) {
+                                val directFile = File(rawPath)
+                                if (directFile.exists() && directFile.canRead() && directFile.length() > 0) {
+                                    Log.i(TAG, "Matched MediaStore audio file directly: $rawPath for $phoneNumber")
+                                    return directFile
+                                }
+                            }
+
+                            // Otherwise copy MediaStore InputStream to app cache directory
+                            try {
+                                val cleanName = name.ifEmpty { "call_rec_${id}.mp3" }
+                                val cacheFile = File(context.cacheDir, "MS_REC_${System.currentTimeMillis()}_$cleanName")
+                                context.contentResolver.openInputStream(fileUri)?.use { input ->
+                                    cacheFile.outputStream().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                if (cacheFile.exists() && cacheFile.length() > 0) {
+                                    Log.i(TAG, "Matched MediaStore recording via ContentResolver: $fileUri -> copied to ${cacheFile.absolutePath}")
+                                    return cacheFile
+                                }
+                            } catch (streamErr: Exception) {
+                                Log.w(TAG, "Error copying MediaStore stream: ${streamErr.message}")
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error querying MediaStore: ${e.message}")
+        }
+
+        // 2. Scan User-Selected SAF Directory Tree URI if selected
         if (!treeUriStr.isNullOrEmpty()) {
             try {
-                val treeUri = android.net.Uri.parse(treeUriStr)
+                val treeUri = Uri.parse(treeUriStr)
                 val documentFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
                 if (documentFile != null && documentFile.isDirectory) {
                     val docFiles = documentFile.listFiles()
@@ -103,14 +234,16 @@ object SimCallRecordingScanner {
                             }
 
                             if (isConfidentMatch(fileName, doc.lastModified())) {
-                                val localTempFile = File(context.cacheDir, "SIM_REC_${System.currentTimeMillis()}_$fileName")
+                                val localTempFile = File(context.cacheDir, "SAF_REC_${System.currentTimeMillis()}_$fileName")
                                 context.contentResolver.openInputStream(doc.uri)?.use { input ->
                                     localTempFile.outputStream().use { output ->
                                         input.copyTo(output)
                                     }
                                 }
-                                Log.i(TAG, "Matched user SAF folder recording: ${doc.uri} -> copied to ${localTempFile.absolutePath}")
-                                return localTempFile
+                                if (localTempFile.exists() && localTempFile.length() > 0) {
+                                    Log.i(TAG, "Matched user SAF folder recording: ${doc.uri} -> copied to ${localTempFile.absolutePath}")
+                                    return localTempFile
+                                }
                             }
                         }
                     }
@@ -120,7 +253,8 @@ object SimCallRecordingScanner {
             }
         }
 
-        // 2. Fallback scan by relative path candidates
+        // 3. Scan Known File System Directories (Direct file storage fallback)
+        val root = Environment.getExternalStorageDirectory()
         val customFolder = prefs.getString("custom_recording_folder", null)?.trim()
         val folderCandidates = mutableListOf<String>()
         if (!customFolder.isNullOrEmpty()) {
@@ -133,21 +267,25 @@ object SimCallRecordingScanner {
         val uniqueFolders = folderCandidates.distinct()
 
         for (relPath in uniqueFolders) {
-            val dir = if (relPath.startsWith("/")) File(root, relPath) else File(relPath)
-            if (dir.exists() && dir.isDirectory) {
-                val files = dir.listFiles() ?: continue
-                for (file in files) {
-                    if (file.isFile && isAudioFile(file.name) && file.length() > 0) {
-                        if (claimedPaths.contains(file.absolutePath) || claimedPaths.contains(file.name)) {
-                            continue
-                        }
+            try {
+                val dir = if (relPath.startsWith("/")) File(root, relPath) else File(relPath)
+                if (dir.exists() && dir.isDirectory) {
+                    val files = dir.listFiles() ?: continue
+                    for (file in files) {
+                        if (file.isFile && isAudioFile(file.name) && file.length() > 0) {
+                            if (claimedPaths.contains(file.absolutePath) || claimedPaths.contains(file.name)) {
+                                continue
+                            }
 
-                        if (isConfidentMatch(file.name, file.lastModified())) {
-                            Log.i(TAG, "Matched SIM call audio recording: ${file.absolutePath} for phone: $phoneNumber")
-                            return file
+                            if (isConfidentMatch(file.name, file.lastModified())) {
+                                Log.i(TAG, "Matched SIM call audio recording: ${file.absolutePath} for phone: $phoneNumber")
+                                return file
+                            }
                         }
                     }
                 }
+            } catch (dirErr: Exception) {
+                Log.w(TAG, "Error checking directory $relPath: ${dirErr.message}")
             }
         }
 

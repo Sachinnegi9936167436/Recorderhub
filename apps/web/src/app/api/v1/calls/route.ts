@@ -172,7 +172,62 @@ export async function GET() {
       await (CallModel as any).deleteMany({ _id: { $in: idsToDelete } }).catch(() => {});
     }
 
-    // 3. Auto-link existing local disk recording files to calls missing audioUrls
+    // 3. Auto-link AWS S3 bucket recording files to calls missing audioUrls
+    try {
+      const { getS3Client } = await import('@/lib/aws');
+      const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+      const s3Info = getS3Client();
+      if (s3Info) {
+        const s3List = await s3Info.client.send(
+          new ListObjectsV2Command({ Bucket: s3Info.bucket, Prefix: 'recordings/', MaxKeys: 200 })
+        );
+
+        if (s3List.Contents && s3List.Contents.length > 0) {
+          for (const s3Obj of s3List.Contents) {
+            const key = s3Obj.Key;
+            if (!key || (!key.endsWith('.mp3') && !key.endsWith('.m4a') && !key.endsWith('.wav') && !key.endsWith('.3gp') && !key.endsWith('.amr'))) {
+              continue;
+            }
+
+            const fileName = key.split('/').pop() || '';
+            const recId = fileName.replace(/\.[^/.]+$/, '');
+            const digitsOnly = fileName.replace(/\D/g, '');
+            const clean10 = digitsOnly.length >= 10 ? digitsOnly.slice(0, 10) : '';
+
+            // Find matching call in deduplicated calls
+            const matchingCall = deduplicatedCalls.find((c) => {
+              if (c.idempotencyKey && key.includes(c.idempotencyKey)) return true;
+              if (c.s3Key === key) return true;
+              if (c.audioUrl && c.audioUrl.includes(recId)) return true;
+              const callDigits = (c.phoneNumber || '').replace(/\D/g, '').slice(-10);
+              if (clean10 && callDigits && clean10 === callDigits) {
+                // If timestamp in S3 file matches call within 15 minutes
+                const s3Date = s3Obj.LastModified ? new Date(s3Obj.LastModified).getTime() : 0;
+                const callDate = c.startTime ? new Date(c.startTime).getTime() : 0;
+                if (Math.abs(s3Date - callDate) <= 15 * 60 * 1000) return true;
+                return true;
+              }
+              return false;
+            });
+
+            if (matchingCall) {
+              const audioUrl = `/api/v1/recordings/${recId}/audio`;
+              matchingCall.recordingStatus = 'COMPLETED';
+              matchingCall.audioUrl = audioUrl;
+              matchingCall.s3Key = key;
+              await (CallModel as any).updateOne(
+                { _id: matchingCall._id },
+                { $set: { recordingStatus: 'COMPLETED', audioUrl, s3Key: key } }
+              ).catch(() => {});
+            }
+          }
+        }
+      }
+    } catch (s3RecErr) {
+      console.warn('Error auto-linking S3 recordings:', s3RecErr);
+    }
+
+    // 4. Auto-link existing local disk recording files to calls missing audioUrls
     try {
       const fsModule = await import('fs');
       const pathModule = await import('path');
@@ -184,13 +239,13 @@ export async function GET() {
       if (fsModule.existsSync(uploadsDir)) {
         const diskFiles = fsModule.readdirSync(uploadsDir);
         for (const file of diskFiles) {
-          if (file.endsWith('.m4a')) {
-            const recId = file.replace('.m4a', '');
+          if (file.endsWith('.m4a') || file.endsWith('.mp3') || file.endsWith('.wav')) {
+            const recId = file.replace(/\.[^/.]+$/, '');
             const matchingCall = deduplicatedCalls.find(
               (c) => c.idempotencyKey === recId || (c.audioUrl && c.audioUrl.includes(recId))
             );
 
-            if (matchingCall) {
+            if (matchingCall && !matchingCall.audioUrl) {
               matchingCall.recordingStatus = 'COMPLETED';
               matchingCall.audioUrl = `/api/v1/recordings/${recId}/audio`;
               await (CallModel as any).updateOne(
