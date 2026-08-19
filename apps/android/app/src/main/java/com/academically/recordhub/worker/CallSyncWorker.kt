@@ -194,12 +194,17 @@ class CallSyncWorker(
                 else -> "audio/wav"
             }
 
+            val prefs = applicationContext.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
+            val counselorEmail = prefs.getString("counselor_email", null)
+
             val initReq = UploadInitiateRequest(
                 callId = evt.idempotencyKey,
                 fileSizeBytes = file.length(),
                 mimeType = mimeType,
                 checksumSha256 = "dummy_checksum_${file.name.hashCode()}",
-                durationSeconds = evt.durationSeconds
+                durationSeconds = evt.durationSeconds,
+                deviceId = evt.deviceId,
+                counselorEmail = counselorEmail
             )
 
             val initRes = api.initiateUpload(authHeader, initReq)

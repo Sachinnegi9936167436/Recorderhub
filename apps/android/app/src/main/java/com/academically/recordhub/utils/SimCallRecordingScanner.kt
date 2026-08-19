@@ -41,20 +41,19 @@ object SimCallRecordingScanner {
             val fileNameCleanDigits = fileName.replace("\\D".toRegex(), "")
             val timeDiffEndMs = Math.abs(fileLastModified - endTimeMs)
             val timeDiffStartMs = Math.abs(fileLastModified - startTimeMs)
-            val isNearCallTime = timeDiffEndMs <= 30 * 60 * 1000L || timeDiffStartMs <= 30 * 60 * 1000L
 
-            // 1. If filename contains the call's 10-digit phone number, accept if modified near call time
+            // 1. If filename contains the call's 10-digit phone number, accept if modified within 10 minutes of call
             if (cleanPhone.length >= 7 && fileNameCleanDigits.contains(cleanPhone)) {
-                return isNearCallTime
+                return timeDiffEndMs <= 10 * 60 * 1000L || timeDiffStartMs <= 10 * 60 * 1000L
             }
 
-            // 2. If filename contains a DIFFERENT phone number (10+ digits that don't contain cleanPhone) -> DO NOT MATCH OR UPLOAD!
-            if (fileNameCleanDigits.length >= 10 && cleanPhone.length >= 7 && !fileNameCleanDigits.contains(cleanPhone)) {
+            // 2. If filename contains a DIFFERENT phone number (7+ digits that don't match cleanPhone) -> DO NOT MATCH!
+            if (fileNameCleanDigits.length >= 7 && cleanPhone.length >= 7 && !fileNameCleanDigits.contains(cleanPhone)) {
                 return false
             }
 
-            // 3. Generic filename with no phone digits (e.g. REC_001.mp3) -> require modification strictly within 45 seconds of call end
-            return timeDiffEndMs <= 45_000L || timeDiffStartMs <= 45_000L
+            // 3. Generic filename with no phone digits (e.g. REC_001.mp3) -> require modification strictly within 60 seconds of call start or end
+            return timeDiffEndMs <= 60_000L || timeDiffStartMs <= 60_000L
         }
 
         // 1. Scan User-Selected SAF Directory Tree URI if selected via folder picker

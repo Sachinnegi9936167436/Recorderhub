@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   try {
     await connectToDatabase();
     const body = await req.json().catch(() => ({}));
-    const { callId, fileSizeBytes, mimeType, checksumSha256, durationSeconds } = body;
+    const { callId, fileSizeBytes, mimeType, checksumSha256, durationSeconds, deviceId, counselorEmail } = body;
     const digitsOnly = (callId || '').replace(/\D/g, '');
     const cleanPhone = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : 'CALL';
 
@@ -23,14 +23,15 @@ export async function POST(req: Request) {
     // Format timestamp as YYYYMMDDHHmmss to mirror native phone recording naming
     const dateStr = callDate.toISOString().replace(/\D/g, '').slice(0, 14);
     const uniqueSuffix = Math.random().toString(36).substring(2, 6);
+    const devicePrefix = deviceId ? deviceId.replace(/[^a-zA-Z0-9_-]/g, '_') : 'AGENT';
 
-    const recordingId = `${cleanPhone}_${dateStr}_${uniqueSuffix}`;
+    const recordingId = `${devicePrefix}_${cleanPhone}_${dateStr}_${uniqueSuffix}`;
     const ext = mimeType?.includes('mpeg') || mimeType?.includes('mp3') ? 'mp3'
               : mimeType?.includes('wav') ? 'wav'
               : mimeType?.includes('3gpp') || mimeType?.includes('3gp') ? '3gp'
               : mimeType?.includes('amr') ? 'amr' : 'm4a';
 
-    const s3Key = `recordings/${recordingId}.${ext}`;
+    const s3Key = `recordings/${devicePrefix}/${recordingId}.${ext}`;
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
 
     const host = req.headers.get('host') || 'localhost:3000';
@@ -93,6 +94,12 @@ export async function POST(req: Request) {
                 { audioUrl: { $exists: false } }
               ]
             };
+
+            if (deviceId) {
+              query.deviceId = deviceId;
+            } else if (counselorEmail) {
+              query.counselorEmail = counselorEmail;
+            }
 
             // If idempotencyKey contains embedded timestamp, enforce strict 2-minute time window match
             if (!isNaN(timestampMs) && timestampMs > 1000000000000) {

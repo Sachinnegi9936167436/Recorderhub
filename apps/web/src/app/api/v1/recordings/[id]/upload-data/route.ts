@@ -89,24 +89,51 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     );
 
     if (!updatedCall) {
-      // Fallback: attach to most recent call with status PENDING_UPLOAD or missing audioUrl
-      updatedCall = await (CallModel as any).findOneAndUpdate(
-        {
+      // Extract devicePrefix and cleanPhone from recordingId if available (e.g. AGENT_9876543210_20260819...)
+      const parts = recordingId.split('_');
+      let extractedPhone = '';
+      let extractedDevice = '';
+
+      for (const part of parts) {
+        const clean = part.replace(/\D/g, '');
+        if (clean.length === 10) {
+          extractedPhone = clean;
+        } else if (part.startsWith('ANDROID-') || part.startsWith('DEV-')) {
+          extractedDevice = part;
+        }
+      }
+
+      if (extractedPhone.length === 10) {
+        const query: any = {
+          phoneNumber: { $regex: new RegExp(`${extractedPhone}$`) },
           $or: [
-            { recordingStatus: 'PENDING_UPLOAD' },
-            { recordingStatus: 'PENDING' },
+            { recordingStatus: { $in: ['PENDING_UPLOAD', 'PENDING', 'NONE'] } },
             { audioUrl: { $exists: false } }
           ]
-        },
-        {
-          $set: {
-            recordingStatus: 'COMPLETED',
-            audioUrl: audioUrl,
-            s3Key: s3Key,
+        };
+
+        if (extractedDevice) {
+          query.deviceId = extractedDevice;
+        }
+
+        updatedCall = await (CallModel as any).findOneAndUpdate(
+          query,
+          {
+            $set: {
+              recordingStatus: 'COMPLETED',
+              audioUrl: audioUrl,
+              s3Key: s3Key,
+            },
           },
-        },
-        { sort: { startTime: -1, createdAt: -1 }, new: true }
-      );
+          { sort: { startTime: -1, createdAt: -1 }, new: true }
+        );
+      }
+    }
+
+    if (updatedCall) {
+      console.log(`Successfully attached uploaded audio recording to call ${updatedCall.idempotencyKey || updatedCall._id}`);
+    } else {
+      console.warn(`Recording upload completed for ${recordingId}, but no matching isolated call record was found.`);
     }
 
     console.log(`Successfully saved uploaded audio file: ${filePath} (${buffer.length} bytes)`);

@@ -51,7 +51,9 @@ data class UploadInitiateRequest(
     val fileSizeBytes: Long,
     val mimeType: String,
     val checksumSha256: String,
-    val durationSeconds: Int
+    val durationSeconds: Int,
+    val deviceId: String? = null,
+    val counselorEmail: String? = null
 )
 
 data class UploadInitiateResponse(

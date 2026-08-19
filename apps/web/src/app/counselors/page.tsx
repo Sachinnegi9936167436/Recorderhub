@@ -156,10 +156,10 @@ function CounselorsAndTeamsInner() {
       }
 
       const saved = localStorage.getItem('recorderhub_teams');
-      if (saved) {
+      if (saved !== null) {
         try {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed)) {
             setTeamsList(parsed);
             return;
           }
@@ -167,8 +167,8 @@ function CounselorsAndTeamsInner() {
           console.error('Failed to parse saved teams:', e);
         }
       }
+      setTeamsList(defaultInitialTeams);
     }
-    setTeamsList(defaultInitialTeams);
   }, []);
 
   const getAvailableCounselorObjects = () => {

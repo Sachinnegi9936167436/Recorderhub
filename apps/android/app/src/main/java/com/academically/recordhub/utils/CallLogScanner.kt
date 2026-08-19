@@ -37,6 +37,12 @@ object CallLogScanner {
                 prefs.edit().putLong("app_installed_at", installTimeMs).apply()
             }
 
+            val allDbEventsInitial = db.callEventDao().getAllEvents()
+            val claimedPaths = allDbEventsInitial
+                .mapNotNull { it.recordingPath }
+                .filter { it.isNotBlank() }
+                .toMutableSet()
+
             val resolver = context.contentResolver
             val selection = "${CallLog.Calls.DATE} >= ?"
             val selectionArgs = arrayOf(installTimeMs.toString())
@@ -106,7 +112,18 @@ object CallLogScanner {
                     val callStatus = if (isMissedOrUnanswered) "UNANSWERED" else "ANSWERED"
                     val effectiveDurationSec = if (isMissedOrUnanswered) 0 else durationSec
 
-                    val audioFile = if (isMissedOrUnanswered) null else SimCallRecordingScanner.findAudioForCall(context, rawNumber, dateMs, endTimeMs)
+                    val audioFile = if (isMissedOrUnanswered) null else SimCallRecordingScanner.findAudioForCall(
+                        context, 
+                        rawNumber, 
+                        dateMs, 
+                        endTimeMs, 
+                        claimedPaths
+                    )
+
+                    if (audioFile != null && audioFile.exists()) {
+                        claimedPaths.add(audioFile.absolutePath)
+                        claimedPaths.add(audioFile.name)
+                    }
 
                     val entity = CallEventEntity(
                         deviceId = deviceId,
@@ -132,13 +149,8 @@ object CallLogScanner {
                 }
             }
 
-            // Attach audio recordings strictly 1-to-1 to existing calls in Room DB missing recording paths
+            // Secondary pass: Attach audio recordings strictly 1-to-1 to existing calls in Room DB missing recording paths
             val allDbEvents = db.callEventDao().getAllEvents()
-            val claimedPaths = allDbEvents
-                .mapNotNull { it.recordingPath }
-                .filter { it.isNotBlank() }
-                .toMutableSet()
-
             val waDir = File(context.filesDir, "whatsapp_recordings")
 
             for (evt in allDbEvents) {
