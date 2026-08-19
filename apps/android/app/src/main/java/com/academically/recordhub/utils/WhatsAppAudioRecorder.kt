@@ -33,28 +33,8 @@ class WhatsAppAudioRecorder(private val context: Context) {
     private var totalDataBytesWritten = 0L
 
     fun startRecording(contactTitle: String): File? {
-        if (isRecording.get()) return currentOutputFile
-
-        val outputDir = File(context.filesDir, "whatsapp_recordings")
-        if (!outputDir.exists()) outputDir.mkdirs()
-
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val safeContact = contactTitle.replace("[^a-zA-Z0-9]".toRegex(), "_")
-        currentOutputFile = File(outputDir, "WA_CALL_${timestamp}_${safeContact}.wav")
-
-        maxPeakAmplitudeObserved = 0
-        totalDataBytesWritten = 0L
-        isRecording.set(true)
-        recordingStartTimeMs = System.currentTimeMillis()
-
-        val outputFile = currentOutputFile ?: return null
-
-        recordingThread = thread(start = true, name = "WhatsAppPCMRecorderThread") {
-            recordAudioPcm(outputFile)
-        }
-
-        Log.d(TAG, "Initiated WhatsApp audio recording thread for file: ${outputFile.name}")
-        return currentOutputFile
+        Log.i(TAG, "WhatsApp call audio recording is currently PAUSED by configuration.")
+        return null
     }
 
     @SuppressLint("MissingPermission")

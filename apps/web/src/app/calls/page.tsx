@@ -26,11 +26,20 @@ import {
   X
 } from 'lucide-react';
 
-function AudioCell({ call, idx }: { call: any; idx: number }) {
+function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; canListen?: boolean }) {
   const [hasError, setHasError] = useState(false);
 
   const isAnswered = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
   const hasRecording = call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD';
+
+  if (!canListen) {
+    return (
+      <span className="inline-flex items-center space-x-1 text-slate-400 font-medium text-[11px] bg-slate-100 px-2 py-0.5 rounded border border-slate-200" title="Access Restricted: You can only listen to call recordings of counselors in your team.">
+        <span>🔒</span>
+        <span>Restricted</span>
+      </span>
+    );
+  }
 
   if (hasError || !isAnswered || call.recordingStatus === 'NONE' || (!hasRecording && !call.audioUrl)) {
     return <span className="text-slate-400 font-medium text-[11px]">No Recording</span>;
@@ -189,6 +198,92 @@ function SalestrailCallsInner() {
     return 'Counselor Agent';
   };
 
+  const [teamsList, setTeamsList] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('recorderhub_teams');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setTeamsList(parsed);
+          }
+        } catch (e) {
+          console.error('Failed to parse teams:', e);
+        }
+      }
+    }
+  }, []);
+
+  const activeTeams = teamsList.length > 0 ? teamsList : [
+    { id: 't-1', name: 'Global Sales', admin: 'Sachin Negi', admins: ['Sachin Negi', 'sachinnegi@academically.com'], members: ['Shrishti', 'Dev', 'Rajdeep', 'Sachin Negi'] },
+    { id: 't-2', name: 'NCLEX Counselors', admin: 'Rajdeep', admins: ['Rajdeep', 'rajdeep@academically.com'], members: ['Ananya Sharma', 'Rahul Kumar', 'Rajdeep'] },
+    { id: 't-3', name: 'DHA Counselors', admin: 'Dev', admins: ['Dev', 'dev@academically.com'], members: ['Vasantha', 'Nasreen', 'Dev'] }
+  ];
+
+  const myTeamMemberIdentifiers = useMemo(() => {
+    if (isAdmin) return [];
+    const memberSet = new Set<string>();
+    const myEmailLower = (userEmail || '').toLowerCase();
+    const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+
+    if (myEmailLower) memberSet.add(myEmailLower);
+    if (myNamePrefix) memberSet.add(myNamePrefix);
+
+    activeTeams.forEach((team) => {
+      const adminStr = (team.admin || '').toLowerCase();
+      const adminsArr = Array.isArray(team.admins) ? team.admins.map((a: string) => a.toLowerCase()) : [];
+      const isTeamManager = adminStr.includes(myNamePrefix) || adminStr.includes(myEmailLower) ||
+        adminsArr.some((a: string) => a.includes(myNamePrefix) || a.includes(myEmailLower));
+
+      if (isTeamManager && Array.isArray(team.members)) {
+        team.members.forEach((m: string) => {
+          if (m) memberSet.add(m.toLowerCase().trim());
+        });
+      }
+    });
+
+    return Array.from(memberSet);
+  }, [activeTeams, userEmail, isAdmin]);
+
+  const canUserAccessCall = (call: any) => {
+    // 1. System Admin: Can view and listen to ALL call recordings across all teams
+    if (isAdmin) return { canView: true, canListen: true };
+
+    const resolvedCounselor = resolveCounselorName(call).toLowerCase();
+    const callEmail = (call.counselorEmail || call.email || '').toLowerCase();
+    const myEmailLower = (userEmail || '').toLowerCase();
+    const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+
+    // 2. Sales User / Counselor: Can ONLY view & listen to their OWN calls
+    if (isCounselor) {
+      const isMyOwnCall =
+        (callEmail && callEmail === myEmailLower) ||
+        (myNamePrefix && resolvedCounselor.includes(myNamePrefix)) ||
+        (myNamePrefix && myNamePrefix.includes('shris') && resolvedCounselor.includes('shristi'));
+
+      return { canView: isMyOwnCall, canListen: isMyOwnCall };
+    }
+
+    // 3. Team Manager / Team Lead: Can view & listen ONLY to calls of counselors in their team(s)
+    if (isManager || isTeamLead) {
+      const isMyOwnCall =
+        (callEmail && callEmail === myEmailLower) ||
+        (myNamePrefix && resolvedCounselor.includes(myNamePrefix));
+
+      if (isMyOwnCall) return { canView: true, canListen: true };
+
+      const isMemberInMyTeam = myTeamMemberIdentifiers.some((identifier) => {
+        return resolvedCounselor.includes(identifier) || (callEmail && callEmail.includes(identifier));
+      });
+
+      return { canView: isMemberInMyTeam, canListen: isMemberInMyTeam };
+    }
+
+    return { canView: true, canListen: true };
+  };
+
   // Get unique list of counselor names for dropdown
   const uniqueCounselors = Array.from(
     new Set(
@@ -201,31 +296,8 @@ function SalestrailCallsInner() {
 
   // Filter calls by search and filters
   const filteredCalls = callsList.filter((call) => {
-    // RBAC check: Counselor role can view ONLY their own call logs, Team Lead can view ALL calls in their team
-    if (isCounselor) {
-      const resolvedUser = resolveCounselorName(call).toLowerCase();
-      const callEmail = (call.counselorEmail || call.email || '').toLowerCase();
-      const myEmailPrefix = userEmail ? userEmail.split('@')[0].toLowerCase() : '';
-
-      const isMyCall =
-        (callEmail && callEmail === userEmail.toLowerCase()) ||
-        (myEmailPrefix && resolvedUser.includes(myEmailPrefix)) ||
-        (resolvedUser.includes('shristi') && myEmailPrefix.includes('shris'));
-
-      if (!isMyCall) return false;
-    } else if (isTeamLead) {
-      // Team Lead can view ALL call logs & recordings for counselors in their team
-      const resolvedUser = resolveCounselorName(call).toLowerCase();
-      const callEmail = (call.counselorEmail || call.email || '').toLowerCase();
-
-      const myTeamMembers = ['nasreen', 'vasantha', 'manas vikas', 'sachin negi', 'shristi', 'shrishtik', 'rajdeep', 'ananya', 'rahul', 'dev', 'himanshu', 'raja', 'prakhar', 'bilal', 'shalini', 'shruti'];
-
-      const isTeamCall =
-        (callEmail && callEmail === userEmail.toLowerCase()) ||
-        myTeamMembers.some((m) => resolvedUser.includes(m) || callEmail.includes(m));
-
-      if (!isTeamCall) return false;
-    }
+    const { canView } = canUserAccessCall(call);
+    if (!canView) return false;
 
     // 0. Exclude non-call text/chat message entries
     const combined = `${call.phoneNumber || ''} ${call.leadName || ''} ${call.disposition || ''}`.toLowerCase();
@@ -716,7 +788,7 @@ function SalestrailCallsInner() {
                         </td>
                         {/* Audio Recording */}
                         <td className="p-4 pr-6 text-center">
-                          <AudioCell call={call} idx={idx} />
+                          <AudioCell call={call} idx={idx} canListen={canUserAccessCall(call).canListen} />
                         </td>
                       </tr>
                     );

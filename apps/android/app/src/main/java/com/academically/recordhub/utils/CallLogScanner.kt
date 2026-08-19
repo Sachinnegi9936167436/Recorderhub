@@ -25,9 +25,9 @@ object CallLogScanner {
             db.callEventDao().clearDemoData()
             db.callEventDao().resetAllToPendingSync()
 
-            // Get or initialize exact app installation timestamp
+            // Get or initialize exact account / app creation timestamp cutoff
             val prefs = context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
-            var installTimeMs = prefs.getLong("app_installed_at", 0L)
+            var installTimeMs = prefs.getLong("account_created_at", prefs.getLong("app_installed_at", 0L))
             if (installTimeMs == 0L) {
                 installTimeMs = try {
                     context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
@@ -164,7 +164,8 @@ object CallLogScanner {
                         claimedPaths
                     )
 
-                    // Try WhatsApp audio recording folder if SIM scanner didn't match
+                    // WhatsApp call audio recording is currently PAUSED (only native SIM call recordings are active)
+                    /*
                     if (matchedFile == null && waDir.exists() && waDir.isDirectory) {
                         val waFiles = waDir.listFiles() ?: emptyArray()
                         matchedFile = waFiles.firstOrNull { file ->
@@ -173,6 +174,7 @@ object CallLogScanner {
                             Math.abs(evt.startTime - file.lastModified()) < 120000
                         }
                     }
+                    */
 
                     if (matchedFile != null && matchedFile.exists()) {
                         claimedPaths.add(matchedFile.absolutePath)

@@ -36,15 +36,46 @@ object SimCallRecordingScanner {
 
         val prefs = context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
         val treeUriStr = prefs.getString("custom_recording_tree_uri", null)
+        val idCreatedAt = prefs.getLong("account_created_at", prefs.getLong("app_installed_at", 0L))
+
+        fun parseTimestampFromFileName(fileName: String): Long? {
+            // Extracts 14-digit timestamp like 20260808011704 from filename formats (e.g. 9936167436(9936167436)_20260808011704.mp3)
+            val regex = "(\\d{14})\\.[a-zA-Z0-9]+$".toRegex()
+            val match = regex.find(fileName)
+            if (match != null) {
+                val dateStr = match.groupValues[1]
+                return try {
+                    val sdf = java.text.SimpleDateFormat("yyyyMMddHHmmss", java.util.Locale.US)
+                    sdf.timeZone = java.util.TimeZone.getDefault()
+                    sdf.parse(dateStr)?.time
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            return null
+        }
 
         fun isConfidentMatch(fileName: String, fileLastModified: Long): Boolean {
-            val fileNameCleanDigits = fileName.replace("\\D".toRegex(), "")
-            val timeDiffEndMs = Math.abs(fileLastModified - endTimeMs)
-            val timeDiffStartMs = Math.abs(fileLastModified - startTimeMs)
+            val parsedTs = parseTimestampFromFileName(fileName)
+            val effectiveTime = parsedTs ?: fileLastModified
 
-            // 1. If filename contains the call's 10-digit phone number, accept if modified within 10 minutes of call
+            // Reject any recording file created/modified before the account or app ID creation date
+            if (idCreatedAt > 0L && effectiveTime < (idCreatedAt - 5000L)) {
+                return false
+            }
+
+            // Reject any recording file created/modified before the call even started
+            if (effectiveTime < (startTimeMs - 60_000L)) {
+                return false
+            }
+
+            val fileNameCleanDigits = fileName.replace("\\D".toRegex(), "")
+            val timeDiffEndMs = Math.abs(effectiveTime - endTimeMs)
+            val timeDiffStartMs = Math.abs(effectiveTime - startTimeMs)
+
+            // 1. If filename contains the call's 10-digit phone number, accept if modified/timestamped within 5 minutes of call
             if (cleanPhone.length >= 7 && fileNameCleanDigits.contains(cleanPhone)) {
-                return timeDiffEndMs <= 10 * 60 * 1000L || timeDiffStartMs <= 10 * 60 * 1000L
+                return timeDiffEndMs <= 5 * 60 * 1000L || timeDiffStartMs <= 5 * 60 * 1000L
             }
 
             // 2. If filename contains a DIFFERENT phone number (7+ digits that don't match cleanPhone) -> DO NOT MATCH!

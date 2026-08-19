@@ -196,6 +196,13 @@ class CallSyncWorker(
 
             val prefs = applicationContext.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
             val counselorEmail = prefs.getString("counselor_email", null)
+            val idCreatedAt = prefs.getLong("account_created_at", prefs.getLong("app_installed_at", 0L))
+
+            if (idCreatedAt > 0L && (evt.startTime < (idCreatedAt - 5000L) || file.lastModified() < (idCreatedAt - 5000L))) {
+                AppLogManager.log("WARN", "RecordingSync", "Skipping upload for ${file.name}: created prior to ID creation date (${Date(idCreatedAt)}).")
+                db.callEventDao().updateRecordingStatus(evt.idempotencyKey, "NONE")
+                return
+            }
 
             val initReq = UploadInitiateRequest(
                 callId = evt.idempotencyKey,

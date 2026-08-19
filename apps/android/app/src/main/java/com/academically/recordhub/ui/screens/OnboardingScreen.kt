@@ -186,12 +186,16 @@ fun OnboardingScreen(onProceedToPermissions: () -> Unit) {
                                         .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() } }
                                 }
                                 val prefs = context.getSharedPreferences("recordhub_prefs", android.content.Context.MODE_PRIVATE)
-                                prefs.edit()
+                                val now = System.currentTimeMillis()
+                                val editor = prefs.edit()
                                     .putBoolean("is_logged_in", true)
                                     .putString("counselor_email", counselorEmail.trim())
                                     .putString("counselor_name", counselorName)
                                     .putString("access_token", response.body()?.accessToken ?: "")
-                                    .apply()
+                                if (!prefs.contains("account_created_at")) {
+                                    editor.putLong("account_created_at", now)
+                                }
+                                editor.apply()
                                 break
                             } else if (response.code() == 401 || response.code() == 400) {
                                 lastErrorMsg = "Invalid email or password! Verify credentials created on Web Dashboard."
