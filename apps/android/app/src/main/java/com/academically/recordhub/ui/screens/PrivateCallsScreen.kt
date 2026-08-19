@@ -96,8 +96,10 @@ fun PrivateCallsScreen(privateCalls: List<CallEventEntity>) {
                                         color = Color.White,
                                         fontSize = 13.sp
                                     )
+                                    val isAnswered = call.status.equals("ANSWERED", ignoreCase = true)
+                                    val durationStr = if (isAnswered && call.durationSeconds > 0) "${call.durationSeconds}s" else "0s"
                                     Text(
-                                        text = "${call.direction} • ${call.durationSeconds}s",
+                                        text = "${call.direction} • $durationStr",
                                         color = Slate400,
                                         fontSize = 11.sp
                                     )

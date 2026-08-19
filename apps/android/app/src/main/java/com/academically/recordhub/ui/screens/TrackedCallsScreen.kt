@@ -150,14 +150,16 @@ fun TrackedCallCard(call: CallEventEntity, onTogglePrivate: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                val isAnswered = call.status.equals("ANSWERED", ignoreCase = true)
+                val durationStr = if (isAnswered && call.durationSeconds > 0) "${call.durationSeconds}s" else "0s"
                 Text(
-                    text = "${formatCallTime(call.startTime)} • ${call.direction} • ${call.durationSeconds}s",
+                    text = "${formatCallTime(call.startTime)} • ${call.direction} • $durationStr",
                     color = Slate400,
                     fontSize = 11.sp
                 )
                 Text(
-                    text = call.disposition,
-                    color = MedicalTeal400,
+                    text = if (isAnswered) call.disposition else "Unanswered",
+                    color = if (isAnswered) MedicalTeal400 else Slate400,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.sp
                 )

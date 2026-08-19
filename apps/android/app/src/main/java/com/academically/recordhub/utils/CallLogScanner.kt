@@ -99,17 +99,24 @@ object CallLogScanner {
                         continue
                     }
 
-                    val audioFile = SimCallRecordingScanner.findAudioForCall(context, rawNumber, dateMs, endTimeMs)
+                    val isMissedOrUnanswered = type == CallLog.Calls.MISSED_TYPE || 
+                            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && type == CallLog.Calls.REJECTED_TYPE) ||
+                            durationSec <= 0
+
+                    val callStatus = if (isMissedOrUnanswered) "UNANSWERED" else "ANSWERED"
+                    val effectiveDurationSec = if (isMissedOrUnanswered) 0 else durationSec
+
+                    val audioFile = if (isMissedOrUnanswered) null else SimCallRecordingScanner.findAudioForCall(context, rawNumber, dateMs, endTimeMs)
 
                     val entity = CallEventEntity(
                         deviceId = deviceId,
                         idempotencyKey = idempotencyKey,
                         phoneNumber = formattedPhone,
                         direction = direction,
-                        status = if (type == CallLog.Calls.MISSED_TYPE) "MISSED" else "ANSWERED",
+                        status = callStatus,
                         startTime = dateMs,
                         endTime = endTimeMs,
-                        durationSeconds = Math.max(1, durationSec),
+                        durationSeconds = effectiveDurationSec,
                         simSlot = 0,
                         isPrivate = false,
                         recordingPath = audioFile?.absolutePath,

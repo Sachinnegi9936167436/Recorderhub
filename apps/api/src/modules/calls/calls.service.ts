@@ -30,6 +30,9 @@ export class CallsService {
         const minTime = new Date(evtStartTime.getTime() - 120000);
         const maxTime = new Date(evtStartTime.getTime() + 120000);
 
+        const isAnswered = (event.status || CallStatus.ANSWERED).toUpperCase() === 'ANSWERED';
+        const effectiveDuration = isAnswered ? (event.durationSeconds || 0) : 0;
+
         // Deduplicate within 120s window for same 10-digit number & channel
         if (rawDigits.length === 10) {
           const match = await this.callModel.findOne({
@@ -39,10 +42,10 @@ export class CallsService {
           }).exec();
 
           if (match) {
-            const newDuration = Math.max(match.durationSeconds || 0, event.durationSeconds || 0);
+            const newDuration = isAnswered ? Math.max(match.durationSeconds || 0, effectiveDuration) : 0;
             await this.callModel.updateOne(
               { _id: match._id },
-              { $set: { durationSeconds: newDuration } },
+              { $set: { durationSeconds: newDuration, status: isAnswered ? (match.status || CallStatus.ANSWERED) : CallStatus.UNANSWERED } },
             ).exec();
             duplicates.push(event.idempotencyKey);
             continue;
@@ -62,7 +65,7 @@ export class CallsService {
           channel: event.channel || CallChannel.CELLULAR,
           startTime: evtStartTime,
           endTime: new Date(event.endTime),
-          durationSeconds: event.durationSeconds,
+          durationSeconds: effectiveDuration,
           simSlot: event.simSlot || 0,
           isPrivate: event.isPrivate || false,
           disposition: event.disposition || 'New Contact',

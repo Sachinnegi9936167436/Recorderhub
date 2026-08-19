@@ -80,14 +80,18 @@ export async function POST(req: Request) {
           });
         }
 
+        const isAnswered = (evt.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+        const effectiveDuration = isAnswered ? (evt.durationSeconds || 0) : 0;
+
         if (matchByTimeWindow) {
           console.log(`Deduplicated incoming batch call event ${evt.idempotencyKey} with existing call ${matchByTimeWindow.idempotencyKey}`);
-          const newDuration = Math.max(matchByTimeWindow.durationSeconds || 0, evt.durationSeconds || 0);
+          const newDuration = isAnswered ? Math.max(matchByTimeWindow.durationSeconds || 0, effectiveDuration) : 0;
           await (CallModel as any).updateOne(
             { _id: matchByTimeWindow._id },
             {
               $set: {
                 idempotencyKey: evt.idempotencyKey || matchByTimeWindow.idempotencyKey,
+                status: isAnswered ? (matchByTimeWindow.status || 'ANSWERED') : 'UNANSWERED',
                 durationSeconds: newDuration,
                 phoneNumber: formattedPhone,
                 phoneNumberMasked: formattedPhone,
@@ -110,8 +114,8 @@ export async function POST(req: Request) {
           direction: evt.direction || 'INCOMING',
           status: evt.status || 'ANSWERED',
           startTime: evtStartTime,
-          endTime: evt.endTime ? new Date(evt.endTime) : new Date(evtStartTime.getTime() + ((evt.durationSeconds || 0) * 1000)),
-          durationSeconds: evt.durationSeconds || 0,
+          endTime: evt.endTime ? new Date(evt.endTime) : new Date(evtStartTime.getTime() + (effectiveDuration * 1000)),
+          durationSeconds: effectiveDuration,
           simSlot: evt.simSlot || 0,
           isPrivate: evt.isPrivate || false,
           disposition: evt.disposition || (isWhatsApp ? 'WhatsApp Call' : 'Imported Phone Call'),

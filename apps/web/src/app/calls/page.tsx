@@ -385,8 +385,10 @@ function SalestrailCallsInner() {
           break;
         }
         case 'duration': {
-          const durA = Number(a.durationSeconds || 0);
-          const durB = Number(b.durationSeconds || 0);
+          const isAnsA = (a.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+          const isAnsB = (b.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+          const durA = isAnsA ? Number(a.durationSeconds || 0) : 0;
+          const durB = isAnsB ? Number(b.durationSeconds || 0) : 0;
           cmp = durA - durB;
           break;
         }
@@ -441,16 +443,20 @@ function SalestrailCallsInner() {
       return;
     }
     const headers = ['User', 'Phone Number', 'Name', 'Type', 'Call Time', 'Direction', 'Status', 'Duration'];
-    const rows = sortedCalls.map((c) => [
-      resolveCounselorName(c),
-      c.phoneNumber || c.phoneNumberMasked || '',
-      c.leadName || c.phoneNumber || '',
-      c.channel === 'WHATSAPP' ? 'WhatsApp' : 'SIM',
-      c.startTime ? new Date(c.startTime).toLocaleString() : '',
-      c.direction || 'Outbound',
-      c.status || 'Answered',
-      c.durationSeconds ? `${Math.floor(c.durationSeconds / 60)}m:${c.durationSeconds % 60}s` : '0s',
-    ]);
+    const rows = sortedCalls.map((c) => {
+      const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+      const durSec = isAns ? Number(c.durationSeconds || 0) : 0;
+      return [
+        resolveCounselorName(c),
+        c.phoneNumber || c.phoneNumberMasked || '',
+        c.leadName || c.phoneNumber || '',
+        c.channel === 'WHATSAPP' ? 'WhatsApp' : 'SIM',
+        c.startTime ? new Date(c.startTime).toLocaleString() : '',
+        c.direction || 'Outbound',
+        isAns ? 'Answered' : 'Unanswered',
+        durSec > 0 ? `${Math.floor(durSec / 60)}m:${durSec % 60}s` : '0s',
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -657,11 +663,14 @@ function SalestrailCallsInner() {
                       hour12: false
                     }) : '08/08/2026 23:15:56';
 
-                    const durationMins = call.durationSeconds ? Math.floor(call.durationSeconds / 60) : 0;
-                    const durationSecs = call.durationSeconds ? call.durationSeconds % 60 : 0;
-                    const durationStr = durationMins > 0 ? `${durationMins}m:${durationSecs}s` : `${durationSecs}s`;
-
                     const isAnswered = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+                    const effectiveDuration = isAnswered ? Number(call.durationSeconds || 0) : 0;
+                    const durationMins = effectiveDuration > 0 ? Math.floor(effectiveDuration / 60) : 0;
+                    const durationSecs = effectiveDuration > 0 ? effectiveDuration % 60 : 0;
+                    const durationStr = isAnswered && effectiveDuration > 0
+                      ? (durationMins > 0 ? `${durationMins}m:${durationSecs}s` : `${durationSecs}s`)
+                      : '0s';
+
                     const isOutbound = (call.direction || 'OUTGOING').toUpperCase() === 'OUTGOING' || (call.direction || '').toUpperCase() === 'OUTBOUND';
                     const isWhatsApp =
                       (call.channel || '').toUpperCase() === 'WHATSAPP' ||

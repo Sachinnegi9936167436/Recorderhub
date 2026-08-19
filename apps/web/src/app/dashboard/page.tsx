@@ -201,8 +201,11 @@ export default function RecorderHubDashboard() {
   const inboundCount = validCalls.filter((c) => (c?.direction || '').toUpperCase() === 'INCOMING' || (c?.direction || '').toUpperCase() === 'INBOUND').length;
   const answeredCount = validCalls.filter((c) => (c?.status || '').toUpperCase() === 'ANSWERED').length;
 
-  const totalSeconds = validCalls.reduce((sum, c) => sum + (c?.durationSeconds || 0), 0);
-  const avgSeconds = validCalls.length > 0 ? Math.round(totalSeconds / validCalls.length) : 0;
+  const totalSeconds = validCalls.reduce((sum, c) => {
+    const isAns = (c?.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+    return sum + (isAns ? (c?.durationSeconds || 0) : 0);
+  }, 0);
+  const avgSeconds = answeredCount > 0 ? Math.round(totalSeconds / answeredCount) : (validCalls.length > 0 ? Math.round(totalSeconds / validCalls.length) : 0);
 
   const avgDurationStr = `${Math.floor(avgSeconds / 60)}m ${avgSeconds % 60}s`;
   const totalTalkHours = Math.floor(totalSeconds / 3600);
@@ -300,10 +303,10 @@ export default function RecorderHubDashboard() {
     const isAnswered = (c.status || '').toUpperCase() === 'ANSWERED';
     if (isAnswered) {
       entry.answered += 1;
+      entry.totalSeconds += (c.durationSeconds || 0);
     } else {
       entry.unanswered += 1;
     }
-    entry.totalSeconds += (c.durationSeconds || 0);
     const phone = c.phoneNumber || c.phoneNumberMasked || '';
     if (phone) {
       entry.uniquePhones.add(phone);
@@ -393,14 +396,18 @@ export default function RecorderHubDashboard() {
       return;
     }
     const headers = ['Counselor', 'PhoneNumber', 'Direction', 'Status', 'DurationSec', 'Date'];
-    const rows = validCalls.map((c) => [
-      c.agentName || c.counselorName || (c.counselorEmail ? c.counselorEmail.split('@')[0] : null) || c.deviceId || 'Counselor Agent',
-      c.phoneNumber || c.phoneNumberMasked || '',
-      c.direction || 'INCOMING',
-      c.status || 'ANSWERED',
-      c.durationSeconds || 0,
-      c.startTime ? new Date(c.startTime).toLocaleString() : '',
-    ]);
+    const rows = validCalls.map((c) => {
+      const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+      const durSec = isAns ? (c.durationSeconds || 0) : 0;
+      return [
+        c.agentName || c.counselorName || (c.counselorEmail ? c.counselorEmail.split('@')[0] : null) || c.deviceId || 'Counselor Agent',
+        c.phoneNumber || c.phoneNumberMasked || '',
+        c.direction || 'INCOMING',
+        isAns ? 'ANSWERED' : 'UNANSWERED',
+        durSec,
+        c.startTime ? new Date(c.startTime).toLocaleString() : '',
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);

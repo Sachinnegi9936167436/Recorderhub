@@ -95,8 +95,21 @@ export async function GET() {
       { $set: { channel: 'WHATSAPP' } }
     );
 
-    // 1. Clean corrupted phone numbers (e.g. "112059 91 99361 67436" -> "+91 99361 67436")
+    // Ensure all unanswered / missed calls in MongoDB have durationSeconds = 0
+    await (CallModel as any).updateMany(
+      {
+        status: { $in: ['UNANSWERED', 'MISSED', 'REJECTED', 'BUSY', 'NO_ANSWER', 'Unanswered', 'Missed', 'Rejected'] }
+      },
+      { $set: { durationSeconds: 0 } }
+    ).catch(() => {});
+
+    // 1. Clean corrupted phone numbers and zero duration for unanswered calls
     for (const call of calls) {
+      const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+      if (!isAns && call.durationSeconds !== 0) {
+        call.durationSeconds = 0;
+      }
+
       const rawPhone = call.phoneNumber || call.phoneNumberMasked || '';
       const digitsOnly = rawPhone.replace(/\D/g, '');
       if (digitsOnly.length >= 10) {
@@ -107,7 +120,7 @@ export async function GET() {
           call.phoneNumberMasked = formatted;
           await (CallModel as any).updateOne(
             { _id: call._id },
-            { $set: { phoneNumber: formatted, phoneNumberMasked: formatted } }
+            { $set: { phoneNumber: formatted, phoneNumberMasked: formatted, durationSeconds: isAns ? call.durationSeconds : 0 } }
           ).catch(() => {});
         }
       }

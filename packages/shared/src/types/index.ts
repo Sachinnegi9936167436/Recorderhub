@@ -14,6 +14,7 @@ export enum CallDirection {
 
 export enum CallStatus {
   ANSWERED = 'ANSWERED',
+  UNANSWERED = 'UNANSWERED',
   MISSED = 'MISSED',
   REJECTED = 'REJECTED',
   FAILED = 'FAILED',
