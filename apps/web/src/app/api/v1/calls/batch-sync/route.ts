@@ -22,17 +22,48 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const callEvents = Array.isArray(body) ? body : (body.callEvents || body.events || []);
 
+    if (!callEvents || callEvents.length === 0) {
+      return NextResponse.json({
+        syncedCount: 0,
+        duplicateCount: 0,
+        syncedIds: [],
+        duplicates: [],
+      });
+    }
+
     const syncedIds: string[] = [];
     const duplicates: string[] = [];
+    const deviceUpdates = new Map<string, { agentName: string; email: string }>();
+
+    // 1. Pre-fetch existing keys in ONE bulk query
+    const incomingKeys = callEvents.map((e: any) => e.idempotencyKey).filter(Boolean);
+    const existingCalls = await (CallModel as any).find(
+      { idempotencyKey: { $in: incomingKeys } },
+      { idempotencyKey: 1, _id: 1, agentName: 1 }
+    ).lean().exec();
+    const existingKeySet = new Set(existingCalls.map((c: any) => c.idempotencyKey));
 
     for (const evt of callEvents) {
       if (!evt || !evt.idempotencyKey) continue;
 
-      // Reject text/chat message notifications (only record actual voice/video calls)
+      // Reject text/chat message notifications
       const fullTextStr = `${evt.phoneNumber || ''} ${evt.leadName || ''} ${evt.disposition || ''}`.toLowerCase();
       if (fullTextStr.includes('message') || fullTextStr.includes('messages') || fullTextStr.includes('chat') || fullTextStr.includes('unread')) {
-        console.log(`Skipping text message notification in batch sync: ${evt.phoneNumber}`);
         syncedIds.push(evt.idempotencyKey);
+        continue;
+      }
+
+      const email = evt.counselorEmail || evt.email;
+      const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
+      const resolvedAgentName = evt.agentName || derivedName || 'Counselor Agent';
+
+      if (evt.deviceId && resolvedAgentName && resolvedAgentName !== 'Counselor Agent') {
+        deviceUpdates.set(evt.deviceId, { agentName: resolvedAgentName, email: email || '' });
+      }
+
+      // Check 1: Exact idempotencyKey already in DB
+      if (existingKeySet.has(evt.idempotencyKey)) {
+        duplicates.push(evt.idempotencyKey);
         continue;
       }
 
@@ -52,22 +83,10 @@ export async function POST(req: Request) {
           (evt.idempotencyKey || '').startsWith('WA_');
 
         const channelType = isWhatsApp ? 'WHATSAPP' : (evt.channel || 'CELLULAR');
-
         const cleanKey = evt.idempotencyKey || `SYNC_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-        const email = evt.counselorEmail || evt.email;
-        const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
-        const resolvedAgentName = evt.agentName || derivedName || 'Counselor Agent';
-
-        // Check 1: Exact idempotencyKey match
-        const exactExisting = await (CallModel as any).findOne({ idempotencyKey: evt.idempotencyKey });
-        if (exactExisting) {
-          if (resolvedAgentName && resolvedAgentName !== 'Counselor Agent' && exactExisting.agentName !== resolvedAgentName) {
-            await (CallModel as any).updateOne({ _id: exactExisting._id }, { $set: { agentName: resolvedAgentName, counselorEmail: email } }).catch(() => {});
-          }
-          duplicates.push(evt.idempotencyKey);
-          continue;
-        }
+        const isAnswered = (evt.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+        const effectiveDuration = isAnswered ? (evt.durationSeconds || 0) : 0;
 
         // Check 2: Deduplicate within 120-second time window for same clean 10-digit number & channel
         let matchByTimeWindow = null;
@@ -80,11 +99,7 @@ export async function POST(req: Request) {
           });
         }
 
-        const isAnswered = (evt.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-        const effectiveDuration = isAnswered ? (evt.durationSeconds || 0) : 0;
-
         if (matchByTimeWindow) {
-          console.log(`Deduplicated incoming batch call event ${evt.idempotencyKey} with existing call ${matchByTimeWindow.idempotencyKey}`);
           const newDuration = isAnswered ? Math.max(matchByTimeWindow.durationSeconds || 0, effectiveDuration) : 0;
           await (CallModel as any).updateOne(
             { _id: matchByTimeWindow._id },
@@ -125,25 +140,30 @@ export async function POST(req: Request) {
           leadName: evt.leadName || formattedPhone || 'Contact',
         });
 
-        // Bulk update ALL past calls sharing this deviceId to reflect the current logged-in user name
-        if (evt.deviceId && resolvedAgentName && resolvedAgentName !== 'Counselor Agent') {
-          await (CallModel as any).updateMany(
-            { deviceId: evt.deviceId },
-            { $set: { agentName: resolvedAgentName, counselorEmail: email } }
-          ).catch(() => {});
-
-          await (DeviceModel as any).updateOne(
-            { deviceId: evt.deviceId },
-            { $set: { agentName: resolvedAgentName, counselorEmail: email, lastSyncTimestamp: new Date() } },
-            { upsert: true }
-          ).catch(() => {});
-        }
-
+        existingKeySet.add(cleanKey);
         syncedIds.push(cleanKey);
       } catch (evtErr: any) {
         console.error(`Error saving individual call event ${evt.idempotencyKey}:`, evtErr);
-        // Treat as duplicate/synced if unique constraint violated
         duplicates.push(evt.idempotencyKey);
+      }
+    }
+
+    // 2. Perform bulk device/agent update ONCE outside the loop
+    if (deviceUpdates.size > 0) {
+      for (const [deviceId, info] of deviceUpdates.entries()) {
+        try {
+          await (CallModel as any).updateMany(
+            { deviceId },
+            { $set: { agentName: info.agentName, counselorEmail: info.email } }
+          );
+          await (DeviceModel as any).updateOne(
+            { deviceId },
+            { $set: { agentName: info.agentName, counselorEmail: info.email, lastSyncTimestamp: new Date() } },
+            { upsert: true }
+          );
+        } catch (e) {
+          console.warn('Error updating device agent mapping in batch sync:', e);
+        }
       }
     }
 
