@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">RecordHub</string>
+    <string name="accessibility_service_label">RecordHub App Connector</string>
+    <string name="accessibility_service_description">Enables RecordHub to detect and record work-related WhatsApp voice calls for counselor quality assurance and sales telemetry.</string>
 </resources>

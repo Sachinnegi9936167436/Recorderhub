@@ -18,8 +18,6 @@ import com.academically.recordhub.ui.theme.*
 @Composable
 fun MainContainerScreen(
     trackedCalls: List<CallEventEntity>,
-    privateCalls: List<CallEventEntity>,
-    onTogglePrivate: (String) -> Unit,
     onSelectSafFolder: () -> Unit,
     onScanCallLogs: () -> Unit,
     onLogout: () -> Unit
@@ -46,47 +44,37 @@ fun MainContainerScreen(
                     selected = selectedTab == 1,
                     onClick = { 
                         selectedTab = 1 
-                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 1: Private Calls")
-                    },
-                    icon = { Icon(Icons.Default.Lock, contentDescription = "Private") },
-                    label = { Text("Private", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = Amber400, indicatorColor = Navy800)
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { 
-                        selectedTab = 2 
-                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 2: Uploads & Recordings")
+                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 1: Uploads & Recordings")
                     },
                     icon = { Icon(Icons.Default.CloudUpload, contentDescription = "Uploads") },
                     label = { Text("Uploads", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
-                    selected = selectedTab == 3,
+                    selected = selectedTab == 2,
                     onClick = { 
-                        selectedTab = 3 
-                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 3: System & Sync Logs")
+                        selectedTab = 2 
+                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 2: System & Sync Logs")
                     },
                     icon = { Icon(Icons.Default.ListAlt, contentDescription = "Logs") },
                     label = { Text("Logs", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = Emerald400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
-                    selected = selectedTab == 4,
+                    selected = selectedTab == 3,
                     onClick = { 
-                        selectedTab = 4 
-                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 4: Device Health")
+                        selectedTab = 3 
+                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 3: Device Health")
                     },
                     icon = { Icon(Icons.Default.Smartphone, contentDescription = "Health") },
                     label = { Text("Health", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
                 )
                 NavigationBarItem(
-                    selected = selectedTab == 5,
+                    selected = selectedTab == 4,
                     onClick = { 
-                        selectedTab = 5 
-                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 5: Settings")
+                        selectedTab = 4 
+                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 4: Settings")
                     },
                     icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
                     label = { Text("Settings", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
@@ -102,18 +90,16 @@ fun MainContainerScreen(
             when (selectedTab) {
                 0 -> TrackedCallsScreen(
                     callEvents = trackedCalls,
-                    onTogglePrivate = onTogglePrivate,
                     onScanCallLogs = onScanCallLogs
                 )
-                1 -> PrivateCallsScreen(privateCalls = privateCalls)
-                2 -> RecordingUploadScreen(
+                1 -> RecordingUploadScreen(
                     recordings = trackedCalls,
                     onSelectSafFolder = onSelectSafFolder,
                     onSyncNow = onScanCallLogs
                 )
-                3 -> AppLogsScreen(onScanLogsTrigger = onScanCallLogs)
-                4 -> DeviceHealthScreen()
-                5 -> SettingsScreen(onLogout = onLogout, onSelectSafFolder = onSelectSafFolder)
+                2 -> AppLogsScreen(onScanLogsTrigger = onScanCallLogs)
+                3 -> DeviceHealthScreen()
+                4 -> SettingsScreen(onLogout = onLogout, onSelectSafFolder = onSelectSafFolder)
             }
         }
     }

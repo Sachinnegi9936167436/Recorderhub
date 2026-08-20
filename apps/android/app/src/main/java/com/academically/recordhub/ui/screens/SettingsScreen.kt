@@ -31,7 +31,6 @@ fun SettingsScreen(
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE) }
     
-    var customApiUrl by remember { mutableStateOf(prefs.getString("custom_api_url", "http://192.168.31.86:3000") ?: "http://192.168.31.86:3000") }
     var wifiOnlyUpload by remember { mutableStateOf(prefs.getBoolean("wifi_only_upload", true)) }
 
     val scrollState = rememberScrollState()
@@ -53,67 +52,99 @@ fun SettingsScreen(
                 )
             )
 
-            // Server Base URL Configuration Card
+            // WhatsApp VoIP Call Recording & Accessibility Connector Card
+            val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+            val isAccessibilityOn = remember {
+                mutableStateOf(com.academically.recordhub.service.RecordHubAccessibilityService.isAccessibilityServiceEnabled(context))
+            }
+
+            DisposableEffect(lifecycleOwner) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                        isAccessibilityOn.value = com.academically.recordhub.service.RecordHubAccessibilityService.isAccessibilityServiceEnabled(context)
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = Navy900),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Dns,
-                            contentDescription = null,
-                            tint = MedicalTeal400,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Server API Base URL / Host IP",
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 13.sp
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Dns,
+                                contentDescription = null,
+                                tint = if (isAccessibilityOn.value) Emerald400 else Amber400,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "WhatsApp Call Recording",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        Surface(
+                            color = if (isAccessibilityOn.value) Emerald400.copy(alpha = 0.15f) else Amber400.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = if (isAccessibilityOn.value) "ACTIVE" else "NOT ENABLED",
+                                color = if (isAccessibilityOn.value) Emerald400 else Amber400,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
                     }
 
                     Text(
-                        text = "Current Host Wi-Fi IP: 192.168.31.86:3000",
+                        text = if (isAccessibilityOn.value)
+                            "RecordHub App Connector is running with elevated audio hooks to capture WhatsApp calls."
+                        else
+                            "Enable RecordHub in Android Accessibility settings so the app can record WhatsApp calls.",
                         color = Slate400,
                         fontSize = 11.sp
                     )
 
-                    OutlinedTextField(
-                        value = customApiUrl,
-                        onValueChange = { customApiUrl = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        placeholder = { Text("http://192.168.31.86:3000", color = Slate400, fontSize = 12.sp) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MedicalTeal400,
-                            unfocusedBorderColor = Slate400,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Slate200
-                        )
-                    )
-
                     Button(
                         onClick = {
-                            val cleanUrl = customApiUrl.trim()
-                            prefs.edit().putString("custom_api_url", cleanUrl).apply()
-                            AppLogManager.log("INFO", "Settings", "Saved Custom Server API URL: $cleanUrl")
-                            Toast.makeText(context, "Server API URL Saved!", Toast.LENGTH_SHORT).show()
+                            try {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Could not open Accessibility settings", Toast.LENGTH_SHORT).show()
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MedicalTeal400)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isAccessibilityOn.value) Navy800 else MedicalTeal400
+                        )
                     ) {
-                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Save Server IP", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (isAccessibilityOn.value) "Open Accessibility Settings" else "Enable RecordHub App Connector",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isAccessibilityOn.value) Slate200 else Color.White
+                        )
                     }
                 }
             }
-
-
 
             // Native SIM Call Recording Folder Selection Card
             var activeFolderPath by remember {

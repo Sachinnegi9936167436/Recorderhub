@@ -147,13 +147,6 @@ class MainActivity : ComponentActivity() {
                     })
                     else -> MainContainerScreen(
                         trackedCalls = trackedCallsFlow.value,
-                        privateCalls = privateCallsFlow.value,
-                        onTogglePrivate = { callId ->
-                            AppLogManager.log("INFO", "UI_Action", "User toggled privacy for call ID: $callId")
-                            scope.launch {
-                                db.callEventDao().setPrivateState(callId, true)
-                            }
-                        },
                         onSelectSafFolder = {
                             AppLogManager.log("INFO", "UI_Action", "User tapped 'Change Call Recording Folder' Button.")
                             safFolderLauncher.launch(null)

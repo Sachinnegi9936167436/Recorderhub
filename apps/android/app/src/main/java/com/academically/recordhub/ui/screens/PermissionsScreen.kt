@@ -66,6 +66,15 @@ fun PermissionsScreen(onPermissionsGranted: () -> Unit) {
                 description = "Authorizes RecordHub to scan native OEM call recording folder (/Call).",
                 isGranted = true
             )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Item 4: WhatsApp Call Recording (Accessibility Connector)
+            PermissionCheckItem(
+                title = "RecordHub App Connector (Accessibility)",
+                description = "Enables system audio capture for WhatsApp voice calls.",
+                isGranted = true
+            )
         }
 
         Button(

@@ -33,8 +33,33 @@ class WhatsAppAudioRecorder(private val context: Context) {
     private var totalDataBytesWritten = 0L
 
     fun startRecording(contactTitle: String): File? {
-        Log.i(TAG, "WhatsApp call audio recording is currently PAUSED by configuration.")
-        return null
+        if (isRecording.getAndSet(true)) {
+            Log.w(TAG, "Recording already in progress.")
+            return currentOutputFile
+        }
+
+        maxPeakAmplitudeObserved = 0
+        totalDataBytesWritten = 0L
+        recordingStartTimeMs = System.currentTimeMillis()
+
+        val recordingsDir = File(context.filesDir, "whatsapp_recordings")
+        if (!recordingsDir.exists()) {
+            recordingsDir.mkdirs()
+        }
+
+        val dateStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val cleanTitle = contactTitle.replace("[^a-zA-Z0-9_+]".toRegex(), "_").take(20)
+        val fileName = "WA_${cleanTitle}_${dateStr}.wav"
+        val outputFile = File(recordingsDir, fileName)
+        currentOutputFile = outputFile
+
+        Log.i(TAG, "Starting WhatsApp call audio recording -> ${outputFile.name}")
+
+        recordingThread = thread(start = true, name = "RecordHub-WhatsAppAudioThread") {
+            recordAudioPcm(outputFile)
+        }
+
+        return outputFile
     }
 
     @SuppressLint("MissingPermission")
@@ -46,14 +71,14 @@ class WhatsAppAudioRecorder(private val context: Context) {
         val bufferSize = Math.max(minBufferSize, 4096)
 
         val sourcesToTry = mutableListOf(
-            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            MediaRecorder.AudioSource.MIC,
             MediaRecorder.AudioSource.CAMCORDER
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             sourcesToTry.add(MediaRecorder.AudioSource.UNPROCESSED)
         }
-        sourcesToTry.add(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
         sourcesToTry.add(MediaRecorder.AudioSource.DEFAULT)
 
         var audioRecord: AudioRecord? = null
@@ -100,9 +125,7 @@ class WhatsAppAudioRecorder(private val context: Context) {
 
             val shortBuffer = ShortArray(bufferSize)
             val byteBuffer = ByteArray(bufferSize * 2)
-            val softwareGainFactor = 2.5f
-
-            var silentBuffersCount = 0
+            val softwareGainFactor = 3.5f
 
             while (isRecording.get()) {
                 val readSamples = audioRecord.read(shortBuffer, 0, shortBuffer.size)
@@ -124,11 +147,6 @@ class WhatsAppAudioRecorder(private val context: Context) {
 
                     if (bufferMaxPeak > maxPeakAmplitudeObserved) {
                         maxPeakAmplitudeObserved = bufferMaxPeak
-                    }
-
-                    // Fallback check: if first 30 buffers (approx 1 sec) are strictly 0 amplitude, probe fallback
-                    if (bufferMaxPeak == 0 && totalDataBytesWritten < 32000L) {
-                        silentBuffersCount++
                     }
 
                     fos.write(byteBuffer, 0, readSamples * 2)
@@ -179,8 +197,8 @@ class WhatsAppAudioRecorder(private val context: Context) {
         val targetFile = currentOutputFile
 
         if (targetFile != null && targetFile.exists()) {
-            if (totalDataBytesWritten <= 44L || maxPeakAmplitudeObserved < 80) {
-                Log.w(TAG, "Recording file is silent or empty (max peak amplitude: $maxPeakAmplitudeObserved, bytes: $totalDataBytesWritten). Deleting blank recording file.")
+            if (totalDataBytesWritten <= 44L) {
+                Log.w(TAG, "Recording file is empty (bytes: $totalDataBytesWritten). Deleting blank file.")
                 try { targetFile.delete() } catch (_: Exception) {}
                 currentOutputFile = null
             } else {
@@ -295,4 +313,3 @@ class WhatsAppAudioRecorder(private val context: Context) {
         private const val TAG = "WhatsAppAudioRecorder"
     }
 }
-

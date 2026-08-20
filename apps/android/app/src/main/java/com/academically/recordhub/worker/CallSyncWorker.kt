@@ -30,9 +30,10 @@ class CallSyncWorker(
 ) : CoroutineWorker(context, params) {
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(4, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .writeTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     override suspend fun doWork(): Result {
@@ -52,65 +53,42 @@ class CallSyncWorker(
         AppLogManager.log("SYNC", "CallSyncWorker", "Found ${pendingCallSyncs.size} call logs and ${pendingAudioUploads.size} audio recordings pending sync.")
 
         val prefs = applicationContext.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
-        val customApiUrl = prefs.getString("custom_api_url", null)
 
-        val endpoints = mutableListOf<String>()
-        if (!customApiUrl.isNullOrBlank()) {
-            var formatted = customApiUrl.trim()
-            if (!formatted.startsWith("http://") && !formatted.startsWith("https://")) {
-                formatted = "http://$formatted"
-            }
-            if (!formatted.endsWith("/")) {
-                formatted = "$formatted/"
-            }
-            if (!formatted.endsWith("api/v1/")) {
-                formatted = "${formatted.removeSuffix("/")}/api/v1/"
-            }
-            endpoints.add(formatted)
-        }
-
-        // Production Cloud Server & Host PC Wi-Fi IP (Port 4000 Nest.js & Port 3000 Next.js) plus emulator fallbacks
-        endpoints.addAll(
-            listOf(
-                "https://recorderhub-gold.vercel.app/api/v1/",
-                "http://192.168.31.86:3000/api/v1/",
-                "http://192.168.31.86:4000/api/v1/",
-                "http://10.0.2.2:3000/api/v1/",
-                "http://10.0.2.2:4000/api/v1/"
-            )
-        )
-
-        val uniqueEndpoints = endpoints.distinct()
+        val baseUrl = com.academically.recordhub.data.remote.ApiConstants.DEFAULT_BASE_URL
         var syncSuccessful = false
 
-        for (baseUrl in uniqueEndpoints) {
-            try {
-                AppLogManager.log("SYNC", "CallSyncWorker", "Attempting connection to $baseUrl ...")
+        try {
+            AppLogManager.log("SYNC", "CallSyncWorker", "Connecting to Cloud API: $baseUrl ...")
 
-                val retrofit = Retrofit.Builder()
-                    .baseUrl(baseUrl)
-                    .client(httpClient)
-                    .addConverterFactory(GsonConverterFactory.create())
-                    .build()
+            val retrofit = Retrofit.Builder()
+                .baseUrl(baseUrl)
+                .client(httpClient)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
 
-                val api = retrofit.create(RecordHubApi::class.java)
+            val api = retrofit.create(RecordHubApi::class.java)
 
-                val counselorEmail = prefs.getString("counselor_email", null)
-                var counselorName = prefs.getString("counselor_name", null)
+            val counselorEmail = prefs.getString("counselor_email", null)
+            var counselorName = prefs.getString("counselor_name", null)
 
-                if (counselorName.isNullOrBlank() && !counselorEmail.isNullOrBlank()) {
-                    counselorName = counselorEmail.substringBefore("@")
-                        .replace(".", " ")
-                        .replace("_", " ")
-                        .split(" ")
-                        .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() } }
-                }
+            if (counselorName.isNullOrBlank() && !counselorEmail.isNullOrBlank()) {
+                counselorName = counselorEmail.substringBefore("@")
+                    .replace(".", " ")
+                    .replace("_", " ")
+                    .split(" ")
+                    .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() } }
+            }
 
-                val token = prefs.getString("access_token", null)
-                val authHeader = if (!token.isNullOrBlank()) "Bearer $token" else "Bearer mock_jwt_token"
+            val token = prefs.getString("access_token", null)
+            val authHeader = if (!token.isNullOrBlank()) "Bearer $token" else "Bearer mock_jwt_token"
 
-                if (pendingCallSyncs.isNotEmpty()) {
-                    val dtoList = pendingCallSyncs.map { evt ->
+            if (pendingCallSyncs.isNotEmpty()) {
+                // Sync in chunks of 25 to prevent HTTP timeouts on mobile networks
+                val chunks = pendingCallSyncs.chunked(25)
+                var totalSynced = 0
+
+                for (chunk in chunks) {
+                    val dtoList = chunk.map { evt ->
                         val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
                             timeZone = TimeZone.getTimeZone("UTC")
                         }
@@ -140,27 +118,29 @@ class CallSyncWorker(
                         val syncedKeys = body.syncedIds + body.duplicates
                         if (syncedKeys.isNotEmpty()) {
                             db.callEventDao().markEventsSynced(syncedKeys)
-                            AppLogManager.log("SYNC", "CallSyncWorker", "SUCCESSFULLY synced ${syncedKeys.size} call events to API ($baseUrl)")
+                            totalSynced += syncedKeys.size
                         }
-                        syncSuccessful = true
                     } else {
-                        AppLogManager.log("WARN", "CallSyncWorker", "API batch call sync to $baseUrl status ${response.code()}")
+                        AppLogManager.log("WARN", "CallSyncWorker", "Batch chunk sync status: ${response.code()}")
                     }
-                } else {
+                }
+
+                if (totalSynced > 0 || pendingCallSyncs.isEmpty()) {
+                    AppLogManager.log("SYNC", "CallSyncWorker", "SUCCESSFULLY synced $totalSynced call events to Cloud API ($baseUrl)")
                     syncSuccessful = true
                 }
-
-                // Upload Audio Recording files if available
-                if (syncSuccessful && pendingAudioUploads.isNotEmpty()) {
-                    for (evt in pendingAudioUploads) {
-                        uploadAudioFile(api, baseUrl, authHeader, db, evt)
-                    }
-                }
-
-                if (syncSuccessful) break
-            } catch (e: Exception) {
-                AppLogManager.log("ERROR", "CallSyncWorker", "Could not reach $baseUrl: ${e.message}")
+            } else {
+                syncSuccessful = true
             }
+
+            // Upload Audio Recording files if available
+            if (syncSuccessful && pendingAudioUploads.isNotEmpty()) {
+                for (evt in pendingAudioUploads) {
+                    uploadAudioFile(api, baseUrl, authHeader, db, evt)
+                }
+            }
+        } catch (e: Exception) {
+            AppLogManager.log("ERROR", "CallSyncWorker", "Could not reach $baseUrl: ${e.message}")
         }
 
         return if (syncSuccessful) {

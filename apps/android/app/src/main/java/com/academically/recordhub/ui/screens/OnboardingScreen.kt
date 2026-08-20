@@ -28,6 +28,7 @@ fun OnboardingScreen(onProceedToPermissions: () -> Unit) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("recordhub_prefs", android.content.Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
 
     Column(
@@ -161,12 +162,16 @@ fun OnboardingScreen(onProceedToPermissions: () -> Unit) {
             onClick = {
                 scope.launch(Dispatchers.IO) {
                     isAuthenticating = true
-                    errorMessage = null
-                    val urls = listOf("https://recorderhub-gold.vercel.app/api/v1/", "http://192.168.31.86:4000/api/v1/", "http://10.0.2.2:4000/api/v1/")
+                    val uniqueUrls = listOf(
+                        com.academically.recordhub.data.remote.ApiConstants.DEFAULT_BASE_URL,
+                        "http://192.168.31.86:3000/api/v1/",
+                        "http://192.168.31.86:4000/api/v1/",
+                        "http://10.0.2.2:3000/api/v1/"
+                    ).distinct()
                     var authenticated = false
                     var lastErrorMsg = "Invalid email or password."
 
-                    for (url in urls) {
+                    for (url in uniqueUrls) {
                         try {
                             val retrofit = retrofit2.Retrofit.Builder()
                                 .baseUrl(url)

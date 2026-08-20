@@ -31,7 +31,6 @@ private fun formatCallTime(timestampMs: Long): String {
 @Composable
 fun TrackedCallsScreen(
     callEvents: List<CallEventEntity>,
-    onTogglePrivate: (String) -> Unit,
     onScanCallLogs: () -> Unit
 ) {
     Column(
@@ -98,7 +97,7 @@ fun TrackedCallsScreen(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(callEvents) { call ->
-                    TrackedCallCard(call = call, onTogglePrivate = { onTogglePrivate(call.id) })
+                    TrackedCallCard(call = call)
                 }
             }
         }
@@ -106,7 +105,7 @@ fun TrackedCallsScreen(
 }
 
 @Composable
-fun TrackedCallCard(call: CallEventEntity, onTogglePrivate: () -> Unit) {
+fun TrackedCallCard(call: CallEventEntity) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Navy900),
         shape = RoundedCornerShape(12.dp),
@@ -131,15 +130,6 @@ fun TrackedCallCard(call: CallEventEntity, onTogglePrivate: () -> Unit) {
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         fontSize = 14.sp
-                    )
-                }
-
-                IconButton(onClick = onTogglePrivate, modifier = Modifier.size(24.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Mark Private",
-                        tint = Slate500,
-                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
