@@ -25,16 +25,12 @@ object CallLogScanner {
             db.callEventDao().clearDemoData()
             db.callEventDao().resetAllToPendingSync()
 
-            // Get or initialize exact account / app creation timestamp cutoff
+            // Strictly get or initialize exact account creation timestamp cutoff
             val prefs = context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
-            var installTimeMs = prefs.getLong("account_created_at", prefs.getLong("app_installed_at", 0L))
-            if (installTimeMs == 0L) {
-                installTimeMs = try {
-                    context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
-                } catch (e: Exception) {
-                    System.currentTimeMillis()
-                }
-                prefs.edit().putLong("app_installed_at", installTimeMs).apply()
+            var accountCutoffMs = prefs.getLong("account_created_at", 0L)
+            if (accountCutoffMs == 0L) {
+                accountCutoffMs = System.currentTimeMillis()
+                prefs.edit().putLong("account_created_at", accountCutoffMs).apply()
             }
 
             val allDbEventsInitial = db.callEventDao().getAllEvents()
@@ -45,7 +41,7 @@ object CallLogScanner {
 
             val resolver = context.contentResolver
             val selection = "${CallLog.Calls.DATE} >= ?"
-            val selectionArgs = arrayOf(installTimeMs.toString())
+            val selectionArgs = arrayOf(accountCutoffMs.toString())
 
             val cursor = resolver.query(
                 CallLog.Calls.CONTENT_URI,
@@ -65,8 +61,8 @@ object CallLogScanner {
 
                 while (c.moveToNext() && importedCount < 2000) {
                     val dateMs = if (dateIdx >= 0) c.getLong(dateIdx) else System.currentTimeMillis()
-                    if (dateMs < installTimeMs) {
-                        // Ignore calls prior to the exact installation timestamp
+                    if (dateMs < accountCutoffMs) {
+                        // Strictly ignore all calls prior to account creation date
                         continue
                     }
                     val rawNumber = if (numberIdx >= 0) c.getString(numberIdx) else null

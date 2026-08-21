@@ -192,14 +192,24 @@ fun OnboardingScreen(onProceedToPermissions: () -> Unit) {
                                 }
                                 val prefs = context.getSharedPreferences("recordhub_prefs", android.content.Context.MODE_PRIVATE)
                                 val now = System.currentTimeMillis()
+                                var accountCreatedAtMs = now
+                                if (!user?.createdAt.isNullOrBlank()) {
+                                    try {
+                                        val cleanIso = user?.createdAt!!.replace("Z", "+00:00")
+                                        val isoFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                                        val parsed = isoFormat.parse(cleanIso.substring(0, Math.min(19, cleanIso.length)))
+                                        if (parsed != null && parsed.time > 0L) {
+                                            accountCreatedAtMs = parsed.time
+                                        }
+                                    } catch (_: Exception) {}
+                                }
+
                                 val editor = prefs.edit()
                                     .putBoolean("is_logged_in", true)
                                     .putString("counselor_email", counselorEmail.trim())
                                     .putString("counselor_name", counselorName)
                                     .putString("access_token", response.body()?.accessToken ?: "")
-                                if (!prefs.contains("account_created_at")) {
-                                    editor.putLong("account_created_at", now)
-                                }
+                                    .putLong("account_created_at", accountCreatedAtMs)
                                 editor.apply()
                                 break
                             } else if (response.code() == 401 || response.code() == 400) {

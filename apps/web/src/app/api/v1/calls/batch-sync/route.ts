@@ -35,13 +35,25 @@ export async function POST(req: Request) {
     const duplicates: string[] = [];
     const deviceUpdates = new Map<string, { agentName: string; email: string }>();
 
-    // 1. Pre-fetch existing keys in ONE bulk query
+    // 1. Pre-fetch existing keys and counselor account creation dates in bulk queries
     const incomingKeys = callEvents.map((e: any) => e.idempotencyKey).filter(Boolean);
     const existingCalls = await (CallModel as any).find(
       { idempotencyKey: { $in: incomingKeys } },
       { idempotencyKey: 1, _id: 1, agentName: 1 }
     ).lean().exec();
     const existingKeySet = new Set(existingCalls.map((c: any) => c.idempotencyKey));
+
+    const counselorEmails = Array.from(new Set(callEvents.map((e: any) => (e.counselorEmail || e.email || '').toLowerCase()).filter(Boolean)));
+    const userAccounts = await (import('@/lib/models').then(m => m.UserModel) as any).find(
+      { email: { $in: counselorEmails } },
+      { email: 1, createdAt: 1 }
+    ).lean().exec();
+    const userCreatedAtMap = new Map<string, number>();
+    for (const u of (userAccounts || [])) {
+      if (u.email && u.createdAt) {
+        userCreatedAtMap.set(u.email.toLowerCase(), new Date(u.createdAt).getTime());
+      }
+    }
 
     for (const evt of callEvents) {
       if (!evt || !evt.idempotencyKey) continue;
@@ -56,6 +68,17 @@ export async function POST(req: Request) {
       const email = evt.counselorEmail || evt.email;
       const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
       const resolvedAgentName = evt.agentName || derivedName || 'Counselor Agent';
+
+      const evtStartTime = evt.startTime ? new Date(evt.startTime) : new Date();
+
+      // Enforce strict cutoff: Reject calls that occurred prior to counselor account creation date
+      if (email && userCreatedAtMap.has(email.toLowerCase())) {
+        const accountCreatedAtMs = userCreatedAtMap.get(email.toLowerCase())!;
+        if (evtStartTime.getTime() < (accountCreatedAtMs - 60000)) {
+          syncedIds.push(evt.idempotencyKey);
+          continue;
+        }
+      }
 
       if (evt.deviceId && resolvedAgentName && resolvedAgentName !== 'Counselor Agent') {
         deviceUpdates.set(evt.deviceId, { agentName: resolvedAgentName, email: email || '' });

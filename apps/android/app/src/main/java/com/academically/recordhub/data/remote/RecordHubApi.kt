@@ -8,7 +8,7 @@ import retrofit2.http.Path
 
 data class LoginRequest(val email: String, val pass: String)
 data class LoginResponse(val accessToken: String, val user: UserDto)
-data class UserDto(val id: String, val email: String, val firstName: String, val lastName: String, val role: String, val organizationId: String)
+data class UserDto(val id: String, val email: String, val firstName: String, val lastName: String, val role: String, val organizationId: String? = null, val createdAt: String? = null)
 
 data class BatchSyncRequest(val callEvents: List<CallEventDto>)
 data class CallEventDto(

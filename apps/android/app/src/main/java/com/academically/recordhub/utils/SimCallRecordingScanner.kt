@@ -102,9 +102,16 @@ object SimCallRecordingScanner {
             return null
         }
 
+        val accountCreatedAtMs = prefs.getLong("account_created_at", 0L)
+
         fun isConfidentMatch(fileName: String, fileLastModified: Long): Boolean {
             val parsedTs = parseTimestampFromFileName(fileName)
             val effectiveTime = parsedTs ?: fileLastModified
+
+            // Reject files created prior to the counselor's account creation date
+            if (accountCreatedAtMs > 0L && effectiveTime < (accountCreatedAtMs - 60000L)) {
+                return false
+            }
 
             // Reject files created more than 10 minutes before the call started
             if (effectiveTime < (startTimeMs - 10 * 60 * 1000L)) {

@@ -27,6 +27,7 @@ export async function POST(req: Request) {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        createdAt: user.createdAt,
       },
     });
   } catch (err: any) {

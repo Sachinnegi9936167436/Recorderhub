@@ -91,3 +91,10 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.6.0")
     debugImplementation("androidx.compose.ui:ui-tooling:1.6.0")
 }
+
+// IDE Kotlin Scripting Model Compatibility Task for Android Studio / IntelliJ
+tasks.register("prepareKotlinBuildScriptModel") {
+    doLast {
+        // Intentionally empty for IDE model sync
+    }
+}
