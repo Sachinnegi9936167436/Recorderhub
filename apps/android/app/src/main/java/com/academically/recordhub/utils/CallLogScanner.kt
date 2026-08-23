@@ -23,7 +23,6 @@ object CallLogScanner {
 
         try {
             db.callEventDao().clearDemoData()
-            db.callEventDao().resetAllToPendingSync()
 
             // Strictly get or initialize exact account creation timestamp cutoff
             val prefs = context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
@@ -33,7 +32,7 @@ object CallLogScanner {
                 prefs.edit().putLong("account_created_at", accountCutoffMs).apply()
             }
 
-            val allDbEventsInitial = db.callEventDao().getAllEvents()
+            val allDbEventsInitial = db.callEventDao().getAllEvents().toMutableList()
             val claimedPaths = allDbEventsInitial
                 .mapNotNull { it.recordingPath }
                 .filter { it.isNotBlank() }
@@ -89,9 +88,8 @@ object CallLogScanner {
                     val idempotencyKey = if (isWhatsApp) "WA_LOG-$dateMs-$cleanDigits" else "SYS-LOG-$dateMs-$cleanDigits"
                     val endTimeMs = dateMs + (durationSec * 1000L)
 
-                    // Skip duplicate import if a call for the same number/time window already exists in Room DB
-                    val existingEvents = db.callEventDao().getPendingSyncEvents()
-                    val isDuplicate = existingEvents.any { existing ->
+                    // Skip duplicate import if a call for the same number/time window already exists in Room DB (synced or pending)
+                    val isDuplicate = allDbEventsInitial.any { existing ->
                         val existingDigits = existing.phoneNumber.replace("\\D".toRegex(), "").takeLast(10)
                         existingDigits == cleanDigits && Math.abs(existing.startTime - dateMs) < 120000
                     }
@@ -141,6 +139,7 @@ object CallLogScanner {
                     val insertedRowId = db.callEventDao().insertCallEvent(entity)
                     if (insertedRowId > 0) {
                         importedCount++
+                        allDbEventsInitial.add(entity)
                     }
                 }
             }
@@ -180,7 +179,7 @@ object CallLogScanner {
                             evt.copy(
                                 recordingPath = matchedFile.absolutePath,
                                 recordingStatus = "PENDING_UPLOAD",
-                                syncStatus = "PENDING"
+                                syncStatus = evt.syncStatus
                             )
                         )
                         importedCount++

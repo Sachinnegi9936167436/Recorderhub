@@ -33,6 +33,11 @@ class WhatsAppAudioRecorder(private val context: Context) {
     private var totalDataBytesWritten = 0L
 
     fun startRecording(contactTitle: String): File? {
+        if (!com.academically.recordhub.service.WhatsAppCallNotificationListener.ENABLE_WHATSAPP_AUDIO_RECORDING) {
+            Log.i(TAG, "WhatsApp call audio recording is currently PAUSED.")
+            return null
+        }
+
         if (isRecording.getAndSet(true)) {
             Log.w(TAG, "Recording already in progress.")
             return currentOutputFile

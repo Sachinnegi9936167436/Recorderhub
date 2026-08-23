@@ -149,8 +149,10 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                     else -> "WhatsApp Contact"
                 }
 
-                AppLogManager.log("INFO", "WhatsAppListener", "Active WhatsApp call DETECTED: $packageName ($currentContactTitle) [$currentCallDirection]")
-                audioRecorder.startRecording(currentContactTitle)
+                AppLogManager.log("INFO", "WhatsAppListener", "Active WhatsApp call DETECTED: $packageName ($currentContactTitle) [$currentCallDirection] (Audio Recording Paused)")
+                if (ENABLE_WHATSAPP_AUDIO_RECORDING) {
+                    audioRecorder.startRecording(currentContactTitle)
+                }
             }
         }
     }
@@ -191,8 +193,8 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
         isCallRecordingActive = false
 
         val durationSec = Math.max(1L, (System.currentTimeMillis() - callStartTimeMs) / 1000)
-        val recordedFile: File? = audioRecorder.stopRecording()
-        AppLogManager.log("INFO", "WhatsAppListener", "WhatsApp call FINISHED. Duration: ${durationSec}s File: ${recordedFile?.name ?: "Metadata Only"}")
+        val recordedFile: File? = if (ENABLE_WHATSAPP_AUDIO_RECORDING) audioRecorder.stopRecording() else null
+        AppLogManager.log("INFO", "WhatsAppListener", "WhatsApp call FINISHED. Duration: ${durationSec}s File: ${recordedFile?.name ?: "Metadata Only (Audio Recording Paused)"}")
 
         saveAndSyncWhatsAppCall(recordedFile, durationSec, currentContactTitle, currentCallDirection)
         activeCallNotificationKey = null
@@ -270,5 +272,9 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                 AppLogManager.log("ERROR", "WhatsAppListener", "Failed to save WhatsApp call event: ${e.message}")
             }
         }
+    }
+
+    companion object {
+        const val ENABLE_WHATSAPP_AUDIO_RECORDING = false
     }
 }

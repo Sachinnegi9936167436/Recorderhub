@@ -82,86 +82,17 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       });
     };
 
-    // 2. Try fetching from AWS S3 Bucket
+    // 2. Try fetching from AWS S3 Bucket via direct Presigned GET URL (0 MB Vercel bandwidth)
     const s3Info = getS3Client();
     if (s3Info) {
       try {
-        const devicePrefix = recordingId.includes('_') ? recordingId.split('_')[0] : '';
-        const possibleKeys = [
-          s3KeyTarget,
-          `recordings/${recordingId}.mp3`,
-          `recordings/${recordingId}.m4a`,
-          `recordings/${recordingId}.wav`,
-          `recordings/${recordingId}.3gp`,
-          `recordings/${recordingId}`,
-        ];
-
-        if (devicePrefix) {
-          possibleKeys.push(
-            `recordings/${devicePrefix}/${recordingId}.mp3`,
-            `recordings/${devicePrefix}/${recordingId}.m4a`,
-            `recordings/${devicePrefix}/${recordingId}.wav`,
-            `recordings/${devicePrefix}/${recordingId}.3gp`,
-            `recordings/${devicePrefix}/${recordingId}`
-          );
-        }
-
-        const uniqueKeys = Array.from(new Set(possibleKeys));
-
-        for (const targetKey of uniqueKeys) {
-          try {
-            const command = new GetObjectCommand({ Bucket: s3Info.bucket, Key: targetKey });
-            const s3Response = await s3Info.client.send(command);
-
-            if (s3Response.Body) {
-              const byteArray = await s3Response.Body.transformToByteArray();
-              const buffer = Buffer.from(byteArray);
-              if (buffer.length > 0) {
-                const isWav = targetKey.endsWith('.wav') || s3Response.ContentType?.includes('wav');
-                const isMp3 = targetKey.endsWith('.mp3') || s3Response.ContentType?.includes('mpeg') || s3Response.ContentType?.includes('mp3');
-                const contentType = isWav ? 'audio/wav' : isMp3 ? 'audio/mpeg' : 'audio/mp4';
-                return createAudioResponse(buffer, contentType);
-              }
-            }
-          } catch {
-            // try next key
-          }
-        }
-
-        // Fallback: search S3 bucket with prefix for matching recordingId
-        try {
-          const listCommand = new ListObjectsV2Command({
-            Bucket: s3Info.bucket,
-            Prefix: 'recordings/',
-            MaxKeys: 50,
-          });
-          const listRes = await s3Info.client.send(listCommand);
-          if (listRes.Contents) {
-            const cleanTargetId = recordingId.replace(/\.[^/.]+$/, '');
-            const matchedContent = listRes.Contents.find(
-              (c) => c.Key && (c.Key.includes(cleanTargetId) || (cleanTargetId.length >= 10 && c.Key.includes(cleanTargetId.slice(-10))))
-            );
-
-            if (matchedContent && matchedContent.Key) {
-              const command = new GetObjectCommand({ Bucket: s3Info.bucket, Key: matchedContent.Key });
-              const s3Response = await s3Info.client.send(command);
-              if (s3Response.Body) {
-                const byteArray = await s3Response.Body.transformToByteArray();
-                const buffer = Buffer.from(byteArray);
-                if (buffer.length > 0) {
-                  const isWav = matchedContent.Key.endsWith('.wav') || s3Response.ContentType?.includes('wav');
-                  const isMp3 = matchedContent.Key.endsWith('.mp3') || s3Response.ContentType?.includes('mpeg') || s3Response.ContentType?.includes('mp3');
-                  const contentType = isWav ? 'audio/wav' : isMp3 ? 'audio/mpeg' : 'audio/mp4';
-                  return createAudioResponse(buffer, contentType);
-                }
-              }
-            }
-          }
-        } catch (searchErr) {
-          console.warn('S3 prefix search fallback error:', searchErr);
-        }
+        const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+        const targetKey = s3KeyTarget || `recordings/${recordingId}.m4a`;
+        const command = new GetObjectCommand({ Bucket: s3Info.bucket, Key: targetKey });
+        const presignedUrl = await getSignedUrl(s3Info.client, command, { expiresIn: 3600 });
+        return NextResponse.redirect(presignedUrl, 307);
       } catch (s3Err) {
-        console.warn(`S3 Object error for ${recordingId}:`, s3Err);
+        console.warn(`S3 Presigned Redirect failed for ${recordingId}, checking fallback:`, s3Err);
       }
     }
 

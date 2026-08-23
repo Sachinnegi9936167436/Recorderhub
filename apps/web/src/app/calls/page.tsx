@@ -130,7 +130,11 @@ function SalestrailCallsInner() {
   useEffect(() => {
     fetchCalls();
     fetchProvisionedCounselors();
-    const interval = setInterval(fetchCalls, 5000);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchCalls();
+      }
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 

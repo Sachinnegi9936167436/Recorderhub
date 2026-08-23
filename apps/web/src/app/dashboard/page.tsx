@@ -103,7 +103,11 @@ export default function RecorderHubDashboard() {
   useEffect(() => {
     fetchCallsData();
     fetchCounselors();
-    const interval = setInterval(fetchCallsData, 5000);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchCallsData();
+      }
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 

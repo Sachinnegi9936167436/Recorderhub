@@ -30,7 +30,11 @@ export default function DeviceHealthPage() {
 
   useEffect(() => {
     fetchDevices();
-    const interval = setInterval(fetchDevices, 5000);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchDevices();
+      }
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
