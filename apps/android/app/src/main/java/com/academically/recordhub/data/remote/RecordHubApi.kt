@@ -67,9 +67,18 @@ data class UploadCompleteRequest(
     val callId: String
 )
 
+data class ValidateSessionRequest(val email: String)
+data class ValidateSessionResponse(val valid: Boolean, val message: String? = null)
+
 interface RecordHubApi {
     @POST("auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
+
+    @POST("auth/validate")
+    suspend fun validateSession(
+        @Header("Authorization") token: String,
+        @Body request: ValidateSessionRequest
+    ): Response<ValidateSessionResponse>
 
     @POST("devices/register")
     suspend fun registerDevice(

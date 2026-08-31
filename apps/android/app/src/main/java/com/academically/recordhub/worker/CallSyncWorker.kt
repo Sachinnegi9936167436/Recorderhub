@@ -82,6 +82,23 @@ class CallSyncWorker(
             val token = prefs.getString("access_token", null)
             val authHeader = if (!token.isNullOrBlank()) "Bearer $token" else "Bearer mock_jwt_token"
 
+            // Validate counselor account status with server
+            if (!counselorEmail.isNullOrBlank()) {
+                try {
+                    val valResp = api.validateSession(
+                        authHeader,
+                        com.academically.recordhub.data.remote.ValidateSessionRequest(counselorEmail)
+                    )
+                    if (valResp.code() == 401) {
+                        AppLogManager.log("WARN", "CallSyncWorker", "Counselor account ($counselorEmail) deleted/deactivated by admin. Clearing local session.")
+                        prefs.edit().putBoolean("is_logged_in", false).remove("access_token").apply()
+                        return Result.failure()
+                    }
+                } catch (e: Exception) {
+                    AppLogManager.log("INFO", "CallSyncWorker", "Session validation check skipped (offline/network): ${e.message}")
+                }
+            }
+
             if (pendingCallSyncs.isNotEmpty()) {
                 // Sync in chunks of 25 to prevent HTTP timeouts on mobile networks
                 val chunks = pendingCallSyncs.chunked(25)
@@ -120,6 +137,10 @@ class CallSyncWorker(
                             db.callEventDao().markEventsSynced(syncedKeys)
                             totalSynced += syncedKeys.size
                         }
+                    } else if (response.code() == 401) {
+                        AppLogManager.log("WARN", "CallSyncWorker", "401 Unauthorized in batch sync. Counselor deleted by admin. Logging out.")
+                        prefs.edit().putBoolean("is_logged_in", false).remove("access_token").apply()
+                        return Result.failure()
                     } else {
                         AppLogManager.log("WARN", "CallSyncWorker", "Batch chunk sync status: ${response.code()}")
                     }

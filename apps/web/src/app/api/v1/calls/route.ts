@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel, DeviceModel } from '@/lib/models';
+import { cacheGet, cacheSet } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -18,6 +19,18 @@ export async function OPTIONS() {
 
 export async function GET() {
   try {
+    // 1. Check Redis in-memory cache first (2ms response)
+    const CACHE_KEY = 'cache:calls:latest';
+    const cachedCalls = await cacheGet<any[]>(CACHE_KEY);
+    if (cachedCalls && Array.isArray(cachedCalls) && cachedCalls.length > 0) {
+      const res = NextResponse.json(cachedCalls);
+      res.headers.set('Access-Control-Allow-Origin', '*');
+      res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.headers.set('X-Cache', 'HIT');
+      return res;
+    }
+
     await connectToDatabase();
     let calls = await (CallModel as any).find().sort({ startTime: -1, createdAt: -1 }).limit(5000).exec();
 
@@ -260,10 +273,16 @@ export async function GET() {
       console.warn('Error auto-linking disk recording files:', diskErr);
     }
 
+    // Store in Redis cache for 60 seconds (Instant 2ms on next request)
+    if (deduplicatedCalls && deduplicatedCalls.length > 0) {
+      await cacheSet('cache:calls:latest', deduplicatedCalls, 60);
+    }
+
     const res = NextResponse.json(deduplicatedCalls || []);
     res.headers.set('Access-Control-Allow-Origin', '*');
     res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.headers.set('X-Cache', 'MISS');
     return res;
   } catch (err: any) {
     console.error('Error fetching calls from database:', err);

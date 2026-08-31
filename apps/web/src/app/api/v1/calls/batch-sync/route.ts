@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel, DeviceModel } from '@/lib/models';
+import { cacheDel } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -46,8 +47,16 @@ export async function POST(req: Request) {
     const counselorEmails = Array.from(new Set(callEvents.map((e: any) => (e.counselorEmail || e.email || '').toLowerCase()).filter(Boolean)));
     const userAccounts = await (import('@/lib/models').then(m => m.UserModel) as any).find(
       { email: { $in: counselorEmails } },
-      { email: 1, createdAt: 1 }
+      { email: 1, createdAt: 1, isActive: 1 }
     ).lean().exec();
+
+    if (counselorEmails.length > 0 && (!userAccounts || userAccounts.length === 0)) {
+      return NextResponse.json(
+        { message: 'Counselor account has been deleted by administrator. Session revoked.', revoked: true },
+        { status: 401 }
+      );
+    }
+
     const userCreatedAtMap = new Map<string, number>();
     for (const u of (userAccounts || [])) {
       if (u.email && u.createdAt) {
@@ -189,6 +198,9 @@ export async function POST(req: Request) {
         }
       }
     }
+
+    // Invalidate Redis cache so dashboard immediately gets latest calls
+    await cacheDel('cache:calls:latest').catch(() => {});
 
     console.log(`Batch sync completed successfully: ${syncedIds.length} new, ${duplicates.length} duplicates.`);
 

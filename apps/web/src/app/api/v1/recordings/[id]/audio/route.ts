@@ -5,6 +5,7 @@ import { getS3Client } from '@/lib/aws';
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
+import { cacheGet, cacheSet } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -86,10 +87,22 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const s3Info = getS3Client();
     if (s3Info) {
       try {
-        const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
         const targetKey = s3KeyTarget || `recordings/${recordingId}.m4a`;
+        const S3_CACHE_KEY = `s3:audio:${targetKey}`;
+
+        // Check Redis cache for instant 1ms redirect
+        const cachedUrl = await cacheGet<string>(S3_CACHE_KEY);
+        if (cachedUrl) {
+          return NextResponse.redirect(cachedUrl, 307);
+        }
+
+        const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
         const command = new GetObjectCommand({ Bucket: s3Info.bucket, Key: targetKey });
         const presignedUrl = await getSignedUrl(s3Info.client, command, { expiresIn: 3600 });
+
+        // Cache in Redis for 55 minutes (3300 seconds)
+        await cacheSet(S3_CACHE_KEY, presignedUrl, 3300);
+
         return NextResponse.redirect(presignedUrl, 307);
       } catch (s3Err) {
         console.warn(`S3 Presigned Redirect failed for ${recordingId}, checking fallback:`, s3Err);

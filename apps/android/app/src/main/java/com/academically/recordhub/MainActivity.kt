@@ -108,6 +108,41 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(Unit) {
                     scope.launch(Dispatchers.IO) {
+                        val loggedInNow = prefs.getBoolean("is_logged_in", false)
+                        val counselorEmail = prefs.getString("counselor_email", null)
+                        val token = prefs.getString("access_token", null)
+
+                        if (loggedInNow && !counselorEmail.isNullOrBlank()) {
+                            try {
+                                val baseUrl = com.academically.recordhub.data.remote.ApiConstants.DEFAULT_BASE_URL
+                                val retrofit = retrofit2.Retrofit.Builder()
+                                    .baseUrl(baseUrl)
+                                    .addConverterFactory(retrofit2.converter.gson.GsonConverterFactory.create())
+                                    .build()
+                                val api = retrofit.create(com.academically.recordhub.data.remote.RecordHubApi::class.java)
+                                val authHeader = if (!token.isNullOrBlank()) "Bearer $token" else "Bearer mock_jwt_token"
+                                val checkResp = api.validateSession(
+                                    authHeader,
+                                    com.academically.recordhub.data.remote.ValidateSessionRequest(counselorEmail)
+                                )
+
+                                if (checkResp.code() == 401) {
+                                    AppLogManager.log("WARN", "MainActivity", "Counselor $counselorEmail was deleted or deactivated by admin. Logging out.")
+                                    prefs.edit().putBoolean("is_logged_in", false).remove("access_token").apply()
+                                    withContext(Dispatchers.Main) {
+                                        currentStep = 0
+                                        android.widget.Toast.makeText(
+                                            applicationContext,
+                                            "Session revoked: Counselor ID deleted by Administrator.",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                AppLogManager.log("INFO", "MainActivity", "Session validation check skipped (offline): ${e.message}")
+                            }
+                        }
+
                         AppLogManager.log("SYNC", "Background", "Initial CallLog Scanner & AWS S3 Sync Triggered.")
                         CallLogScanner.scanRecentCallLogs(applicationContext)
                         triggerImmediateSync()
