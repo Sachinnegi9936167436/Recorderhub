@@ -173,7 +173,7 @@ export async function POST(req: Request) {
 
     // 2. Perform bulk device/agent update ONCE outside the loop
     if (deviceUpdates.size > 0) {
-      for (const [deviceId, info] of deviceUpdates.entries()) {
+      for (const [deviceId, info] of Array.from(deviceUpdates.entries())) {
         try {
           await (CallModel as any).updateMany(
             { deviceId },
