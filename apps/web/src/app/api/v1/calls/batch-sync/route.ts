@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
-import { CallModel, DeviceModel } from '@/lib/models';
+import { CallModel, DeviceModel, UserModel } from '@/lib/models';
 import { cacheDel } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     const existingKeySet = new Set(existingCalls.map((c: any) => c.idempotencyKey));
 
     const counselorEmails = Array.from(new Set(callEvents.map((e: any) => (e.counselorEmail || e.email || '').toLowerCase()).filter(Boolean)));
-    const userAccounts = await (import('@/lib/models').then(m => m.UserModel) as any).find(
+    const userAccounts = await (UserModel as any).find(
       { email: { $in: counselorEmails } },
       { email: 1, createdAt: 1, isActive: 1 }
     ).lean().exec();

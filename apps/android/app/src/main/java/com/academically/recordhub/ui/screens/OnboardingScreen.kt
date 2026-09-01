@@ -162,63 +162,56 @@ fun OnboardingScreen(onProceedToPermissions: () -> Unit) {
             onClick = {
                 scope.launch(Dispatchers.IO) {
                     isAuthenticating = true
-                    val uniqueUrls = listOf(
-                        com.academically.recordhub.data.remote.ApiConstants.DEFAULT_BASE_URL,
-                        "http://192.168.31.86:3000/api/v1/",
-                        "http://192.168.31.86:4000/api/v1/",
-                        "http://10.0.2.2:3000/api/v1/"
-                    ).distinct()
                     var authenticated = false
-                    var lastErrorMsg = "Invalid email or password."
+                    var lastErrorMsg = "Invalid username/password"
 
-                    for (url in uniqueUrls) {
-                        try {
-                            val retrofit = retrofit2.Retrofit.Builder()
-                                .baseUrl(url)
-                                .addConverterFactory(retrofit2.converter.gson.GsonConverterFactory.create())
-                                .build()
+                    val targetUrl = com.academically.recordhub.data.remote.ApiConstants.DEFAULT_BASE_URL
+                    try {
+                        val retrofit = retrofit2.Retrofit.Builder()
+                            .baseUrl(targetUrl)
+                            .addConverterFactory(retrofit2.converter.gson.GsonConverterFactory.create())
+                            .build()
 
-                            val api = retrofit.create(com.academically.recordhub.data.remote.RecordHubApi::class.java)
-                            val response = api.login(com.academically.recordhub.data.remote.LoginRequest(counselorEmail.trim(), password))
+                        val api = retrofit.create(com.academically.recordhub.data.remote.RecordHubApi::class.java)
+                        val response = api.login(com.academically.recordhub.data.remote.LoginRequest(counselorEmail.trim(), password))
 
-                            if (response.isSuccessful && response.body() != null) {
-                                authenticated = true
-                                val user = response.body()?.user
-                                val counselorName = if (user != null && (!user.firstName.isNullOrBlank() || !user.lastName.isNullOrBlank())) {
-                                    "${user.firstName} ${user.lastName}".trim()
-                                } else {
-                                    counselorEmail.trim().split("@")[0].replace(".", " ").replace("_", " ").split(" ")
-                                        .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() } }
-                                }
-                                val prefs = context.getSharedPreferences("recordhub_prefs", android.content.Context.MODE_PRIVATE)
-                                val now = System.currentTimeMillis()
-                                var accountCreatedAtMs = now
-                                if (!user?.createdAt.isNullOrBlank()) {
-                                    try {
-                                        val cleanIso = user?.createdAt!!.replace("Z", "+00:00")
-                                        val isoFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                                        val parsed = isoFormat.parse(cleanIso.substring(0, Math.min(19, cleanIso.length)))
-                                        if (parsed != null && parsed.time > 0L) {
-                                            accountCreatedAtMs = parsed.time
-                                        }
-                                    } catch (_: Exception) {}
-                                }
-
-                                val editor = prefs.edit()
-                                    .putBoolean("is_logged_in", true)
-                                    .putString("counselor_email", counselorEmail.trim())
-                                    .putString("counselor_name", counselorName)
-                                    .putString("access_token", response.body()?.accessToken ?: "")
-                                    .putLong("account_created_at", accountCreatedAtMs)
-                                editor.apply()
-                                break
-                            } else if (response.code() == 401 || response.code() == 400) {
-                                lastErrorMsg = "Invalid email or password! Verify credentials created on Web Dashboard."
-                                break
+                        if (response.isSuccessful && response.body() != null) {
+                            authenticated = true
+                            val user = response.body()?.user
+                            val counselorName = if (user != null && (!user.firstName.isNullOrBlank() || !user.lastName.isNullOrBlank())) {
+                                "${user.firstName} ${user.lastName}".trim()
+                            } else {
+                                counselorEmail.trim().split("@")[0].replace(".", " ").replace("_", " ").split(" ")
+                                    .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() } }
                             }
-                        } catch (e: Exception) {
-                            lastErrorMsg = "Network error connecting to API: ${e.message}"
+                            val prefs = context.getSharedPreferences("recordhub_prefs", android.content.Context.MODE_PRIVATE)
+                            val now = System.currentTimeMillis()
+                            var accountCreatedAtMs = now
+                            if (!user?.createdAt.isNullOrBlank()) {
+                                try {
+                                    val cleanIso = user?.createdAt!!.replace("Z", "+00:00")
+                                    val isoFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                                    val parsed = isoFormat.parse(cleanIso.substring(0, Math.min(19, cleanIso.length)))
+                                    if (parsed != null && parsed.time > 0L) {
+                                        accountCreatedAtMs = parsed.time
+                                    }
+                                } catch (_: Exception) {}
+                            }
+
+                            val editor = prefs.edit()
+                                .putBoolean("is_logged_in", true)
+                                .putString("counselor_email", counselorEmail.trim())
+                                .putString("counselor_name", counselorName)
+                                .putString("access_token", response.body()?.accessToken ?: "")
+                                .putLong("account_created_at", accountCreatedAtMs)
+                            editor.apply()
+                        } else if (response.code() == 401 || response.code() == 400) {
+                            lastErrorMsg = "Invalid username/password"
+                        } else {
+                            lastErrorMsg = "Server error (${response.code()}). Please try again."
                         }
+                    } catch (e: Exception) {
+                        lastErrorMsg = "Connection failed to server: ${e.localizedMessage ?: e.message}"
                     }
 
                     withContext(Dispatchers.Main) {

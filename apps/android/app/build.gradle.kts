@@ -55,6 +55,10 @@ android {
     }
 }
 
+kotlin {
+    jvmToolchain(17)
+}
+
 dependencies {
     // Android Core & Jetpack Compose
     implementation("androidx.core:core-ktx:1.12.0")
