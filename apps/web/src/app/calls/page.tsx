@@ -221,13 +221,28 @@ function SalestrailCallsInner() {
   }, []);
 
   const activeTeams = teamsList.length > 0 ? teamsList : [
-    { id: 't-1', name: 'Global Sales', admin: 'Sachin Negi', admins: ['Sachin Negi', 'sachinnegi@academically.com'], members: ['Shrishti', 'Dev', 'Rajdeep', 'Sachin Negi'] },
+    { id: 't-1', name: 'Global Sales', admin: 'Sachin Negi', admins: ['Sachin Negi', 'sachinnegi@academically.com'], members: ['Shrishti', 'Dev', 'Rajdeep', 'Sachin Negi', 'Nasreen', 'Vasantha', 'Manas Vikas'] },
     { id: 't-2', name: 'NCLEX Counselors', admin: 'Rajdeep', admins: ['Rajdeep', 'rajdeep@academically.com'], members: ['Ananya Sharma', 'Rahul Kumar', 'Rajdeep'] },
     { id: 't-3', name: 'DHA Counselors', admin: 'Dev', admins: ['Dev', 'dev@academically.com'], members: ['Vasantha', 'Nasreen', 'Dev'] }
   ];
 
+  const myManagedTeams = useMemo(() => {
+    if (isAdmin || isManager) return activeTeams;
+    const myEmailLower = (userEmail || '').toLowerCase();
+    const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+    return activeTeams.filter((team) => {
+      const adminStr = (team.admin || '').toLowerCase();
+      const adminsArr = Array.isArray(team.admins) ? team.admins.map((a: string) => a.toLowerCase()) : [];
+      return (
+        adminStr.includes(myNamePrefix) ||
+        adminStr.includes(myEmailLower) ||
+        adminsArr.some((a: string) => a.includes(myNamePrefix) || a.includes(myEmailLower))
+      );
+    });
+  }, [activeTeams, userEmail, isAdmin, isManager]);
+
   const myTeamMemberIdentifiers = useMemo(() => {
-    if (isAdmin) return [];
+    if (isAdmin || isManager) return [];
     const memberSet = new Set<string>();
     const myEmailLower = (userEmail || '').toLowerCase();
     const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
@@ -235,13 +250,8 @@ function SalestrailCallsInner() {
     if (myEmailLower) memberSet.add(myEmailLower);
     if (myNamePrefix) memberSet.add(myNamePrefix);
 
-    activeTeams.forEach((team) => {
-      const adminStr = (team.admin || '').toLowerCase();
-      const adminsArr = Array.isArray(team.admins) ? team.admins.map((a: string) => a.toLowerCase()) : [];
-      const isTeamManager = adminStr.includes(myNamePrefix) || adminStr.includes(myEmailLower) ||
-        adminsArr.some((a: string) => a.includes(myNamePrefix) || a.includes(myEmailLower));
-
-      if (isTeamManager && Array.isArray(team.members)) {
+    myManagedTeams.forEach((team) => {
+      if (Array.isArray(team.members)) {
         team.members.forEach((m: string) => {
           if (m) memberSet.add(m.toLowerCase().trim());
         });
@@ -249,18 +259,21 @@ function SalestrailCallsInner() {
     });
 
     return Array.from(memberSet);
-  }, [activeTeams, userEmail, isAdmin]);
+  }, [myManagedTeams, userEmail, isAdmin, isManager]);
 
   const canUserAccessCall = (call: any) => {
     // 1. System Admin: Can view and listen to ALL call recordings across all teams
     if (isAdmin) return { canView: true, canListen: true };
+
+    // 2. Manager: Can view call logs and call log time of EVERY counsellor
+    if (isManager) return { canView: true, canListen: true };
 
     const resolvedCounselor = resolveCounselorName(call).toLowerCase();
     const callEmail = (call.counselorEmail || call.email || '').toLowerCase();
     const myEmailLower = (userEmail || '').toLowerCase();
     const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
 
-    // 2. Sales User / Counselor: Can ONLY view & listen to their OWN calls
+    // 3. Sales User / Counselor: Can ONLY view & listen to their OWN calls
     if (isCounselor) {
       const isMyOwnCall =
         (callEmail && callEmail === myEmailLower) ||
@@ -270,8 +283,8 @@ function SalestrailCallsInner() {
       return { canView: isMyOwnCall, canListen: isMyOwnCall };
     }
 
-    // 3. Team Manager / Team Lead: Can view & listen ONLY to calls of counselors in their team(s)
-    if (isManager || isTeamLead) {
+    // 4. Team Lead: Can view & listen ONLY to calls of counselors in their team(s)
+    if (isTeamLead) {
       const isMyOwnCall =
         (callEmail && callEmail === myEmailLower) ||
         (myNamePrefix && resolvedCounselor.includes(myNamePrefix));
@@ -297,6 +310,39 @@ function SalestrailCallsInner() {
         .filter(Boolean)
     )
   );
+
+  const displayedTeams = useMemo(() => {
+    if (isTeamLead && myManagedTeams.length > 0) {
+      return myManagedTeams.map((t) => t.name);
+    }
+    if (isCounselor) {
+      return ['My Team'];
+    }
+    return defaultTeams;
+  }, [isTeamLead, isCounselor, myManagedTeams, defaultTeams]);
+
+  const displayedCounselors = useMemo(() => {
+    if (isTeamLead) {
+      return uniqueCounselors.filter((c) => {
+        const cLower = c.toLowerCase();
+        return myTeamMemberIdentifiers.some((id) => cLower.includes(id));
+      });
+    }
+    if (isCounselor) {
+      const myEmailLower = (userEmail || '').toLowerCase();
+      const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+      const matched = uniqueCounselors.filter((c) => {
+        const cLower = c.toLowerCase();
+        return (
+          (myNamePrefix && cLower.includes(myNamePrefix)) ||
+          (myEmailLower && cLower.includes(myEmailLower)) ||
+          (myNamePrefix && (myNamePrefix.includes('shris') || myNamePrefix.includes('shristi')) && (cLower.includes('shris') || cLower.includes('shristi')))
+        );
+      });
+      return matched.length > 0 ? matched : [userEmail ? userEmail.split('@')[0] : 'My Calls'];
+    }
+    return uniqueCounselors;
+  }, [isTeamLead, isCounselor, uniqueCounselors, myTeamMemberIdentifiers, userEmail]);
 
   // Filter calls by search and filters
   const filteredCalls = callsList.filter((call) => {
@@ -640,7 +686,7 @@ function SalestrailCallsInner() {
                   {repCategory === 'Individual' ? (
                     <>
                       <option value="All Counselors">All Counselors</option>
-                      {uniqueCounselors.map((counselor) => (
+                      {displayedCounselors.map((counselor) => (
                         <option key={counselor} value={counselor}>
                           {counselor}
                         </option>
@@ -649,7 +695,7 @@ function SalestrailCallsInner() {
                   ) : (
                     <>
                       <option value="All Teams">All Teams</option>
-                      {defaultTeams.map((team) => (
+                      {displayedTeams.map((team) => (
                         <option key={team} value={team}>
                           {team}
                         </option>

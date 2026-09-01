@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Navigation } from '@/components/Navigation';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Navigation, useUserRole } from '@/components/Navigation';
 import { UserProfileMenu } from '@/components/UserProfileMenu';
 import { 
   Download, 
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 export default function RecorderHubDashboard() {
+  const { role: userRole, email: userEmail, isAdmin, isManager, isTeamLead, isCounselor } = useUserRole();
   const [calls, setCalls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('All time');
@@ -25,6 +26,7 @@ export default function RecorderHubDashboard() {
   const [salesRepFilter, setSalesRepFilter] = useState('Teams');
   const [teamFilter, setTeamFilter] = useState('All Teams');
   const [counselorsList, setCounselorsList] = useState<any[]>([]);
+  const [teamsList, setTeamsList] = useState<any[]>([]);
 
   type DashSortField = 'name' | 'total' | 'answered' | 'unanswered' | 'duration' | 'uniqueCalls' | 'uniqueAnswered' | 'createdAt';
   const [dashSortField, setDashSortField] = useState<DashSortField>('total');
@@ -103,6 +105,19 @@ export default function RecorderHubDashboard() {
   useEffect(() => {
     fetchCallsData();
     fetchCounselors();
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('recorderhub_teams');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setTeamsList(parsed);
+          }
+        } catch (e) {
+          console.error('Failed to parse teams:', e);
+        }
+      }
+    }
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchCallsData();
@@ -111,24 +126,132 @@ export default function RecorderHubDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const uniqueCounselors = Array.from(
-    new Set([
-      ...counselorsList.map((c) => {
-        if (c.firstName || c.lastName) return `${c.firstName || ''} ${c.lastName || ''}`.trim();
-        if (c.name) return c.name;
-        if (c.email) return c.email.split('@')[0];
-        return null;
-      }),
-      ...calls.map((c) => {
-        if (!c) return null;
-        const email = c.counselorEmail || c.email;
-        const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
-        const rawAgentName = (c.agentName && c.agentName !== 'Sachin Negi' && c.agentName !== 'Counselor' && c.agentName !== 'Counselor Agent') ? c.agentName : null;
-        const cleanDev = c.deviceId ? c.deviceId.replace(/^ANDROID-/, '').split('-')[0] : '';
-        return rawAgentName || c.counselorName || derivedName || (cleanDev ? `Counselor (${cleanDev})` : null);
-      })
-    ].filter(Boolean))
-  ) as string[];
+  const activeTeams = teamsList.length > 0 ? teamsList : [
+    { id: 't-1', name: 'Global Sales', admin: 'Sachin Negi', admins: ['Sachin Negi', 'sachinnegi@academically.com'], members: ['Shrishti', 'Dev', 'Rajdeep', 'Sachin Negi', 'Nasreen', 'Vasantha', 'Manas Vikas'] },
+    { id: 't-2', name: 'NCLEX Counselors', admin: 'Rajdeep', admins: ['Rajdeep', 'rajdeep@academically.com'], members: ['Ananya Sharma', 'Rahul Kumar', 'Rajdeep'] },
+    { id: 't-3', name: 'DHA Counselors', admin: 'Dev', admins: ['Dev', 'dev@academically.com'], members: ['Vasantha', 'Nasreen', 'Dev'] }
+  ];
+
+  const myManagedTeams = useMemo(() => {
+    if (isAdmin || isManager) return activeTeams;
+    const myEmailLower = (userEmail || '').toLowerCase();
+    const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+    return activeTeams.filter((team) => {
+      const adminStr = (team.admin || '').toLowerCase();
+      const adminsArr = Array.isArray(team.admins) ? team.admins.map((a: string) => a.toLowerCase()) : [];
+      return (
+        adminStr.includes(myNamePrefix) ||
+        adminStr.includes(myEmailLower) ||
+        adminsArr.some((a: string) => a.includes(myNamePrefix) || a.includes(myEmailLower))
+      );
+    });
+  }, [activeTeams, userEmail, isAdmin, isManager]);
+
+  const myTeamMemberIdentifiers = useMemo(() => {
+    if (isAdmin || isManager) return [];
+    const memberSet = new Set<string>();
+    const myEmailLower = (userEmail || '').toLowerCase();
+    const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+
+    if (myEmailLower) memberSet.add(myEmailLower);
+    if (myNamePrefix) memberSet.add(myNamePrefix);
+
+    myManagedTeams.forEach((team) => {
+      if (Array.isArray(team.members)) {
+        team.members.forEach((m: string) => {
+          if (m) memberSet.add(m.toLowerCase().trim());
+        });
+      }
+    });
+
+    return Array.from(memberSet);
+  }, [myManagedTeams, userEmail, isAdmin, isManager]);
+
+  const resolveCounselorName = (c: any) => {
+    if (!c) return 'Counselor Agent';
+    const email = c.counselorEmail || c.email;
+    const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
+    const rawAgentName = (c.agentName && c.agentName !== 'Sachin Negi' && c.agentName !== 'Counselor' && c.agentName !== 'Counselor Agent') ? c.agentName : null;
+    const cleanDev = c.deviceId ? c.deviceId.replace(/^ANDROID-/, '').split('-')[0] : '';
+    return rawAgentName || c.counselorName || derivedName || (cleanDev ? `Counselor (${cleanDev})` : 'Counselor Agent');
+  };
+
+  const canUserAccessCall = (call: any) => {
+    if (isAdmin || isManager) return true;
+
+    const resolvedCounselor = resolveCounselorName(call).toLowerCase();
+    const callEmail = (call.counselorEmail || call.email || '').toLowerCase();
+    const myEmailLower = (userEmail || '').toLowerCase();
+    const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+
+    if (isCounselor) {
+      return (
+        (callEmail && callEmail === myEmailLower) ||
+        (myNamePrefix && resolvedCounselor.includes(myNamePrefix)) ||
+        (myNamePrefix && myNamePrefix.includes('shris') && resolvedCounselor.includes('shristi'))
+      );
+    }
+
+    if (isTeamLead) {
+      const isMyOwn = (callEmail && callEmail === myEmailLower) || (myNamePrefix && resolvedCounselor.includes(myNamePrefix));
+      if (isMyOwn) return true;
+      return myTeamMemberIdentifiers.some((identifier) => {
+        return resolvedCounselor.includes(identifier) || (callEmail && callEmail.includes(identifier));
+      });
+    }
+
+    return true;
+  };
+
+  const uniqueCounselors = useMemo(() => {
+    return Array.from(
+      new Set([
+        ...counselorsList.map((c) => {
+          if (c.firstName || c.lastName) return `${c.firstName || ''} ${c.lastName || ''}`.trim();
+          if (c.name) return c.name;
+          if (c.email) return c.email.split('@')[0];
+          return null;
+        }),
+        ...calls.map((c) => {
+          if (!c) return null;
+          return resolveCounselorName(c);
+        })
+      ].filter(Boolean))
+    ) as string[];
+  }, [counselorsList, calls]);
+
+  const displayedTeams = useMemo(() => {
+    if (isTeamLead && myManagedTeams.length > 0) {
+      return myManagedTeams.map((t) => t.name);
+    }
+    if (isCounselor) {
+      return ['My Team'];
+    }
+    return defaultTeams;
+  }, [isTeamLead, isCounselor, myManagedTeams, defaultTeams]);
+
+  const displayedCounselors = useMemo(() => {
+    if (isTeamLead) {
+      return uniqueCounselors.filter((c) => {
+        const cLower = c.toLowerCase();
+        return myTeamMemberIdentifiers.some((id) => cLower.includes(id));
+      });
+    }
+    if (isCounselor) {
+      const myEmailLower = (userEmail || '').toLowerCase();
+      const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+      const matched = uniqueCounselors.filter((c) => {
+        const cLower = c.toLowerCase();
+        return (
+          (myNamePrefix && cLower.includes(myNamePrefix)) ||
+          (myEmailLower && cLower.includes(myEmailLower)) ||
+          (myNamePrefix && (myNamePrefix.includes('shris') || myNamePrefix.includes('shristi')) && (cLower.includes('shris') || cLower.includes('shristi')))
+        );
+      });
+      return matched.length > 0 ? matched : [userEmail ? userEmail.split('@')[0] : 'My Calls'];
+    }
+    return uniqueCounselors;
+  }, [isTeamLead, isCounselor, uniqueCounselors, myTeamMemberIdentifiers, userEmail]);
 
   const handleCategoryChange = (val: string) => {
     setSalesRepFilter(val);
@@ -139,9 +262,10 @@ export default function RecorderHubDashboard() {
     }
   };
 
-  // Filter calls by Date Range & Sales Rep / Team Selection
+  // Filter calls by Role Access, Date Range & Sales Rep / Team Selection
   const validCalls = (calls || []).filter((c) => {
     if (!c) return false;
+    if (!canUserAccessCall(c)) return false;
 
     // Date Range Filter
     if (dateRange !== 'All time') {
@@ -179,11 +303,7 @@ export default function RecorderHubDashboard() {
     // Sales Rep / Team Filter
     if (salesRepFilter === 'Individual' || salesRepFilter === 'Counselors') {
       if (teamFilter && teamFilter !== 'All Counselors') {
-        const email = c.counselorEmail || c.email;
-        const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
-        const rawAgentName = (c.agentName && c.agentName !== 'Sachin Negi' && c.agentName !== 'Counselor' && c.agentName !== 'Counselor Agent') ? c.agentName : null;
-        const cleanDev = c.deviceId ? c.deviceId.replace(/^ANDROID-/, '').split('-')[0] : '';
-        const name = rawAgentName || c.counselorName || derivedName || (cleanDev ? `Counselor (${cleanDev})` : 'Counselor Agent');
+        const name = resolveCounselorName(c);
         if (name.toLowerCase() !== teamFilter.toLowerCase()) {
           return false;
         }
@@ -514,7 +634,7 @@ export default function RecorderHubDashboard() {
                     {salesRepFilter === 'Individual' || salesRepFilter === 'Counselors' ? (
                       <>
                         <option value="All Counselors">All Counselors</option>
-                        {uniqueCounselors.map((counselor) => (
+                        {displayedCounselors.map((counselor) => (
                           <option key={counselor} value={counselor}>
                             {counselor}
                           </option>
@@ -523,7 +643,7 @@ export default function RecorderHubDashboard() {
                     ) : (
                       <>
                         <option value="All Teams">All Teams</option>
-                        {defaultTeams.map((team) => (
+                        {displayedTeams.map((team) => (
                           <option key={team} value={team}>
                             {team}
                           </option>
@@ -555,7 +675,13 @@ export default function RecorderHubDashboard() {
 
         {/* Section 1: Overview Card */}
         <section className="mb-10">
-          <h2 className="text-xl font-bold text-slate-900 mb-4 tracking-tight">Get an overview of your call activity</h2>
+          <h2 className="text-xl font-bold text-slate-900 mb-4 tracking-tight">
+            {isTeamLead
+              ? `Team Overview • ${myManagedTeams[0]?.name || 'My Team'}`
+              : isCounselor
+              ? 'Your Personal Call Activity Overview'
+              : 'Get an overview of your call activity'}
+          </h2>
 
           <div className="bg-white rounded-2xl border border-slate-200/80 p-10 shadow-sm">
             <div className="grid grid-cols-3 gap-8">

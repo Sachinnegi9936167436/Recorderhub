@@ -21,14 +21,19 @@ function NavigationInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentView = searchParams.get('view') || 'teams';
+  const { isAdmin, isCounselor } = useUserRole();
 
   const navItems = [
     { name: 'Analytics', href: '/dashboard', icon: BarChart3, hasSub: true },
     { name: 'Calls', href: '/calls', icon: PhoneCall },
     { name: 'Recording', href: '/calls?filter=recordings', icon: Mic },
-    { name: 'Team Management', href: '/counselors?view=teams', viewKey: 'teams', icon: Users },
-    { name: 'User Management', href: '/counselors?view=users', viewKey: 'users', icon: UserCheck },
-    { name: 'Settings', href: '/settings', icon: Settings },
+    ...(!isCounselor ? [
+      { name: 'Team Management', href: '/counselors?view=teams', viewKey: 'teams', icon: Users },
+    ] : []),
+    ...(isAdmin ? [
+      { name: 'User Management', href: '/counselors?view=users', viewKey: 'users', icon: UserCheck },
+      { name: 'Settings', href: '/settings', icon: Settings },
+    ] : []),
   ];
 
   return (
@@ -118,8 +123,18 @@ function NavigationInner() {
 }
 
 export function useUserRole() {
-  const [role, setRole] = React.useState<string>('ADMIN');
-  const [email, setEmail] = React.useState<string>('admin@academically.com');
+  const [role, setRole] = React.useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('userRole') || 'ADMIN';
+    }
+    return 'ADMIN';
+  });
+  const [email, setEmail] = React.useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('userEmail') || 'admin@academically.com';
+    }
+    return 'admin@academically.com';
+  });
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {

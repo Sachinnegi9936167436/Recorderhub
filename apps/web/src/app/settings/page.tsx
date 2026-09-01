@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Navigation } from '@/components/Navigation';
-import { Settings, ShieldCheck, Database, Award, Save, RefreshCw } from 'lucide-react';
+import { Navigation, useUserRole } from '@/components/Navigation';
+import Link from 'next/link';
+import { Settings, ShieldCheck, Database, Award, Save, RefreshCw, Shield } from 'lucide-react';
 
 export default function SettingsPage() {
+  const { role: userRole, isAdmin } = useUserRole();
   const [crmUrl, setCrmUrl] = useState('https://api.pharmlly.com/v1');
   const [retentionDays, setRetentionDays] = useState(180);
   const [saved, setSaved] = useState(false);
@@ -14,6 +16,35 @@ export default function SettingsPage() {
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
+
+  if (!isAdmin) {
+    return (
+      <div className="flex min-h-screen bg-[#f8fafc] text-slate-900 font-sans">
+        <Navigation />
+        <main className="flex-1 p-8 flex items-center justify-center">
+          <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-5 max-w-lg mx-auto shadow-sm">
+            <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100 shadow-sm">
+              <Shield className="w-8 h-8 text-rose-600" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">System Admin Access Only</h2>
+              <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
+                Organization settings, CRM adapter configuration, and data retention policies are strictly restricted to System Administrators.
+              </p>
+            </div>
+            <div className="pt-2">
+              <Link
+                href="/calls"
+                className="inline-flex items-center space-x-2 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md"
+              >
+                <span>Return to Call Logs</span>
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-navy-950">

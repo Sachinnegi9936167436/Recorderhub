@@ -18,8 +18,10 @@ import {
   User, 
   ArrowUpDown, 
   ArrowDown,
-  Info
+  Info,
+  Shield
 } from 'lucide-react';
+import Link from 'next/link';
 
 function CounselorsAndTeamsInner() {
   const { role: userRole, email: userEmail, isAdmin, isManager, isCounselor } = useUserRole();
@@ -412,6 +414,35 @@ function CounselorsAndTeamsInner() {
     t.admin.toLowerCase().includes(teamSearchQuery.toLowerCase())
   );
 
+  if (isCounselor) {
+    return (
+      <div className="flex min-h-screen bg-[#f8fafc] text-slate-900 font-sans">
+        <Navigation />
+        <main className="flex-1 p-8 flex items-center justify-center">
+          <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-5 max-w-lg mx-auto shadow-sm">
+            <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100 shadow-sm">
+              <Shield className="w-8 h-8 text-rose-600" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Access Restricted</h2>
+              <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
+                Team and User Management are restricted to Administrators and Team Leads. Sales users have access exclusively to their Call Logs and Analytics.
+              </p>
+            </div>
+            <div className="pt-2">
+              <Link
+                href="/calls"
+                className="inline-flex items-center space-x-2 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md"
+              >
+                <span>Go to My Call Logs</span>
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-[#f8fafc] text-slate-900 font-sans">
       <Navigation />
@@ -576,6 +607,27 @@ function CounselorsAndTeamsInner() {
               </div>
             </div>
           </div>
+        ) : !isAdmin ? (
+          /* RESTRICTED ACCESS: Non-Admin trying to access User Management */
+          <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-5 max-w-lg mx-auto my-12 shadow-sm">
+            <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100 shadow-sm">
+              <Shield className="w-8 h-8 text-rose-600" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">System Admin Access Only</h2>
+              <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
+                User Management and credential provisioning are strictly restricted to System Administrators. Your current role is <span className="font-semibold text-slate-700 font-mono">[{userRole}]</span>.
+              </p>
+            </div>
+            <div className="pt-2">
+              <Link
+                href="/counselors?view=teams"
+                className="inline-flex items-center space-x-2 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md"
+              >
+                <span>Return to Team Management</span>
+              </Link>
+            </div>
+          </div>
         ) : (
           /* VIEW 2: USER MANAGEMENT (Counselor Directory) */
           <div className="space-y-6">
@@ -585,23 +637,16 @@ function CounselorsAndTeamsInner() {
                 <p className="text-xs text-slate-500 mt-1">Admin Console • Provision, Update & Revoke Counselor Credentials</p>
               </div>
 
-              {isAdmin ? (
-                <button
-                  onClick={() => {
-                    resetForm();
-                    setIsCreateModalOpen(true);
-                  }}
-                  className="flex items-center space-x-2 bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-rose-500/20"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Create New Counselor ID</span>
-                </button>
-              ) : (
-                <div className="inline-flex items-center space-x-2 bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-semibold">
-                  <Info className="w-4 h-4 text-slate-500" />
-                  <span>Manager View • Only System Admin can add or edit users</span>
-                </div>
-              )}
+              <button
+                onClick={() => {
+                  resetForm();
+                  setIsCreateModalOpen(true);
+                }}
+                className="flex items-center space-x-2 bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-rose-500/20"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create New Counselor ID</span>
+              </button>
             </div>
 
             {/* Counselors Table */}
@@ -890,7 +935,11 @@ function CounselorsAndTeamsInner() {
                     {getAvailableCounselorObjects().length === 0 ? (
                       <div className="p-3 text-center space-y-1">
                         <p className="text-xs text-slate-500 font-medium">No registered counselors found.</p>
-                        <p className="text-[11px] text-slate-400">Go to User Management tab to provision Counselor IDs first.</p>
+                        {isAdmin ? (
+                          <p className="text-[11px] text-slate-400">Go to User Management tab to provision Counselor IDs first.</p>
+                        ) : (
+                          <p className="text-[11px] text-slate-400">Please contact your System Admin to provision Counselor IDs.</p>
+                        )}
                       </div>
                     ) : (
                       getAvailableCounselorObjects()

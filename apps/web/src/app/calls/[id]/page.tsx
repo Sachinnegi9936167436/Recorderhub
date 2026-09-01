@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import Navigation from '@/components/Navigation';
+import { Navigation, useUserRole } from '@/components/Navigation';
 import Link from 'next/link';
-import { ArrowLeft, Play, Pause, Volume2, ShieldCheck, Check, MessageSquare, Smartphone, Clock, Calendar, User, PhoneCall } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Volume2, ShieldCheck, Check, MessageSquare, Smartphone, Clock, Calendar, User, PhoneCall, Shield } from 'lucide-react';
 
 export default function CallDetailPage({ params }: { params: { id: string } }) {
+  const { role, email: userEmail, isAdmin, isManager, isTeamLead, isCounselor } = useUserRole();
   const [isPlaying, setIsPlaying] = useState(false);
   const [disposition, setDisposition] = useState('Enrolled in NCLEX-RN Prep');
   const [coachingNote, setCoachingNote] = useState('Counselor confirmed course eligibility credentials timeline.');
