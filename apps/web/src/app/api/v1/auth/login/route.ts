@@ -64,7 +64,7 @@ export async function POST(req: Request) {
 
       if (!isMatch) {
         return NextResponse.json(
-          { message: 'Invalid password. Please check your credentials.' },
+          { message: 'Invalid username/password' },
           { status: 401 }
         );
       }
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     if (defaultAcc) {
       if (rawPass !== defaultAcc.pass) {
         return NextResponse.json(
-          { message: 'Invalid password. Please check your credentials.' },
+          { message: 'Invalid username/password' },
           { status: 401 }
         );
       }
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
 
     // 3. User email not recognized
     return NextResponse.json(
-      { message: 'Account not found. Counselor ID must be provisioned by System Admin first.' },
+      { message: 'Invalid username/password' },
       { status: 401 }
     );
   } catch (err: any) {

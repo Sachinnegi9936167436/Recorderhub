@@ -32,7 +32,7 @@ export default function LoginPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setErrorMessage(data.message || 'Invalid email or password. Please verify your credentials.');
+        setErrorMessage(data.message || 'Invalid username/password');
         setLoading(false);
         return;
       }
