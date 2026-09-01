@@ -6,19 +6,12 @@ import { Shield, Lock, Mail, ArrowRight, Eye, EyeOff, AlertCircle, CheckCircle2,
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('admin@academically.com');
-  const [password, setPassword] = useState('Academically@01');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  const demoAccounts = [
-    { label: '👑 Admin', email: 'admin@academically.com', pass: 'Academically@01' },
-    { label: '💼 Manager', email: 'manager@academically.com', pass: 'Academically@01' },
-    { label: '👔 Team Lead', email: 'sachinnegi@academically.com', pass: 'Academically@01' },
-    { label: '🎧 Sales User', email: 'shrishtik@academically.com', pass: 'Academically@01' },
-  ];
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,12 +62,6 @@ export default function LoginPage() {
     }
   };
 
-  const selectAccount = (acc: { email: string; pass: string }) => {
-    setEmail(acc.email);
-    setPassword(acc.pass);
-    setErrorMessage(null);
-  };
-
   return (
     <div className="min-h-screen bg-navy-950 flex flex-col justify-center items-center p-4 relative overflow-hidden">
       {/* Decorative background glow */}
@@ -104,28 +91,6 @@ export default function LoginPage() {
             <div className="flex-1 font-medium">{successMessage}</div>
           </div>
         )}
-
-        {/* Quick Role Fillers */}
-        <div className="space-y-1.5">
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Quick Sign In Profiles</label>
-          <div className="grid grid-cols-2 gap-2">
-            {demoAccounts.map((acc, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => selectAccount(acc)}
-                className={`text-left px-2.5 py-1.5 rounded-lg border text-xs transition-all font-medium flex items-center justify-between ${
-                  email === acc.email
-                    ? 'bg-brand-500/20 border-brand-500/50 text-white'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-                }`}
-              >
-                <span>{acc.label}</span>
-                <span className="text-[10px] opacity-60 font-mono">Fill</span>
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* Login Form */}
         <form onSubmit={handleLogin} className="space-y-4">
