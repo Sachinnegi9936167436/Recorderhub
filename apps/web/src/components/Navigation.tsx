@@ -21,7 +21,7 @@ function NavigationInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentView = searchParams.get('view') || 'teams';
-  const { isAdmin, isCounselor } = useUserRole();
+  const { role, email: userEmail, isAdmin, isCounselor } = useUserRole();
 
   const navItems = [
     { name: 'Analytics', href: '/dashboard', icon: BarChart3, hasSub: true },
@@ -81,41 +81,30 @@ function NavigationInner() {
         </nav>
       </div>
 
-      {/* Role Switcher & Organisation Banner */}
-      <div className="p-4 border-t border-slate-100 space-y-3">
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs space-y-2">
+      {/* Authenticated Account & Organisation Info */}
+      <div className="p-4 border-t border-slate-100 space-y-2.5">
+        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 text-xs space-y-1.5 shadow-xs">
           <div className="flex items-center justify-between font-bold text-slate-800 text-[11px] uppercase tracking-wider">
-            <span>Current Role Access</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="truncate max-w-[170px]">{userEmail ? userEmail.split('@')[0] : 'Logged In'}</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Online" />
           </div>
-          <select
-            value={typeof window !== 'undefined' ? localStorage.getItem('userRole') || 'ADMIN' : 'ADMIN'}
-            onChange={(e) => {
-              const newRole = e.target.value;
-              localStorage.setItem('userRole', newRole);
-              if (newRole === 'COUNSELOR') {
-                localStorage.setItem('userEmail', 'shrishtik@academically.com');
-              } else if (newRole === 'TEAM_LEAD') {
-                localStorage.setItem('userEmail', 'sachinnegi@academically.com');
-              } else if (newRole === 'MANAGER') {
-                localStorage.setItem('userEmail', 'manager@academically.com');
-              } else {
-                localStorage.setItem('userEmail', 'admin@academically.com');
-              }
-              window.location.reload();
-            }}
-            className="w-full bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer shadow-xs"
-          >
-            <option value="ADMIN">👑 System Admin (Full Access)</option>
-            <option value="MANAGER">💼 Manager (View All Calls)</option>
-            <option value="TEAM_LEAD">👔 Team Lead (View Team Calls)</option>
-            <option value="COUNSELOR">🎧 Counselor (View Own Calls)</option>
-          </select>
+          <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[11px]">
+            <span className="text-slate-500 font-medium">Access:</span>
+            <span className="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-xs">
+              {role === 'ADMIN' || role === 'COMPANY_ADMIN'
+                ? 'System Admin'
+                : role === 'MANAGER'
+                ? 'Manager'
+                : role === 'TEAM_LEAD'
+                ? 'Team Lead'
+                : 'Counselor'}
+            </span>
+          </div>
         </div>
 
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-center space-y-0.5">
-          <p className="font-semibold text-slate-800">Academically Global</p>
-          <p className="text-[10px] text-slate-500">Organisation ID: 65c1f00</p>
+        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2 text-xs text-center space-y-0.5">
+          <p className="font-semibold text-slate-800 text-[11px]">Academically Global</p>
+          <p className="text-[10px] text-slate-500 font-mono">Org ID: 65c1f00...001</p>
         </div>
       </div>
     </aside>
