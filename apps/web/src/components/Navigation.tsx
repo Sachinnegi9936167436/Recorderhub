@@ -80,33 +80,6 @@ function NavigationInner() {
           })}
         </nav>
       </div>
-
-      {/* Authenticated Account & Organisation Info */}
-      <div className="p-4 border-t border-slate-100 space-y-2.5">
-        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 text-xs space-y-1.5 shadow-xs">
-          <div className="flex items-center justify-between font-bold text-slate-800 text-[11px] uppercase tracking-wider">
-            <span className="truncate max-w-[170px]">{userEmail ? userEmail.split('@')[0] : 'Logged In'}</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Online" />
-          </div>
-          <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[11px]">
-            <span className="text-slate-500 font-medium">Access:</span>
-            <span className="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-xs">
-              {role === 'ADMIN' || role === 'COMPANY_ADMIN'
-                ? 'System Admin'
-                : role === 'MANAGER'
-                ? 'Manager'
-                : role === 'TEAM_LEAD'
-                ? 'Team Lead'
-                : 'Counselor'}
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2 text-xs text-center space-y-0.5">
-          <p className="font-semibold text-slate-800 text-[11px]">Academically Global</p>
-          <p className="text-[10px] text-slate-500 font-mono">Org ID: 65c1f00...001</p>
-        </div>
-      </div>
     </aside>
   );
 }
