@@ -870,19 +870,19 @@ function CounselorsAndTeamsInner() {
                 <table className="w-full text-left">
                   <thead className="bg-white border-b border-slate-100">
                     <tr>
-                      <th className="py-4 pl-6 font-semibold text-slate-500 uppercase text-[11px] tracking-wider w-[22%]">
+                      <th className="py-4.5 pl-8 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[24%]">
                         NAME
                       </th>
-                      <th className="py-4 font-semibold text-slate-500 uppercase text-[11px] tracking-wider w-[32%]">
+                      <th className="py-4.5 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[32%]">
                         EMAIL
                       </th>
-                      <th className="py-4 font-semibold text-slate-500 uppercase text-[11px] tracking-wider w-[18%]">
+                      <th className="py-4.5 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[15%]">
                         ROLE
                       </th>
-                      <th className="py-4 font-semibold text-slate-500 uppercase text-[11px] tracking-wider w-[18%]">
+                      <th className="py-4.5 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[17%]">
                         STATUS
                       </th>
-                      <th className="py-4 pr-8 font-semibold text-slate-500 uppercase text-[11px] tracking-wider text-right w-[10%]">
+                      <th className="py-4.5 pr-8 font-semibold text-slate-500 uppercase text-xs tracking-wider text-right w-[12%]">
                         ACTIONS
                       </th>
                     </tr>
@@ -904,81 +904,81 @@ function CounselorsAndTeamsInner() {
                         const isRoleLead = roleUpper === 'TEAM_LEAD';
 
                         return (
-                          <tr key={c._id || c.email || c.id} className="hover:bg-slate-50/60 transition-colors">
+                          <tr key={c._id || c.email || c.id} className="hover:bg-slate-50/50 transition-colors">
                             {/* NAME */}
-                            <td className="py-4.5 pl-6 font-bold text-slate-900 text-sm whitespace-nowrap">
+                            <td className="py-5 pl-8 font-bold text-slate-900 text-sm whitespace-nowrap">
                               {fullName}
                             </td>
 
                             {/* EMAIL */}
-                            <td className="py-4.5 text-slate-500 text-sm whitespace-nowrap">
+                            <td className="py-5 px-4 text-slate-500 text-sm whitespace-nowrap">
                               {c.email}
                             </td>
 
                             {/* ROLE */}
-                            <td className="py-4.5 whitespace-nowrap">
+                            <td className="py-5 px-4 whitespace-nowrap">
                               {isRoleAdmin ? (
-                                <span className="inline-block bg-[#eff6ff] text-[#2563eb] border border-[#bfdbfe] px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
+                                <span className="inline-flex items-center justify-center bg-[#e0f2fe]/70 text-[#0284c7] border border-[#bae6fd] px-3 py-0.5 rounded text-xs font-bold uppercase tracking-wide">
                                   ADMIN
                                 </span>
                               ) : isRoleSales ? (
-                                <span className="inline-block bg-[#fff7ed] text-[#ea580c] border border-[#fed7aa] px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
+                                <span className="inline-flex items-center justify-center bg-[#fff7ed] text-[#ea580c] border border-[#fed7aa] px-3 py-0.5 rounded text-xs font-bold uppercase tracking-wide">
                                   SALES
                                 </span>
                               ) : isRoleManager ? (
-                                <span className="inline-block bg-[#faf5ff] text-[#9333ea] border border-[#e9d5ff] px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
+                                <span className="inline-flex items-center justify-center bg-[#faf5ff] text-[#9333ea] border border-[#e9d5ff] px-3 py-0.5 rounded text-xs font-bold uppercase tracking-wide">
                                   MANAGER
                                 </span>
                               ) : isRoleLead ? (
-                                <span className="inline-block bg-[#eef2ff] text-[#4f46e5] border border-[#c7d2fe] px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
+                                <span className="inline-flex items-center justify-center bg-[#eef2ff] text-[#4f46e5] border border-[#c7d2fe] px-3 py-0.5 rounded text-xs font-bold uppercase tracking-wide">
                                   TEAM LEAD
                                 </span>
                               ) : (
-                                <span className="inline-block bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
+                                <span className="inline-flex items-center justify-center bg-slate-100 text-slate-700 border border-slate-200 px-3 py-0.5 rounded text-xs font-bold uppercase tracking-wide">
                                   {c.role}
                                 </span>
                               )}
                             </td>
 
                             {/* STATUS */}
-                            <td className="py-4.5 whitespace-nowrap">
+                            <td className="py-5 px-4 whitespace-nowrap">
                               {isRoleAdmin ? (
                                 <span className="text-slate-300 font-medium text-sm select-none pl-1">—</span>
                               ) : c.isActive !== false ? (
-                                <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg border border-emerald-300/80 bg-emerald-50/60 text-emerald-600 text-xs font-bold">
-                                  <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span className="inline-flex items-center space-x-1.5 px-3.5 py-1 rounded-lg border border-emerald-300 bg-emerald-50/50 text-emerald-600 text-xs font-bold shadow-2xs">
+                                  <CheckCircle2 className="w-4 h-4 stroke-[2.2]" />
                                   <span>Active</span>
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg border border-slate-200 bg-slate-100 text-slate-600 text-xs font-bold">
-                                  <XCircle className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span className="inline-flex items-center space-x-1.5 px-3.5 py-1 rounded-lg border border-slate-300/80 bg-slate-100 text-slate-500 text-xs font-bold shadow-2xs">
+                                  <XCircle className="w-4 h-4 stroke-[2.2]" />
                                   <span>Inactive</span>
                                 </span>
                               )}
                             </td>
 
                             {/* ACTIONS */}
-                            <td className="py-4.5 pr-8 text-right whitespace-nowrap">
+                            <td className="py-5 pr-8 text-right whitespace-nowrap">
                               {isAdmin ? (
-                                <div className="flex items-center justify-end space-x-3.5">
+                                <div className="flex items-center justify-end space-x-5">
                                   <button
                                     onClick={() => openEditModal(c)}
                                     title="Edit User"
-                                    className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded hover:bg-slate-100 cursor-pointer"
+                                    className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded-md hover:bg-slate-100 cursor-pointer"
                                   >
                                     <Pencil className="w-4 h-4 stroke-[1.75]" />
                                   </button>
                                   <button
                                     onClick={() => openChangePasswordModal(c)}
                                     title="Change Password"
-                                    className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded hover:bg-slate-100 cursor-pointer"
+                                    className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded-md hover:bg-slate-100 cursor-pointer"
                                   >
                                     <Shield className="w-4 h-4 stroke-[1.75]" />
                                   </button>
                                   <button
                                     onClick={() => handleDeleteCounselor(c)}
                                     title="Delete User"
-                                    className="text-slate-400 hover:text-rose-600 transition-colors p-1 rounded hover:bg-rose-50 cursor-pointer"
+                                    className="text-slate-400 hover:text-rose-600 transition-colors p-1 rounded-md hover:bg-rose-50 cursor-pointer"
                                   >
                                     <Trash2 className="w-4 h-4 stroke-[1.75]" />
                                   </button>
