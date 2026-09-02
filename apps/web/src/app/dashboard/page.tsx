@@ -67,8 +67,6 @@ export default function RecorderHubDashboard() {
     );
   };
 
-  const defaultTeams = ['Global Sales', 'NCLEX Counselors', 'DHA Counselors', 'Sales Team'];
-
   const fetchCounselors = async () => {
     try {
       const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
@@ -110,8 +108,17 @@ export default function RecorderHubDashboard() {
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setTeamsList(parsed);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter(
+              (t: any) =>
+                t &&
+                t.name &&
+                t.name !== 'Global Sales' &&
+                t.name !== 'NCLEX Counselors' &&
+                t.name !== 'DHA Counselors' &&
+                t.name !== 'Sales Team'
+            );
+            setTeamsList(cleaned);
           }
         } catch (e) {
           console.error('Failed to parse teams:', e);
@@ -126,11 +133,7 @@ export default function RecorderHubDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const activeTeams = teamsList.length > 0 ? teamsList : [
-    { id: 't-1', name: 'Global Sales', admin: 'Sachin Negi', admins: ['Sachin Negi', 'sachinnegi@academically.com'], members: ['Shrishti', 'Dev', 'Rajdeep', 'Sachin Negi', 'Nasreen', 'Vasantha', 'Manas Vikas'] },
-    { id: 't-2', name: 'NCLEX Counselors', admin: 'Rajdeep', admins: ['Rajdeep', 'rajdeep@academically.com'], members: ['Ananya Sharma', 'Rahul Kumar', 'Rajdeep'] },
-    { id: 't-3', name: 'DHA Counselors', admin: 'Dev', admins: ['Dev', 'dev@academically.com'], members: ['Vasantha', 'Nasreen', 'Dev'] }
-  ];
+  const activeTeams = teamsList;
 
   const myManagedTeams = useMemo(() => {
     if (isAdmin || isManager) return activeTeams;
@@ -222,13 +225,24 @@ export default function RecorderHubDashboard() {
 
   const displayedTeams = useMemo(() => {
     if (isTeamLead && myManagedTeams.length > 0) {
-      return myManagedTeams.map((t) => t.name);
+      return myManagedTeams.map((t) => t.name).filter(Boolean);
     }
     if (isCounselor) {
-      return ['My Team'];
+      return [];
     }
-    return defaultTeams;
-  }, [isTeamLead, isCounselor, myManagedTeams, defaultTeams]);
+    const userCreatedTeams = teamsList.map((t) => t.name).filter(Boolean);
+    const callTeams = calls.map((c) => c.team || c.teamName || c.department).filter(Boolean);
+    const counselorTeams = counselorsList.map((u) => u.team || u.teamName || u.department).filter(Boolean);
+    const uniqueRealTeams = Array.from(new Set([...userCreatedTeams, ...callTeams, ...counselorTeams]));
+
+    return uniqueRealTeams.filter(
+      (name) =>
+        name !== 'Global Sales' &&
+        name !== 'NCLEX Counselors' &&
+        name !== 'DHA Counselors' &&
+        name !== 'Sales Team'
+    );
+  }, [isTeamLead, isCounselor, myManagedTeams, teamsList, calls, counselorsList]);
 
   const displayedCounselors = useMemo(() => {
     if (isTeamLead) {

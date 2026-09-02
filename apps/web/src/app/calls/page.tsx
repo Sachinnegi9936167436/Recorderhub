@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense, useMemo } from 'react';
+import React, { useState, useEffect, Suspense, useMemo, useRef } from 'react';
 import { Navigation, useUserRole } from '@/components/Navigation';
 import { UserProfileMenu } from '@/components/UserProfileMenu';
 import { useSearchParams } from 'next/navigation';
@@ -23,11 +23,22 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Calendar,
-  X
+  X,
+  AlertTriangle,
+  Mic,
+  Clock,
+  PhoneCall,
+  Flame,
+  Volume2,
+  Star,
+  Bookmark,
+  Check
 } from 'lucide-react';
 
 function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; canListen?: boolean }) {
   const [hasError, setHasError] = useState(false);
+  const [speed, setSpeed] = useState<number>(1);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const isAnswered = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
   const hasRecording = call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD';
@@ -51,15 +62,32 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
     return <span className="text-slate-400 font-medium text-[11px]">No Recording</span>;
   }
 
+  const toggleSpeed = () => {
+    const nextSpeed = speed === 1 ? 1.25 : speed === 1.25 ? 1.5 : speed === 1.5 ? 2 : 1;
+    setSpeed(nextSpeed);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextSpeed;
+    }
+  };
+
   return (
-    <div className="flex items-center space-x-2 py-1">
+    <div className="flex items-center justify-center space-x-1.5 py-1">
       <audio
+        ref={audioRef}
         controls
         preload="metadata"
         src={audioSrc}
         onError={() => setHasError(true)}
-        className="h-7 w-48 rounded-md bg-slate-100 border border-slate-200 shadow-xs focus:outline-none"
+        className="h-7 w-44 rounded-md bg-slate-100 border border-slate-200 shadow-xs focus:outline-none"
       />
+      <button
+        type="button"
+        onClick={toggleSpeed}
+        title="Change audio playback speed (1x, 1.25x, 1.5x, 2x)"
+        className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] font-bold border border-slate-200 transition-colors shadow-2xs"
+      >
+        {speed}x
+      </button>
     </div>
   );
 }
@@ -79,8 +107,52 @@ function SalestrailCallsInner() {
   const [repCategory, setRepCategory] = useState('Teams');
   const [subFilter, setSubFilter] = useState('All Teams');
   const [searchQuery, setSearchQuery] = useState('');
+  const [anomalyFilter, setAnomalyFilter] = useState<'all' | 'short_calls' | 'recordings' | 'sim' | 'whatsapp' | 'long_calls' | 'bookmarked'>('all');
 
-  const defaultTeams = ['Global Sales', 'NCLEX Counselors', 'DHA Counselors', 'Sales Team'];
+  const [reviewingCall, setReviewingCall] = useState<any | null>(null);
+  const [reviewRating, setReviewRating] = useState<number>(0);
+  const [reviewNotes, setReviewNotes] = useState<string>('');
+  const [reviewBookmark, setReviewBookmark] = useState<boolean>(false);
+  const [savingReview, setSavingReview] = useState(false);
+
+  const openReviewModal = (call: any) => {
+    setReviewingCall(call);
+    setReviewRating(Number(call.rating || 0));
+    setReviewNotes(call.notes || '');
+    setReviewBookmark(Boolean(call.isBookmarked));
+  };
+
+  const handleSaveReview = async () => {
+    if (!reviewingCall) return;
+    try {
+      setSavingReview(true);
+      const callId = reviewingCall._id || reviewingCall.id || reviewingCall.idempotencyKey;
+      const res = await fetch('/api/v1/calls/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callId,
+          rating: reviewRating,
+          notes: reviewNotes,
+          isBookmarked: reviewBookmark,
+        }),
+      });
+      if (res.ok) {
+        setCallsList((prev) =>
+          prev.map((c) =>
+            (c._id === callId || c.idempotencyKey === callId)
+              ? { ...c, rating: reviewRating, notes: reviewNotes, isBookmarked: reviewBookmark }
+              : c
+          )
+        );
+        setReviewingCall(null);
+      }
+    } catch (e) {
+      console.error('Error saving review:', e);
+    } finally {
+      setSavingReview(false);
+    }
+  };
 
   const handleRepCategoryChange = (cat: string) => {
     setRepCategory(cat);
@@ -210,8 +282,18 @@ function SalestrailCallsInner() {
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setTeamsList(parsed);
+          if (Array.isArray(parsed)) {
+            // Filter out legacy dummy mock teams
+            const cleaned = parsed.filter(
+              (t: any) =>
+                t &&
+                t.name &&
+                t.name !== 'Global Sales' &&
+                t.name !== 'NCLEX Counselors' &&
+                t.name !== 'DHA Counselors' &&
+                t.name !== 'Sales Team'
+            );
+            setTeamsList(cleaned);
           }
         } catch (e) {
           console.error('Failed to parse teams:', e);
@@ -220,11 +302,7 @@ function SalestrailCallsInner() {
     }
   }, []);
 
-  const activeTeams = teamsList.length > 0 ? teamsList : [
-    { id: 't-1', name: 'Global Sales', admin: 'Sachin Negi', admins: ['Sachin Negi', 'sachinnegi@academically.com'], members: ['Shrishti', 'Dev', 'Rajdeep', 'Sachin Negi', 'Nasreen', 'Vasantha', 'Manas Vikas'] },
-    { id: 't-2', name: 'NCLEX Counselors', admin: 'Rajdeep', admins: ['Rajdeep', 'rajdeep@academically.com'], members: ['Ananya Sharma', 'Rahul Kumar', 'Rajdeep'] },
-    { id: 't-3', name: 'DHA Counselors', admin: 'Dev', admins: ['Dev', 'dev@academically.com'], members: ['Vasantha', 'Nasreen', 'Dev'] }
-  ];
+  const activeTeams = teamsList;
 
   const myManagedTeams = useMemo(() => {
     if (isAdmin || isManager) return activeTeams;
@@ -313,13 +391,25 @@ function SalestrailCallsInner() {
 
   const displayedTeams = useMemo(() => {
     if (isTeamLead && myManagedTeams.length > 0) {
-      return myManagedTeams.map((t) => t.name);
+      return myManagedTeams.map((t) => t.name).filter(Boolean);
     }
     if (isCounselor) {
-      return ['My Team'];
+      return [];
     }
-    return defaultTeams;
-  }, [isTeamLead, isCounselor, myManagedTeams, defaultTeams]);
+
+    const userCreatedTeams = teamsList.map((t) => t.name).filter(Boolean);
+    const callTeams = callsList.map((c) => c.team || c.teamName || c.department).filter(Boolean);
+    const counselorTeams = counselorsList.map((u) => u.team || u.teamName || u.department).filter(Boolean);
+    const uniqueRealTeams = Array.from(new Set([...userCreatedTeams, ...callTeams, ...counselorTeams]));
+
+    return uniqueRealTeams.filter(
+      (name) =>
+        name !== 'Global Sales' &&
+        name !== 'NCLEX Counselors' &&
+        name !== 'DHA Counselors' &&
+        name !== 'Sales Team'
+    );
+  }, [isTeamLead, isCounselor, myManagedTeams, teamsList, callsList, counselorsList]);
 
   const displayedCounselors = useMemo(() => {
     if (isTeamLead) {
@@ -425,8 +515,64 @@ function SalestrailCallsInner() {
       }
     }
 
+    // 4. Quick Anomaly / Channel Filter
+    if (anomalyFilter === 'short_calls') {
+      const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+      const dur = isAns ? Number(call.durationSeconds || 0) : 0;
+      if (!isAns || dur <= 0 || dur >= 15) return false;
+    } else if (anomalyFilter === 'recordings') {
+      const hasRec = (call.audioUrl || call.s3Key) && call.recordingStatus !== 'NONE';
+      if (!hasRec) return false;
+    } else if (anomalyFilter === 'long_calls') {
+      const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+      const dur = isAns ? Number(call.durationSeconds || 0) : 0;
+      if (!isAns || dur < 300) return false;
+    } else if (anomalyFilter === 'whatsapp') {
+      const isWA = (call.channel || '').toUpperCase() === 'WHATSAPP' || (call.disposition || '').toLowerCase().includes('whatsapp') || (call.idempotencyKey || '').startsWith('WA_');
+      if (!isWA) return false;
+    } else if (anomalyFilter === 'sim') {
+      const isWA = (call.channel || '').toUpperCase() === 'WHATSAPP' || (call.disposition || '').toLowerCase().includes('whatsapp') || (call.idempotencyKey || '').startsWith('WA_');
+      if (isWA) return false;
+    } else if (anomalyFilter === 'bookmarked') {
+      if (!call.isBookmarked && !call.rating) return false;
+    }
+
     return true;
   });
+
+  const callStats = useMemo(() => {
+    let totalDurSec = 0;
+    let answeredCount = 0;
+    let shortCount = 0;
+    let withRecCount = 0;
+    let waCount = 0;
+    let simCount = 0;
+
+    callsList.forEach((c) => {
+      const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+      const dur = isAns ? Number(c.durationSeconds || 0) : 0;
+      if (isAns) answeredCount++;
+      totalDurSec += dur;
+      if (isAns && dur > 0 && dur < 15) shortCount++;
+      if ((c.audioUrl || c.s3Key) && c.recordingStatus !== 'NONE') withRecCount++;
+      const isWA = (c.channel || '').toUpperCase() === 'WHATSAPP' || (c.disposition || '').toLowerCase().includes('whatsapp') || (c.idempotencyKey || '').startsWith('WA_');
+      if (isWA) waCount++; else simCount++;
+    });
+
+    const hours = Math.floor(totalDurSec / 3600);
+    const mins = Math.floor((totalDurSec % 3600) / 60);
+
+    return {
+      totalCount: callsList.length,
+      totalDurSec,
+      totalTalkTimeStr: hours > 0 ? `${hours}h ${mins}m` : `${mins}m ${totalDurSec % 60}s`,
+      answeredCount,
+      shortCount,
+      withRecCount,
+      waCount,
+      simCount,
+    };
+  }, [callsList]);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -435,7 +581,7 @@ function SalestrailCallsInner() {
   // Reset to Page 1 when any filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, dateRange, customStartDate, customEndDate, repCategory, subFilter, isRecordingsOnly]);
+  }, [searchQuery, dateRange, customStartDate, customEndDate, repCategory, subFilter, isRecordingsOnly, anomalyFilter]);
 
   type SortField = 'user' | 'phone' | 'name' | 'type' | 'startTime' | 'direction' | 'status' | 'duration' | 'audio';
   type SortOrder = 'asc' | 'desc';
@@ -738,6 +884,94 @@ function SalestrailCallsInner() {
           </div>
         </div>
 
+        {/* Quick Anomaly & Performance Filter Tabs */}
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+            <button
+              onClick={() => setAnomalyFilter('all')}
+              className={`px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'all'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+            >
+              All Calls ({callStats.totalCount})
+            </button>
+
+            <button
+              onClick={() => setAnomalyFilter('short_calls')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'short_calls'
+                ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                }`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>Short Calls &lt;15s ({callStats.shortCount})</span>
+            </button>
+
+            <button
+              onClick={() => setAnomalyFilter('recordings')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'recordings'
+                ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                }`}
+            >
+              <Mic className="w-3.5 h-3.5" />
+              <span>SIM Recordings ({callStats.withRecCount})</span>
+            </button>
+
+            <button
+              onClick={() => setAnomalyFilter('sim')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'sim'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
+                }`}
+            >
+              <PhoneCall className="w-3.5 h-3.5" />
+              <span>SIM Only ({callStats.simCount})</span>
+            </button>
+
+            <button
+              onClick={() => setAnomalyFilter('whatsapp')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'whatsapp'
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>WhatsApp Logs ({callStats.waCount})</span>
+            </button>
+
+            <button
+              onClick={() => setAnomalyFilter('long_calls')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'long_calls'
+                ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+                }`}
+            >
+              <Flame className="w-3.5 h-3.5" />
+              <span>Long Calls &gt;5m</span>
+            </button>
+
+            <button
+              onClick={() => setAnomalyFilter('bookmarked')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'bookmarked'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                : 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
+                }`}
+            >
+              <Star className="w-3.5 h-3.5" />
+              <span>Reviewed / Exemplary</span>
+            </button>
+          </div>
+
+          <div className="flex items-center space-x-3 text-xs font-semibold text-slate-600 px-2">
+            <span className="flex items-center space-x-1.5 bg-slate-50 px-3 py-1 rounded-xl border border-slate-200">
+              <Clock className="w-3.5 h-3.5 text-slate-600" />
+              <span>Total Talk Time: <strong className="text-slate-900">{callStats.totalTalkTimeStr}</strong></span>
+            </span>
+          </div>
+        </div>
+
         {/* Calls Table (Matching Salestrail Order) */}
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between">
           <div className="overflow-x-auto">
@@ -752,6 +986,7 @@ function SalestrailCallsInner() {
                   {renderSortHeader('direction', 'Direction')}
                   {renderSortHeader('status', 'Status')}
                   {renderSortHeader('duration', 'Duration')}
+                  <th className="p-4 text-center font-bold">Quality / Review</th>
                   {renderSortHeader('audio', 'Audio Recording', 'pr-6')}
                 </tr>
               </thead>
@@ -834,8 +1069,42 @@ function SalestrailCallsInner() {
                         </td>
                         {/* Duration */}
                         <td className="p-4 text-center font-semibold text-slate-900">
-                          {durationStr}
+                          {isAnswered && effectiveDuration > 0 && effectiveDuration < 15 ? (
+                            <div className="flex items-center justify-center space-x-1.5">
+                              <span className="text-amber-800 font-bold">{durationStr}</span>
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs"
+                                title="Suspicious short call (< 15s) - click audio to audit pitch"
+                              >
+                                ⚠️ Short
+                              </span>
+                            </div>
+                          ) : (
+                            <span>{durationStr}</span>
+                          )}
                         </td>
+                        {/* Quality / Review */}
+                        <td className="p-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => openReviewModal(call)}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors text-[11px] font-semibold"
+                            title={call.notes ? `Manager Note: ${call.notes}` : 'Click to rate pitch & add coaching notes'}
+                          >
+                            {call.isBookmarked && <span className="text-amber-500 font-bold">★</span>}
+                            {call.rating ? (
+                              <span className="text-amber-500 font-bold flex items-center tracking-tighter">
+                                {'★'.repeat(call.rating)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 font-medium">+ Review</span>
+                            )}
+                            {call.notes && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-600 ml-1" title="Has coaching note" />
+                            )}
+                          </button>
+                        </td>
+
                         {/* Audio Recording */}
                         <td className="p-4 pr-6 text-center">
                           <AudioCell call={call} idx={idx} canListen={canUserAccessCall(call).canListen} />
@@ -938,6 +1207,123 @@ function SalestrailCallsInner() {
             </div>
           </div>
         </div>
+
+        {/* Call Quality Coaching & Review Modal */}
+        {reviewingCall && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Call Quality Coaching & Review</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    {resolveCounselorName(reviewingCall)} • {reviewingCall.phoneNumber}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReviewingCall(null)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {/* Star Rating */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Sales Pitch Quality Rating</label>
+                  <div className="flex items-center space-x-1.5">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setReviewRating(star)}
+                        className={`text-2xl transition-transform hover:scale-110 cursor-pointer ${
+                          star <= reviewRating ? 'text-amber-400' : 'text-slate-200'
+                        }`}
+                      >
+                        ★
+                      </button>
+                    ))}
+                    <span className="text-xs font-semibold text-slate-500 ml-2">
+                      {reviewRating === 5
+                        ? '⭐⭐⭐⭐⭐ Excellent'
+                        : reviewRating === 4
+                        ? '⭐⭐⭐⭐ Good'
+                        : reviewRating === 3
+                        ? '⭐⭐⭐ Average'
+                        : reviewRating === 2
+                        ? '⭐⭐ Needs Coaching'
+                        : reviewRating === 1
+                        ? '⭐ Poor / Malworking'
+                        : 'Unrated'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Quick Tag Pills */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Quick Audit Tags</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Great Pitch', 'Follow-up Needed', 'Price Objection', 'Rushed / Short', 'Misconduct / Flagged'].map(
+                      (tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => setReviewNotes((prev) => (prev ? `${prev}, ${tag}` : tag))}
+                          className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium border border-slate-200 transition-colors cursor-pointer"
+                        >
+                          + {tag}
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                {/* Notes Textarea */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Manager Coaching Notes</label>
+                  <textarea
+                    rows={3}
+                    value={reviewNotes}
+                    onChange={(e) => setReviewNotes(e.target.value)}
+                    placeholder="Add coaching feedback, notes, or customer response details..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+
+                {/* Bookmark Toggle */}
+                <label className="flex items-center space-x-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={reviewBookmark}
+                    onChange={(e) => setReviewBookmark(e.target.checked)}
+                    className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500"
+                  />
+                  <span className="text-xs font-semibold text-slate-700">⭐ Bookmark as exemplary call for team library</span>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setReviewingCall(null)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveReview}
+                  disabled={savingReview}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-black transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  {savingReview ? 'Saving...' : 'Save Review'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

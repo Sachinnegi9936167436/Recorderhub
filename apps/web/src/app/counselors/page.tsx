@@ -38,34 +38,6 @@ function CounselorsAndTeamsInner() {
   const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Initial Teams default preset
-  const defaultInitialTeams = [
-    {
-      id: 't-1',
-      name: 'Global Sales',
-      admin: 'Sachin Negi',
-      installedRatio: '3 / 3',
-      members: ['Nasreen', 'Vasantha', 'Manas Vikas'],
-      admins: ['Sachin Negi']
-    },
-    {
-      id: 't-2',
-      name: 'NCLEX Counselors',
-      admin: 'Rajdeep',
-      installedRatio: '2 / 2',
-      members: ['Ananya Sharma', 'Rahul Kumar'],
-      admins: ['Rajdeep']
-    },
-    {
-      id: 't-3',
-      name: 'DHA Counselors',
-      admin: 'Dev',
-      installedRatio: '2 / 2',
-      members: ['Vasantha', 'Nasreen'],
-      admins: ['Dev']
-    }
-  ];
-
   // Teams State (Persisted in localStorage)
   const [teamsList, setTeamsList] = useState<any[]>([]);
 
@@ -162,14 +134,23 @@ function CounselorsAndTeamsInner() {
         try {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
-            setTeamsList(parsed);
+            const cleaned = parsed.filter(
+              (t: any) =>
+                t &&
+                t.name &&
+                t.name !== 'Global Sales' &&
+                t.name !== 'NCLEX Counselors' &&
+                t.name !== 'DHA Counselors' &&
+                t.name !== 'Sales Team'
+            );
+            setTeamsList(cleaned);
             return;
           }
         } catch (e) {
           console.error('Failed to parse saved teams:', e);
         }
       }
-      setTeamsList(defaultInitialTeams);
+      setTeamsList([]);
     }
   }, []);
 
