@@ -10,7 +10,19 @@ data class LoginRequest(val email: String, val pass: String)
 data class LoginResponse(val accessToken: String, val user: UserDto)
 data class UserDto(val id: String, val email: String, val firstName: String, val lastName: String, val role: String, val organizationId: String? = null, val createdAt: String? = null)
 
-data class BatchSyncRequest(val callEvents: List<CallEventDto>)
+data class BatchSyncRequest(
+    val callEvents: List<CallEventDto>,
+    val completedRecordingIds: List<String>? = null
+)
+
+data class UploadUrlInfo(
+    val idempotencyKey: String,
+    val recordingId: String,
+    val s3Key: String,
+    val presignedPutUrl: String,
+    val fallbackUploadUrl: String? = null
+)
+
 data class CallEventDto(
     val deviceId: String = "ANDROID_DEVICE",
     val idempotencyKey: String,
@@ -25,14 +37,18 @@ data class CallEventDto(
     val disposition: String,
     val channel: String = "CELLULAR",
     val agentName: String? = null,
-    val counselorEmail: String? = null
+    val counselorEmail: String? = null,
+    val hasRecording: Boolean = false,
+    val fileSizeBytes: Long? = null,
+    val mimeType: String? = null
 )
 
 data class BatchSyncResponse(
     val syncedCount: Int,
     val duplicateCount: Int,
     val syncedIds: List<String>,
-    val duplicates: List<String>
+    val duplicates: List<String>,
+    val uploadUrls: List<UploadUrlInfo>? = null
 )
 
 data class DeviceRegisterRequest(

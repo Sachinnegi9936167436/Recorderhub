@@ -45,7 +45,9 @@ class CallSyncWorker(
             return Result.success()
         }
 
-        val pendingCallSyncs = pendingEvents.filter { it.syncStatus == "PENDING" }
+        val pendingCallSyncs = pendingEvents.filter { 
+            it.syncStatus == "PENDING" || (it.recordingStatus == "PENDING_UPLOAD" && !it.recordingPath.isNullOrEmpty() && File(it.recordingPath).exists())
+        }
         val pendingAudioUploads = pendingEvents.filter { 
             !it.recordingPath.isNullOrEmpty() && File(it.recordingPath).exists() && it.recordingStatus != "SYNCED" 
         }
@@ -82,8 +84,12 @@ class CallSyncWorker(
             val token = prefs.getString("access_token", null)
             val authHeader = if (!token.isNullOrBlank()) "Bearer $token" else "Bearer mock_jwt_token"
 
-            // Validate counselor account status with server
-            if (!counselorEmail.isNullOrBlank()) {
+            // Validate counselor account status with server (cached for 12 hours to avoid excessive invocations)
+            val lastValidated = prefs.getLong("last_session_validation_ts", 0L)
+            val now = System.currentTimeMillis()
+            val shouldValidateSession = !counselorEmail.isNullOrBlank() && (now - lastValidated > 12 * 60 * 60 * 1000L)
+
+            if (shouldValidateSession && !counselorEmail.isNullOrBlank()) {
                 try {
                     val valResp = api.validateSession(
                         authHeader,
@@ -93,11 +99,15 @@ class CallSyncWorker(
                         AppLogManager.log("WARN", "CallSyncWorker", "Counselor account ($counselorEmail) deleted/deactivated by admin. Clearing local session.")
                         prefs.edit().putBoolean("is_logged_in", false).remove("access_token").apply()
                         return Result.failure()
+                    } else if (valResp.isSuccessful) {
+                        prefs.edit().putLong("last_session_validation_ts", now).apply()
                     }
                 } catch (e: Exception) {
                     AppLogManager.log("INFO", "CallSyncWorker", "Session validation check skipped (offline/network): ${e.message}")
                 }
             }
+
+            val uploadUrlsMap = mutableMapOf<String, com.academically.recordhub.data.remote.UploadUrlInfo>()
 
             if (pendingCallSyncs.isNotEmpty()) {
                 // Sync in chunks of 25 to prevent HTTP timeouts on mobile networks
@@ -109,6 +119,20 @@ class CallSyncWorker(
                         val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
                             timeZone = TimeZone.getTimeZone("UTC")
                         }
+                        val hasRec = !evt.recordingPath.isNullOrEmpty() && File(evt.recordingPath).exists() && evt.recordingStatus != "SYNCED"
+                        val recFile = if (hasRec) File(evt.recordingPath!!) else null
+                        val ext = recFile?.extension?.lowercase()
+                        val mime = when (ext) {
+                            "mp3" -> "audio/mpeg"
+                            "m4a" -> "audio/mp4"
+                            "amr" -> "audio/amr"
+                            "wav" -> "audio/wav"
+                            "3gp" -> "audio/3gpp"
+                            "aac" -> "audio/aac"
+                            "ogg" -> "audio/ogg"
+                            else -> "audio/mp4"
+                        }
+
                         CallEventDto(
                             deviceId = evt.deviceId,
                             idempotencyKey = evt.idempotencyKey,
@@ -123,7 +147,10 @@ class CallSyncWorker(
                             disposition = evt.disposition,
                             channel = if (evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")) "WHATSAPP" else "CELLULAR",
                             agentName = counselorName,
-                            counselorEmail = counselorEmail
+                            counselorEmail = counselorEmail,
+                            hasRecording = hasRec,
+                            fileSizeBytes = recFile?.length(),
+                            mimeType = mime
                         )
                     }
 
@@ -136,6 +163,9 @@ class CallSyncWorker(
                         if (syncedKeys.isNotEmpty()) {
                             db.callEventDao().markEventsSynced(syncedKeys)
                             totalSynced += syncedKeys.size
+                        }
+                        body.uploadUrls?.forEach { uploadInfo ->
+                            uploadUrlsMap[uploadInfo.idempotencyKey] = uploadInfo
                         }
                     } else if (response.code() == 401) {
                         AppLogManager.log("WARN", "CallSyncWorker", "401 Unauthorized in batch sync. Counselor deleted by admin. Logging out.")
@@ -154,10 +184,16 @@ class CallSyncWorker(
                 syncSuccessful = true
             }
 
-            // Upload Audio Recording files if available
+            // Upload Audio Recording files directly to AWS S3 (0 extra Vercel invocations)
             if (syncSuccessful && pendingAudioUploads.isNotEmpty()) {
                 for (evt in pendingAudioUploads) {
-                    uploadAudioFile(api, baseUrl, authHeader, db, evt)
+                    val directUploadInfo = uploadUrlsMap[evt.idempotencyKey]
+                    if (directUploadInfo != null) {
+                        uploadAudioDirect(directUploadInfo, evt, db)
+                    } else {
+                        // Fallback to initiate upload if direct presigned URL was not in response
+                        uploadAudioFile(api, baseUrl, authHeader, db, evt)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -169,6 +205,50 @@ class CallSyncWorker(
         } else {
             AppLogManager.log("ERROR", "CallSyncWorker", "Batch sync failed across all endpoints. Will retry...")
             Result.retry()
+        }
+    }
+
+    private fun uploadAudioDirect(
+        uploadInfo: com.academically.recordhub.data.remote.UploadUrlInfo,
+        evt: CallEventEntity,
+        db: AppDatabase
+    ): Boolean {
+        try {
+            val file = File(evt.recordingPath ?: return false)
+            if (!file.exists() || file.length() == 0L) return false
+
+            val ext = file.extension.lowercase()
+            val mimeType = when (ext) {
+                "mp3" -> "audio/mpeg"
+                "m4a" -> "audio/mp4"
+                "amr" -> "audio/amr"
+                "wav" -> "audio/wav"
+                "3gp" -> "audio/3gpp"
+                "aac" -> "audio/aac"
+                "ogg" -> "audio/ogg"
+                else -> "audio/mp4"
+            }
+
+            AppLogManager.log("SYNC", "AWS S3", "Starting 1-step direct AWS S3 PUT for ${file.name} (${file.length()} bytes)")
+            val reqBody = file.asRequestBody(mimeType.toMediaTypeOrNull())
+            val putRequest = Request.Builder()
+                .url(uploadInfo.presignedPutUrl)
+                .put(reqBody)
+                .header("Content-Type", mimeType)
+                .build()
+
+            val putResponse = httpClient.newCall(putRequest).execute()
+            if (putResponse.isSuccessful) {
+                db.callEventDao().updateRecordingStatus(evt.idempotencyKey, "SYNCED")
+                AppLogManager.log("SYNC", "AWS S3", "Direct 1-Step AWS S3 PUT upload succeeded for ${file.name} to ${uploadInfo.s3Key}!")
+                return true
+            } else {
+                AppLogManager.log("WARN", "AWS S3", "Direct 1-Step S3 PUT returned status ${putResponse.code}. Switching to fallback...")
+                return false
+            }
+        } catch (e: Exception) {
+            AppLogManager.log("ERROR", "AWS S3", "Direct 1-Step S3 PUT error for ${evt.idempotencyKey}: ${e.message}")
+            return false
         }
     }
 

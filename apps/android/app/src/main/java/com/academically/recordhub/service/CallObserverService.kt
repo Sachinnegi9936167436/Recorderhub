@@ -80,19 +80,12 @@ class CallObserverService : Service() {
     private fun triggerAutoScanAndSync() {
         serviceScope.launch {
             try {
-                // Initial scan after 1.5s
-                delay(1500)
+                // Initial scan after 4.5s to let OEM dialers finish encoding and writing the audio file
+                delay(4500)
                 var count = CallLogScanner.scanRecentCallLogs(applicationContext)
                 AppLogManager.log("SYNC", TAG, "Auto-scanned $count SIM call log(s) on initial pass.")
 
-                // Secondary scan after 3.5s to catch delayed native audio file encoding
-                delay(3500)
-                val retryCount = CallLogScanner.scanRecentCallLogs(applicationContext)
-                if (retryCount > 0) {
-                    count += retryCount
-                    AppLogManager.log("SYNC", TAG, "Linked $retryCount additional audio recording(s) on secondary scan pass.")
-                }
-
+                // Enqueue immediate CallSyncWorker
                 val syncRequest = androidx.work.OneTimeWorkRequestBuilder<CallSyncWorker>().build()
                 androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
                     "CallSyncWorkerOneTime",
@@ -100,6 +93,19 @@ class CallObserverService : Service() {
                     syncRequest
                 )
                 AppLogManager.log("SYNC", TAG, "Enqueued immediate CallSyncWorker for automatic server upload.")
+
+                // Secondary safety scan after 8s for slow OEM dialers (e.g. Vivo/Samsung/Xiaomi)
+                delay(8000)
+                val retryCount = CallLogScanner.scanRecentCallLogs(applicationContext)
+                if (retryCount > 0) {
+                    AppLogManager.log("SYNC", TAG, "Linked $retryCount additional audio recording(s) on secondary scan pass. Re-syncing...")
+                    val secondarySync = androidx.work.OneTimeWorkRequestBuilder<CallSyncWorker>().build()
+                    androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                        "CallSyncWorkerOneTime",
+                        androidx.work.ExistingWorkPolicy.REPLACE,
+                        secondarySync
+                    )
+                }
             } catch (e: Exception) {
                 AppLogManager.log("ERROR", TAG, "Error auto-syncing SIM calls: ${e.message}")
             }

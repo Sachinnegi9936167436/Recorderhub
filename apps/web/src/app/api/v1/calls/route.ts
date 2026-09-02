@@ -27,6 +27,7 @@ export async function GET() {
       res.headers.set('Access-Control-Allow-Origin', '*');
       res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.headers.set('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=30');
       res.headers.set('X-Cache', 'HIT');
       return res;
     }
@@ -282,6 +283,7 @@ export async function GET() {
     res.headers.set('Access-Control-Allow-Origin', '*');
     res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.headers.set('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=30');
     res.headers.set('X-Cache', 'MISS');
     return res;
   } catch (err: any) {
