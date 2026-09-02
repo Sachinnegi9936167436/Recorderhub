@@ -32,7 +32,7 @@ export class AuthController {
   @Put('counselors/:id')
   async updateCounselor(
     @Param('id') id: string,
-    @Body() body: { firstName?: string; lastName?: string; role?: string; email?: string },
+    @Body() body: { firstName?: string; lastName?: string; role?: string; email?: string; pass?: string; password?: string },
   ) {
     return this.authService.updateCounselor(id, body);
   }

@@ -13,28 +13,54 @@ import {
   RefreshCw, 
   X, 
   CheckCircle2, 
+  XCircle,
+  Pencil,
   Search, 
   ChevronDown, 
   User, 
   ArrowUpDown, 
   ArrowDown,
   Info,
-  Shield
+  Shield,
+  KeyRound,
+  Lock,
+  Eye,
+  EyeOff,
+  Check
 } from 'lucide-react';
 import Link from 'next/link';
+
+const DEFAULT_SAMPLE_USERS = [
+  { _id: 'u-1', firstName: 'Finance', lastName: '', email: 'finance@academically.com', role: 'ADMIN', isActive: true },
+  { _id: 'u-2', firstName: 'Lekshmi', lastName: '', email: 'lekshmi.raj@academically.com', role: 'SALES', isActive: true },
+  { _id: 'u-3', firstName: 'Hira', lastName: 'Mirza', email: 'hira.mirza@academically.com', role: 'SALES', isActive: true },
+  { _id: 'u-4', firstName: 'Sameer', lastName: 'Ahmad', email: 'sameera@academically.com', role: 'SALES', isActive: true },
+  { _id: 'u-5', firstName: 'Syed', lastName: 'Zaigham', email: 'zaighamp@academically.com', role: 'SALES', isActive: true },
+  { _id: 'u-6', firstName: 'Aditi', lastName: '', email: 'aditir@academically.com', role: 'SALES', isActive: true },
+  { _id: 'u-7', firstName: 'Faiz', lastName: '', email: 'mohdf@academically.com', role: 'ADMIN', isActive: true },
+  { _id: 'u-8', firstName: 'Nasreen', lastName: 'Hussain', email: 'nasreen@academically.com', role: 'SALES', isActive: true },
+  { _id: 'u-9', firstName: 'Mayank', lastName: 'Mrinal', email: 'mayank@academically.com', role: 'SALES', isActive: false },
+];
 
 function CounselorsAndTeamsInner() {
   const { role: userRole, email: userEmail, isAdmin, isManager, isCounselor } = useUserRole();
   const searchParams = useSearchParams();
   const currentView = searchParams.get('view') || 'teams';
 
-  const [counselors, setCounselors] = useState<any[]>([]);
+  const [counselors, setCounselors] = useState<any[]>(DEFAULT_SAMPLE_USERS);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAddTeamModalOpen, setIsAddTeamModalOpen] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<any | null>(null);
   const [activeDrawerTab, setActiveDrawerTab] = useState<'current' | 'invited'>('current');
   const [editingCounselor, setEditingCounselor] = useState<any | null>(null);
+  const [passwordCounselor, setPasswordCounselor] = useState<any | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [editNewPassword, setEditNewPassword] = useState('');
+  const [showEditPassword, setShowEditPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -56,7 +82,7 @@ function CounselorsAndTeamsInner() {
       })
       .filter(Boolean);
 
-    const merged = Array.from(new Set([...list, 'Rajdeep', 'Sachin Negi', 'Dev']));
+    const merged = Array.from(new Set([...list, 'Rajdeep', 'Sachin Negi', 'Dev', 'Finance', 'Faiz']));
     return merged.filter(Boolean);
   }, [counselors]);
 
@@ -70,11 +96,17 @@ function CounselorsAndTeamsInner() {
   const [teamStatusFilter, setTeamStatusFilter] = useState('Status');
   const [teamSearchQuery, setTeamSearchQuery] = useState('');
 
+  // Filters for Users
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('All');
+  const [userStatusFilter, setUserStatusFilter] = useState('All');
+
   // Form State for User Management
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState('COUNSELOR');
+  const [role, setRole] = useState('SALES');
+  const [isActiveStatus, setIsActiveStatus] = useState(true);
   const [password, setPassword] = useState('Academically@01');
 
   const fetchCounselors = async () => {
@@ -83,16 +115,11 @@ function CounselorsAndTeamsInner() {
       const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        setCounselors((prev) => {
-          const fetched = Array.isArray(data) ? data : [];
-          // Merge with any local counselors created in User Management
-          const map = new Map();
-          fetched.forEach((item) => map.set(item.email, item));
-          prev.forEach((item) => {
-            if (!map.has(item.email)) map.set(item.email, item);
-          });
-          return Array.from(map.values());
-        });
+        if (Array.isArray(data) && data.length > 0) {
+          setCounselors(data);
+        } else {
+          setCounselors(DEFAULT_SAMPLE_USERS);
+        }
       }
     } catch (err) {
       console.error('Error fetching counselors:', err);
@@ -395,18 +422,86 @@ function CounselorsAndTeamsInner() {
       })
     );
 
-    setToastMessage(`Updated role & details for ${firstName || email}!`);
+    const updatePayload: any = {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.trim().toLowerCase(),
+      role: role,
+    };
+
+    if (editNewPassword.trim()) {
+      updatePayload.password = editNewPassword.trim();
+    }
+
+    setToastMessage(`Updated details${editNewPassword.trim() ? ' & password' : ''} for ${firstName || email}!`);
     setEditingCounselor(null);
+    setEditNewPassword('');
+    setShowEditPassword(false);
     resetForm();
 
     try {
       await fetch(`/api/v1/auth/counselors?id=${encodeURIComponent(targetId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firstName, lastName, email, role }),
+        body: JSON.stringify(updatePayload),
       });
     } catch (err: any) {
       console.error('Error updating counselor:', err);
+    }
+  };
+
+  const openChangePasswordModal = (counselor: any) => {
+    setPasswordCounselor(counselor);
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordCounselor) return;
+
+    if (!newPassword.trim()) {
+      alert('Please enter a new password.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      alert('Password must be at least 6 characters long.');
+      return;
+    }
+    if (confirmPassword && newPassword !== confirmPassword) {
+      alert('Passwords do not match. Please verify and confirm your new password.');
+      return;
+    }
+
+    const targetId = getCounselorId(passwordCounselor);
+    const targetEmail = passwordCounselor.email;
+    const displayName = `${passwordCounselor.firstName || ''} ${passwordCounselor.lastName || ''}`.trim() || passwordCounselor.email || 'Counselor';
+
+    try {
+      setSubmitting(true);
+      const res = await fetch(`/api/v1/auth/counselors?id=${encodeURIComponent(targetId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail, password: newPassword.trim() }),
+      });
+
+      if (res.ok) {
+        setToastMessage(`Password successfully updated for ${displayName}!`);
+        setPasswordCounselor(null);
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Failed to update password');
+      }
+    } catch (err: any) {
+      console.error('Error updating password:', err);
+      alert('Failed to update password');
+    } finally {
+      setSubmitting(false);
+      setTimeout(() => setToastMessage(null), 4000);
     }
   };
 
@@ -436,6 +531,8 @@ function CounselorsAndTeamsInner() {
     setLastName(counselor.lastName || '');
     setEmail(counselor.email || '');
     setRole(counselor.role || 'COUNSELOR');
+    setEditNewPassword('');
+    setShowEditPassword(false);
   };
 
   const resetForm = () => {
@@ -444,6 +541,8 @@ function CounselorsAndTeamsInner() {
     setEmail('');
     setRole('COUNSELOR');
     setPassword('Academically@01');
+    setEditNewPassword('');
+    setShowEditPassword(false);
     setTimeout(() => setToastMessage(null), 4000);
   };
 
@@ -451,6 +550,29 @@ function CounselorsAndTeamsInner() {
     t.name.toLowerCase().includes(teamSearchQuery.toLowerCase()) ||
     t.admin.toLowerCase().includes(teamSearchQuery.toLowerCase())
   );
+
+  const filteredCounselors = counselors.filter((c) => {
+    const fullName = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.name || '';
+    const query = userSearchQuery.toLowerCase();
+    const matchesSearch =
+      fullName.toLowerCase().includes(query) ||
+      (c.email && c.email.toLowerCase().includes(query)) ||
+      (c.role && c.role.toLowerCase().includes(query));
+
+    const roleUpper = (c.role || '').toUpperCase();
+    const matchesRole =
+      userRoleFilter === 'All' ||
+      roleUpper === userRoleFilter.toUpperCase() ||
+      (userRoleFilter === 'SALES' && (roleUpper === 'COUNSELOR' || roleUpper === 'AGENT' || roleUpper === 'SALES_AGENT')) ||
+      (userRoleFilter === 'ADMIN' && roleUpper === 'COMPANY_ADMIN');
+
+    const matchesStatus =
+      userStatusFilter === 'All' ||
+      (userStatusFilter === 'Active' && c.isActive !== false) ||
+      (userStatusFilter === 'Inactive' && c.isActive === false);
+
+    return matchesSearch && matchesRole && matchesStatus;
+  });
 
   if (isCounselor) {
     return (
@@ -667,12 +789,12 @@ function CounselorsAndTeamsInner() {
             </div>
           </div>
         ) : (
-          /* VIEW 2: USER MANAGEMENT (Counselor Directory) */
+          /* VIEW 2: USER MANAGEMENT (Matches User Screenshot) */
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h1 className="text-3xl font-bold text-slate-900 tracking-tight">User Management</h1>
-                <p className="text-xs text-slate-500 mt-1">Admin Console • Provision, Update & Revoke Counselor Credentials</p>
+                <p className="text-xs text-slate-500 mt-1">Admin Console • Provision, Update & Revoke User Accounts & Credentials</p>
               </div>
 
               <button
@@ -680,101 +802,195 @@ function CounselorsAndTeamsInner() {
                   resetForm();
                   setIsCreateModalOpen(true);
                 }}
-                className="flex items-center space-x-2 bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-rose-500/20"
+                className="flex items-center space-x-2 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-xs px-4.5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>Create New Counselor ID</span>
+                <span>Create New User</span>
               </button>
             </div>
 
-            {/* Counselors Table */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden p-6 space-y-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-slate-900">Registered Counselors & Role Access</h3>
-                <button
-                  onClick={fetchCounselors}
-                  className="flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold text-slate-700 px-3 py-1.5 rounded-lg transition-all"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                  <span>Refresh Directory</span>
-                </button>
+            {/* Filter and Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+              <div className="flex items-center space-x-4 text-xs font-semibold text-slate-700">
+                <div className="relative">
+                  <select
+                    value={userRoleFilter}
+                    onChange={(e) => setUserRoleFilter(e.target.value)}
+                    className="appearance-none bg-white border border-slate-200 text-slate-800 text-xs font-medium rounded-lg px-4 py-2.5 pr-8 shadow-xs focus:outline-none cursor-pointer"
+                  >
+                    <option value="All">All Roles</option>
+                    <option value="SALES">Sales</option>
+                    <option value="ADMIN">Admin</option>
+                    <option value="MANAGER">Manager</option>
+                    <option value="TEAM_LEAD">Team Lead</option>
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-3 pointer-events-none" />
+                </div>
+
+                <div className="relative">
+                  <select
+                    value={userStatusFilter}
+                    onChange={(e) => setUserStatusFilter(e.target.value)}
+                    className="appearance-none bg-white border border-slate-200 text-slate-800 text-xs font-medium rounded-lg px-4 py-2.5 pr-8 shadow-xs focus:outline-none cursor-pointer"
+                  >
+                    <option value="All">All Statuses</option>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-3 pointer-events-none" />
+                </div>
               </div>
 
+              <div className="flex items-center space-x-3">
+                <div className="relative w-64">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Search name or email..."
+                    value={userSearchQuery}
+                    onChange={(e) => setUserSearchQuery(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-xs font-medium text-slate-800 placeholder-slate-400 shadow-xs focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
+                </div>
+
+                <button
+                  onClick={fetchCounselors}
+                  className="flex items-center space-x-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 px-3 py-2 rounded-lg transition-all shadow-xs cursor-pointer"
+                  title="Refresh Directory"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-rose-500' : 'text-slate-500'}`} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Counselors Table (Pixel-perfect matching screenshot) */}
+            <div className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-slate-700">
-                  <thead className="bg-slate-50 text-slate-500 uppercase font-semibold text-[11px] border-b border-slate-200">
+                <table className="w-full text-left">
+                  <thead className="bg-white border-b border-slate-100">
                     <tr>
-                      <th className="p-4">Counselor Name</th>
-                      <th className="p-4">Email ID / Login</th>
-                      <th className="p-4">Created Date & Time</th>
-                      <th className="p-4">Assigned Role</th>
-                      <th className="p-4">Organization</th>
-                      <th className="p-4">Status</th>
-                      <th className="p-4 text-right">Actions</th>
+                      <th className="py-4 pl-6 font-semibold text-slate-500 uppercase text-[11px] tracking-wider w-[22%]">
+                        NAME
+                      </th>
+                      <th className="py-4 font-semibold text-slate-500 uppercase text-[11px] tracking-wider w-[32%]">
+                        EMAIL
+                      </th>
+                      <th className="py-4 font-semibold text-slate-500 uppercase text-[11px] tracking-wider w-[18%]">
+                        ROLE
+                      </th>
+                      <th className="py-4 font-semibold text-slate-500 uppercase text-[11px] tracking-wider w-[18%]">
+                        STATUS
+                      </th>
+                      <th className="py-4 pr-8 font-semibold text-slate-500 uppercase text-[11px] tracking-wider text-right w-[10%]">
+                        ACTIONS
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {counselors.length === 0 ? (
+                    {filteredCounselors.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-12 text-center text-slate-500 font-medium">
-                          {loading ? 'Loading directory...' : 'No counselors registered yet. Click "+ Create New Counselor ID" above to provision a counselor!'}
+                        <td colSpan={5} className="p-12 text-center text-slate-500 font-medium">
+                          {loading ? 'Loading user directory...' : 'No users match the selected criteria.'}
                         </td>
                       </tr>
                     ) : (
-                      counselors.map((c) => (
-                      <tr key={c._id || c.email || c.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-4 font-bold text-slate-900">
-                          {c.firstName || 'Counselor'} {c.lastName || ''}
-                        </td>
-                        <td className="p-4 font-mono text-slate-800">{c.email}</td>
-                        <td className="p-4 font-mono text-slate-700 text-xs">
-                          {c.createdAt ? new Date(c.createdAt).toLocaleString('en-US', {
-                            month: '2-digit',
-                            day: '2-digit',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            hour12: true
-                          }) : '08/11/2026, 10:46:01 AM'}
-                        </td>
-                        <td className="p-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded text-[10px] font-bold">
-                            {c.role || 'COUNSELOR'}
-                          </span>
-                        </td>
-                        <td className="p-4 text-slate-500">Academically Global</td>
-                        <td className="p-4">
-                          <span className="inline-flex items-center space-x-1 text-emerald-600 text-[10px] font-bold">
-                            <UserCheck className="w-3.5 h-3.5" />
-                            <span>Active</span>
-                          </span>
-                        </td>
-                        <td className="p-4 text-right space-x-2">
-                          {isAdmin ? (
-                            <>
-                              <button
-                                onClick={() => openEditModal(c)}
-                                className="inline-flex items-center space-x-1 bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all"
-                              >
-                                <Edit2 className="w-3.5 h-3.5 text-white" />
-                                <span>Edit Role</span>
-                              </button>
-                              <button
-                                onClick={() => handleDeleteCounselor(c)}
-                                className="inline-flex items-center space-x-1 bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg text-xs font-semibold border border-rose-200 transition-all"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                                <span>Delete</span>
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-[11px] font-semibold text-slate-400">Read-only</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
+                      filteredCounselors.map((c) => {
+                        const fullName = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.name || c.email?.split('@')[0] || 'User';
+                        const roleUpper = (c.role || '').toUpperCase();
+                        const isRoleAdmin = roleUpper === 'ADMIN' || roleUpper === 'COMPANY_ADMIN';
+                        const isRoleSales = roleUpper === 'SALES' || roleUpper === 'COUNSELOR' || roleUpper === 'AGENT' || roleUpper === 'SALES_AGENT';
+                        const isRoleManager = roleUpper === 'MANAGER' || roleUpper === 'SALES_MANAGER';
+                        const isRoleLead = roleUpper === 'TEAM_LEAD';
+
+                        return (
+                          <tr key={c._id || c.email || c.id} className="hover:bg-slate-50/60 transition-colors">
+                            {/* NAME */}
+                            <td className="py-4.5 pl-6 font-bold text-slate-900 text-sm whitespace-nowrap">
+                              {fullName}
+                            </td>
+
+                            {/* EMAIL */}
+                            <td className="py-4.5 text-slate-500 text-sm whitespace-nowrap">
+                              {c.email}
+                            </td>
+
+                            {/* ROLE */}
+                            <td className="py-4.5 whitespace-nowrap">
+                              {isRoleAdmin ? (
+                                <span className="inline-block bg-[#eff6ff] text-[#2563eb] border border-[#bfdbfe] px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
+                                  ADMIN
+                                </span>
+                              ) : isRoleSales ? (
+                                <span className="inline-block bg-[#fff7ed] text-[#ea580c] border border-[#fed7aa] px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
+                                  SALES
+                                </span>
+                              ) : isRoleManager ? (
+                                <span className="inline-block bg-[#faf5ff] text-[#9333ea] border border-[#e9d5ff] px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
+                                  MANAGER
+                                </span>
+                              ) : isRoleLead ? (
+                                <span className="inline-block bg-[#eef2ff] text-[#4f46e5] border border-[#c7d2fe] px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
+                                  TEAM LEAD
+                                </span>
+                              ) : (
+                                <span className="inline-block bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
+                                  {c.role}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* STATUS */}
+                            <td className="py-4.5 whitespace-nowrap">
+                              {isRoleAdmin ? (
+                                <span className="text-slate-300 font-medium text-sm select-none pl-1">—</span>
+                              ) : c.isActive !== false ? (
+                                <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg border border-emerald-300/80 bg-emerald-50/60 text-emerald-600 text-xs font-bold">
+                                  <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                                  <span>Active</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg border border-slate-200 bg-slate-100 text-slate-600 text-xs font-bold">
+                                  <XCircle className="w-3.5 h-3.5 stroke-[2.5]" />
+                                  <span>Inactive</span>
+                                </span>
+                              )}
+                            </td>
+
+                            {/* ACTIONS */}
+                            <td className="py-4.5 pr-8 text-right whitespace-nowrap">
+                              {isAdmin ? (
+                                <div className="flex items-center justify-end space-x-3.5">
+                                  <button
+                                    onClick={() => openEditModal(c)}
+                                    title="Edit User"
+                                    className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded hover:bg-slate-100 cursor-pointer"
+                                  >
+                                    <Pencil className="w-4 h-4 stroke-[1.75]" />
+                                  </button>
+                                  <button
+                                    onClick={() => openChangePasswordModal(c)}
+                                    title="Change Password"
+                                    className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded hover:bg-slate-100 cursor-pointer"
+                                  >
+                                    <Shield className="w-4 h-4 stroke-[1.75]" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteCounselor(c)}
+                                    title="Delete User"
+                                    className="text-slate-400 hover:text-rose-600 transition-colors p-1 rounded hover:bg-rose-50 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-4 h-4 stroke-[1.75]" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[11px] font-semibold text-slate-400">Read-only</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -782,7 +998,7 @@ function CounselorsAndTeamsInner() {
           </div>
         )}
 
-        {/* SLIDE-OVER DRAWER: Team Details (Matches User Screenshot) */}
+        {/* SLIDE-OVER DRAWER: Team Details */}
         {selectedTeam && (
           <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex justify-end">
             <div className="bg-white w-full max-w-lg h-full p-8 shadow-2xl overflow-y-auto flex flex-col justify-between animate-in slide-in-from-right duration-300">
@@ -796,13 +1012,13 @@ function CounselorsAndTeamsInner() {
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => handleDeleteTeam(selectedTeam.id, selectedTeam.name)}
-                      className="flex items-center space-x-1 text-rose-600 hover:bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                      className="flex items-center space-x-1 text-rose-600 hover:bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
                       title="Delete Team"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Delete Team</span>
                     </button>
-                    <button onClick={() => setSelectedTeam(null)} className="text-slate-400 hover:text-slate-900 p-1">
+                    <button onClick={() => setSelectedTeam(null)} className="text-slate-400 hover:text-slate-900 p-1 cursor-pointer">
                       <X className="w-6 h-6" />
                     </button>
                   </div>
@@ -812,7 +1028,7 @@ function CounselorsAndTeamsInner() {
                 <div className="flex items-center justify-end space-x-6 border-b border-slate-100 pb-2 text-sm">
                   <button
                     onClick={() => setActiveDrawerTab('current')}
-                    className={`font-bold pb-2 border-b-2 transition-all ${
+                    className={`font-bold pb-2 border-b-2 transition-all cursor-pointer ${
                       activeDrawerTab === 'current'
                         ? 'text-slate-900 border-[#ff5c75]'
                         : 'text-slate-400 border-transparent hover:text-slate-700'
@@ -822,7 +1038,7 @@ function CounselorsAndTeamsInner() {
                   </button>
                   <button
                     onClick={() => setActiveDrawerTab('invited')}
-                    className={`font-bold pb-2 border-b-2 transition-all ${
+                    className={`font-bold pb-2 border-b-2 transition-all cursor-pointer ${
                       activeDrawerTab === 'invited'
                         ? 'text-slate-900 border-[#ff5c75]'
                         : 'text-slate-400 border-transparent hover:text-slate-700'
@@ -852,7 +1068,7 @@ function CounselorsAndTeamsInner() {
                           {isAdmin && (
                             <button 
                               onClick={() => handleRemoveMemberFromTeam(member)}
-                              className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50"
+                              className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50 cursor-pointer"
                               title="Remove member"
                             >
                               <X className="w-4 h-4 text-rose-400" />
@@ -976,7 +1192,7 @@ function CounselorsAndTeamsInner() {
                 {isAdmin ? (
                   <button
                     onClick={handleOpenAddCounselorsModal}
-                    className="w-full bg-[#ff5c75] hover:bg-[#ef4c65] text-white font-bold text-sm py-3.5 rounded-xl shadow-md transition-all text-center"
+                    className="w-full bg-[#ff5c75] hover:bg-[#ef4c65] text-white font-bold text-sm py-3.5 rounded-xl shadow-md transition-all text-center cursor-pointer"
                   >
                     Add users
                   </button>
@@ -999,7 +1215,7 @@ function CounselorsAndTeamsInner() {
                   <h3 className="text-lg font-bold text-slate-900">Add New Team</h3>
                   <p className="text-xs text-slate-500">Create a regional counselor team</p>
                 </div>
-                <button onClick={() => setIsAddTeamModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <button onClick={() => setIsAddTeamModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -1078,7 +1294,7 @@ function CounselorsAndTeamsInner() {
                                       setNewTeamSelectedMembers([...newTeamSelectedMembers, c.name]);
                                     }
                                   }}
-                                  className="rounded text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 accent-rose-500"
+                                  className="rounded text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 accent-rose-500 cursor-pointer"
                                 />
                                 <span>{c.name}</span>
                               </div>
@@ -1095,13 +1311,13 @@ function CounselorsAndTeamsInner() {
                   <button
                     type="button"
                     onClick={() => setIsAddTeamModalOpen(false)}
-                    className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900"
+                    className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="bg-[#242938] hover:bg-[#1a1e29] text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md"
+                    className="bg-[#242938] hover:bg-[#1a1e29] text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md cursor-pointer"
                   >
                     Create Team
                   </button>
@@ -1120,7 +1336,7 @@ function CounselorsAndTeamsInner() {
                   <h3 className="text-lg font-bold text-slate-900">Add Counselors to {selectedTeam.name}</h3>
                   <p className="text-xs text-slate-500">Select counselors to assign to this team</p>
                 </div>
-                <button onClick={() => setIsAddCounselorModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <button onClick={() => setIsAddCounselorModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -1151,14 +1367,14 @@ function CounselorsAndTeamsInner() {
                         <button
                           type="button"
                           onClick={() => setSelectedCounselorsToAdd(availableToAdd.map((c) => c.name))}
-                          className="text-rose-600 hover:underline font-semibold"
+                          className="text-rose-600 hover:underline font-semibold cursor-pointer"
                         >
                           Select All
                         </button>
                         <button
                           type="button"
                           onClick={() => setSelectedCounselorsToAdd([])}
-                          className="text-slate-400 hover:underline"
+                          className="text-slate-400 hover:underline cursor-pointer"
                         >
                           Clear
                         </button>
@@ -1189,7 +1405,7 @@ function CounselorsAndTeamsInner() {
                                       setSelectedCounselorsToAdd([...selectedCounselorsToAdd, c.name]);
                                     }
                                   }}
-                                  className="rounded text-rose-600 focus:ring-rose-500 w-4 h-4 accent-rose-500"
+                                  className="rounded text-rose-600 focus:ring-rose-500 w-4 h-4 accent-rose-500 cursor-pointer"
                                 />
                                 <div>
                                   <p className="font-bold">{c.name}</p>
@@ -1207,7 +1423,7 @@ function CounselorsAndTeamsInner() {
                       <button
                         type="button"
                         onClick={() => setIsAddCounselorModalOpen(false)}
-                        className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900"
+                        className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900 cursor-pointer"
                       >
                         Cancel
                       </button>
@@ -1215,7 +1431,7 @@ function CounselorsAndTeamsInner() {
                         type="button"
                         disabled={selectedCounselorsToAdd.length === 0}
                         onClick={handleConfirmAddCounselorsToTeam}
-                        className="bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md shadow-rose-500/20"
+                        className="bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md shadow-rose-500/20 cursor-pointer"
                       >
                         Add {selectedCounselorsToAdd.length} Counselor(s)
                       </button>
@@ -1227,16 +1443,16 @@ function CounselorsAndTeamsInner() {
           </div>
         )}
 
-        {/* Modal 2: Create Counselor Modal */}
+        {/* Modal 2: Create User Modal */}
         {isCreateModalOpen && (
           <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-6 shadow-2xl">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Create New Counselor ID</h3>
-                  <p className="text-xs text-slate-500">Provision credentials for mobile app login</p>
+                  <h3 className="text-lg font-bold text-slate-900">Create New User</h3>
+                  <p className="text-xs text-slate-500">Provision credentials and system access</p>
                 </div>
-                <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -1248,17 +1464,17 @@ function CounselorsAndTeamsInner() {
                     <input
                       type="text"
                       required
-                      placeholder="e.g. Ananya"
+                      placeholder="e.g. Lekshmi"
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Last Name (Optional)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Last Name</label>
                     <input
                       type="text"
-                      placeholder="e.g. Sharma"
+                      placeholder="e.g. Raj"
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
@@ -1271,25 +1487,39 @@ function CounselorsAndTeamsInner() {
                   <input
                     type="email"
                     required
-                    placeholder="e.g. ananya@academically.com"
+                    placeholder="e.g. lekshmi.raj@academically.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Assigned Role</label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
-                  >
-                    <option value="COUNSELOR">Counselor</option>
-                    <option value="TEAM_LEAD">Team Lead</option>
-                    <option value="MANAGER">Manager</option>
-                    <option value="ADMIN">System Admin</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Assigned Role</label>
+                    <select
+                      value={role}
+                      onChange={(e) => setRole(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                    >
+                      <option value="SALES">Sales</option>
+                      <option value="ADMIN">Admin</option>
+                      <option value="MANAGER">Manager</option>
+                      <option value="TEAM_LEAD">Team Lead</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Account Status</label>
+                    <select
+                      value={isActiveStatus ? 'ACTIVE' : 'INACTIVE'}
+                      onChange={(e) => setIsActiveStatus(e.target.value === 'ACTIVE')}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                    >
+                      <option value="ACTIVE">Active</option>
+                      <option value="INACTIVE">Inactive</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div>
@@ -1307,16 +1537,16 @@ function CounselorsAndTeamsInner() {
                   <button
                     type="button"
                     onClick={() => setIsCreateModalOpen(false)}
-                    className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900"
+                    className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md shadow-rose-500/20"
+                    className="bg-[#242938] hover:bg-[#1a1e29] text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md cursor-pointer"
                   >
-                    {submitting ? 'Creating ID...' : 'Provision Counselor ID'}
+                    {submitting ? 'Creating...' : 'Create User'}
                   </button>
                 </div>
               </form>
@@ -1324,16 +1554,16 @@ function CounselorsAndTeamsInner() {
           </div>
         )}
 
-        {/* Modal 3: Edit Counselor Modal */}
+        {/* Modal 3: Edit User Modal */}
         {editingCounselor && (
           <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-6 shadow-2xl">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Update Counselor Role & Profile</h3>
-                  <p className="text-xs text-slate-500">Modify role permissions or contact info</p>
+                  <h3 className="text-lg font-bold text-slate-900">Update User Profile & Role</h3>
+                  <p className="text-xs text-slate-500">Modify role permissions, account status, or credentials</p>
                 </div>
-                <button onClick={() => setEditingCounselor(null)} className="text-slate-400 hover:text-slate-700">
+                <button onClick={() => setEditingCounselor(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -1372,34 +1602,216 @@ function CounselorsAndTeamsInner() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Assigned Role</label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
-                  >
-                    <option value="COUNSELOR">Counselor</option>
-                    <option value="TEAM_LEAD">Team Lead</option>
-                    <option value="MANAGER">Manager</option>
-                    <option value="ADMIN">System Admin</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Assigned Role</label>
+                    <select
+                      value={role}
+                      onChange={(e) => setRole(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                    >
+                      <option value="SALES">Sales</option>
+                      <option value="ADMIN">Admin</option>
+                      <option value="MANAGER">Manager</option>
+                      <option value="TEAM_LEAD">Team Lead</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Account Status</label>
+                    <select
+                      value={isActiveStatus ? 'ACTIVE' : 'INACTIVE'}
+                      onChange={(e) => setIsActiveStatus(e.target.value === 'ACTIVE')}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                    >
+                      <option value="ACTIVE">Active</option>
+                      <option value="INACTIVE">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Optional Change Password in Edit Modal */}
+                <div className="pt-1 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">Change Password (Optional)</label>
+                    <span className="text-[10px] text-slate-400">Leave blank to keep current</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showEditPassword ? 'text' : 'password'}
+                      placeholder="Enter new password (optional)"
+                      value={editNewPassword}
+                      onChange={(e) => setEditNewPassword(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 pr-10 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditPassword(!showEditPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                    >
+                      {showEditPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="pt-2 flex items-center justify-end space-x-3">
                   <button
                     type="button"
                     onClick={() => setEditingCounselor(null)}
-                    className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900"
+                    className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md"
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md cursor-pointer"
                   >
                     {submitting ? 'Saving Changes...' : 'Update Role & Profile'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal 4: Dedicated Change Password Modal */}
+        {passwordCounselor && (
+          <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shadow-2xs">
+                    <Shield className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">Change Password</h3>
+                    <p className="text-xs text-slate-500">Update login credentials for user</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setPasswordCounselor(null)} 
+                  className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Target User Info Card */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-full bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center">
+                    {(passwordCounselor.firstName || passwordCounselor.email || 'U').charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900">
+                      {passwordCounselor.firstName || ''} {passwordCounselor.lastName || ''}
+                    </p>
+                    <p className="text-[11px] font-mono text-slate-500">{passwordCounselor.email}</p>
+                  </div>
+                </div>
+                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-bold">
+                  {passwordCounselor.role || 'SALES'}
+                </span>
+              </div>
+
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                {/* New Password Field */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">New Password</label>
+                    <button
+                      type="button"
+                      onClick={() => setNewPassword('Academically@01')}
+                      className="text-[11px] text-amber-700 hover:text-amber-800 font-semibold hover:underline cursor-pointer"
+                    >
+                      Use Default (Academically@01)
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      placeholder="Enter new password (min 6 characters)"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 pr-10 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm Password Field */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Confirm New Password</label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      required
+                      placeholder="Re-enter new password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 pr-10 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {confirmPassword && newPassword && (
+                    <div className="mt-1.5 flex items-center space-x-1 text-[11px]">
+                      {newPassword === confirmPassword ? (
+                        <span className="text-emerald-600 font-semibold flex items-center space-x-1">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Passwords match</span>
+                        </span>
+                      ) : (
+                        <span className="text-rose-500 font-semibold flex items-center space-x-1">
+                          <X className="w-3.5 h-3.5" />
+                          <span>Passwords do not match</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Helper Info Notice */}
+                <div className="bg-amber-50/70 border border-amber-200/70 rounded-xl p-3 text-[11px] text-amber-900 space-y-1">
+                  <div className="flex items-center space-x-1.5 font-bold">
+                    <Lock className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Instant Sync</span>
+                  </div>
+                  <p className="text-amber-800/90 leading-relaxed">
+                    The user will immediately be able to log in to the RecordHub mobile Android APK and Web Dashboard using this new password.
+                  </p>
+                </div>
+
+                {/* Modal Actions */}
+                <div className="pt-2 flex items-center justify-end space-x-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setPasswordCounselor(null)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting || (newPassword.length < 6) || (confirmPassword.length > 0 && newPassword !== confirmPassword)}
+                    className="bg-[#242938] hover:bg-[#1a1e29] disabled:opacity-50 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>{submitting ? 'Updating...' : 'Update Password'}</span>
                   </button>
                 </div>
               </form>

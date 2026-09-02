@@ -68,8 +68,16 @@ export class AuthService {
     return await this.userModel.find().select('-passwordHash').exec();
   }
 
-  async updateCounselor(id: string, dto: { firstName?: string; lastName?: string; role?: string; email?: string }) {
-    return await this.userModel.findByIdAndUpdate(id, { $set: dto }, { new: true }).select('-passwordHash').exec();
+  async updateCounselor(id: string, dto: { firstName?: string; lastName?: string; role?: string; email?: string; pass?: string; password?: string }) {
+    const updateData: any = { ...dto };
+    const rawPass = dto.pass || dto.password;
+    if (rawPass && typeof rawPass === 'string' && rawPass.trim().length > 0) {
+      const salt = await bcrypt.genSalt(10);
+      updateData.passwordHash = await bcrypt.hash(rawPass.trim(), salt);
+      delete updateData.pass;
+      delete updateData.password;
+    }
+    return await this.userModel.findByIdAndUpdate(id, { $set: updateData }, { new: true }).select('-passwordHash').exec();
   }
 
   async deleteCounselor(id: string) {
