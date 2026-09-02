@@ -434,127 +434,113 @@ function SalestrailCallsInner() {
     return uniqueCounselors;
   }, [isTeamLead, isCounselor, uniqueCounselors, myTeamMemberIdentifiers, userEmail]);
 
-  // Filter calls by search and filters
-  const filteredCalls = callsList.filter((call) => {
-    const { canView } = canUserAccessCall(call);
-    if (!canView) return false;
+  // 1. Base Filter (Permissions, Message exclusion, Recordings query, Search Query, Date Range, Sales Rep / Team)
+  const baseFilteredCalls = useMemo(() => {
+    return callsList.filter((call) => {
+      const { canView } = canUserAccessCall(call);
+      if (!canView) return false;
 
-    // 0. Exclude non-call text/chat message entries
-    const combined = `${call.phoneNumber || ''} ${call.leadName || ''} ${call.disposition || ''}`.toLowerCase();
-    if (combined.includes('message') || combined.includes('messages') || combined.includes('unread')) {
-      return false;
-    }
-
-    // 0.5. Filter for recordings view if ?filter=recordings query param is active
-    if (isRecordingsOnly) {
-      const hasRecording = call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD';
-      if (!hasRecording || call.recordingStatus === 'NONE') {
+      // 0. Exclude non-call text/chat message entries
+      const combined = `${call.phoneNumber || ''} ${call.leadName || ''} ${call.disposition || ''}`.toLowerCase();
+      if (combined.includes('message') || combined.includes('messages') || combined.includes('unread')) {
         return false;
       }
-    }
 
-    // 1. Search Query Filter
-    const phone = call.phoneNumber || call.phoneNumberMasked || call.phone || '';
-    const name = call.leadName || call.name || '';
-    const user = resolveCounselorName(call);
-    const searchLower = searchQuery.toLowerCase();
-
-    const matchesSearch =
-      phone.toLowerCase().includes(searchLower) ||
-      name.toLowerCase().includes(searchLower) ||
-      user.toLowerCase().includes(searchLower);
-
-    if (!matchesSearch) return false;
-
-    // 2. Date Range Filter
-    if (dateRange !== 'All time') {
-      const callDate = call.startTime ? new Date(call.startTime) : new Date();
-      const now = new Date();
-      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-
-      if (dateRange === 'Today') {
-        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        if (callDate < startOfToday || callDate > endOfToday) return false;
-      } else if (dateRange === 'Yesterday') {
-        const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
-        const endOfYesterday = new Date(startOfToday.getTime() - 1);
-        if (callDate < startOfYesterday || callDate > endOfYesterday) return false;
-      } else if (dateRange === 'This week') {
-        const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 86400000);
-        if (callDate < sevenDaysAgo) return false;
-      } else if (dateRange === 'This month') {
-        const thirtyDaysAgo = new Date(startOfToday.getTime() - 30 * 86400000);
-        if (callDate < thirtyDaysAgo) return false;
-      } else if (dateRange === 'Custom') {
-        if (customStartDate) {
-          const [sYear, sMonth, sDay] = customStartDate.split('-').map(Number);
-          const startCustom = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
-          if (callDate < startCustom) return false;
-        }
-        if (customEndDate) {
-          const [eYear, eMonth, eDay] = customEndDate.split('-').map(Number);
-          const endCustom = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999);
-          if (callDate > endCustom) return false;
-        }
-      }
-    }
-
-    // 3. Select Sales Rep / Team Filter
-    if (repCategory === 'Individual') {
-      if (subFilter !== 'All Counselors') {
-        if (user.toLowerCase() !== subFilter.toLowerCase()) {
+      // 0.5. Filter for recordings view if ?filter=recordings query param is active
+      if (isRecordingsOnly) {
+        const hasRecording = call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD';
+        if (!hasRecording || call.recordingStatus === 'NONE') {
           return false;
         }
       }
-    } else if (repCategory === 'Teams') {
-      if (subFilter !== 'All Teams') {
-        const teamName = call.team || call.teamName || call.department || '';
-        if (teamName && teamName.toLowerCase() !== subFilter.toLowerCase()) {
-          return false;
+
+      // 1. Search Query Filter
+      const phone = call.phoneNumber || call.phoneNumberMasked || call.phone || '';
+      const name = call.leadName || call.name || '';
+      const user = resolveCounselorName(call);
+      const searchLower = searchQuery.toLowerCase();
+
+      const matchesSearch =
+        phone.toLowerCase().includes(searchLower) ||
+        name.toLowerCase().includes(searchLower) ||
+        user.toLowerCase().includes(searchLower);
+
+      if (!matchesSearch) return false;
+
+      // 2. Date Range Filter
+      if (dateRange !== 'All time') {
+        const callDate = call.startTime ? new Date(call.startTime) : new Date();
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+        if (dateRange === 'Today') {
+          const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+          if (callDate < startOfToday || callDate > endOfToday) return false;
+        } else if (dateRange === 'Yesterday') {
+          const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
+          const endOfYesterday = new Date(startOfToday.getTime() - 1);
+          if (callDate < startOfYesterday || callDate > endOfYesterday) return false;
+        } else if (dateRange === 'This week') {
+          const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 86400000);
+          if (callDate < sevenDaysAgo) return false;
+        } else if (dateRange === 'This month') {
+          const thirtyDaysAgo = new Date(startOfToday.getTime() - 30 * 86400000);
+          if (callDate < thirtyDaysAgo) return false;
+        } else if (dateRange === 'Custom') {
+          if (customStartDate) {
+            const [sYear, sMonth, sDay] = customStartDate.split('-').map(Number);
+            const startCustom = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
+            if (callDate < startCustom) return false;
+          }
+          if (customEndDate) {
+            const [eYear, eMonth, eDay] = customEndDate.split('-').map(Number);
+            const endCustom = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999);
+            if (callDate > endCustom) return false;
+          }
         }
       }
-    }
 
-    // 4. Quick Anomaly / Channel Filter
-    if (anomalyFilter === 'short_calls') {
-      const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-      const dur = isAns ? Number(call.durationSeconds || 0) : 0;
-      if (!isAns || dur <= 0 || dur >= 15) return false;
-    } else if (anomalyFilter === 'recordings') {
-      const hasRec = (call.audioUrl || call.s3Key) && call.recordingStatus !== 'NONE';
-      if (!hasRec) return false;
-    } else if (anomalyFilter === 'long_calls') {
-      const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-      const dur = isAns ? Number(call.durationSeconds || 0) : 0;
-      if (!isAns || dur < 300) return false;
-    } else if (anomalyFilter === 'whatsapp') {
-      const isWA = (call.channel || '').toUpperCase() === 'WHATSAPP' || (call.disposition || '').toLowerCase().includes('whatsapp') || (call.idempotencyKey || '').startsWith('WA_');
-      if (!isWA) return false;
-    } else if (anomalyFilter === 'sim') {
-      const isWA = (call.channel || '').toUpperCase() === 'WHATSAPP' || (call.disposition || '').toLowerCase().includes('whatsapp') || (call.idempotencyKey || '').startsWith('WA_');
-      if (isWA) return false;
-    } else if (anomalyFilter === 'bookmarked') {
-      if (!call.isBookmarked && !call.rating) return false;
-    }
+      // 3. Select Sales Rep / Team Filter
+      if (repCategory === 'Individual') {
+        if (subFilter !== 'All Counselors') {
+          if (user.toLowerCase() !== subFilter.toLowerCase()) {
+            return false;
+          }
+        }
+      } else if (repCategory === 'Teams') {
+        if (subFilter !== 'All Teams') {
+          const teamName = call.team || call.teamName || call.department || '';
+          if (teamName && teamName.toLowerCase() !== subFilter.toLowerCase()) {
+            return false;
+          }
+        }
+      }
 
-    return true;
-  });
+      return true;
+    });
+  }, [callsList, isRecordingsOnly, searchQuery, dateRange, customStartDate, customEndDate, repCategory, subFilter, userEmail, isAdmin, isManager, isTeamLead, isCounselor, counselorsList]);
 
+  // 2. Dynamic Summary Stats calculated from current active filters
   const callStats = useMemo(() => {
     let totalDurSec = 0;
     let answeredCount = 0;
     let shortCount = 0;
+    let longCount = 0;
+    let reviewedCount = 0;
     let withRecCount = 0;
     let waCount = 0;
     let simCount = 0;
 
-    callsList.forEach((c) => {
+    baseFilteredCalls.forEach((c) => {
       const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
       const dur = isAns ? Number(c.durationSeconds || 0) : 0;
       if (isAns) answeredCount++;
       totalDurSec += dur;
       if (isAns && dur > 0 && dur < 15) shortCount++;
+      if (isAns && dur >= 300) longCount++;
       if ((c.audioUrl || c.s3Key) && c.recordingStatus !== 'NONE') withRecCount++;
+      if (c.rating || c.isBookmarked) reviewedCount++;
+
       const isWA = (c.channel || '').toUpperCase() === 'WHATSAPP' || (c.disposition || '').toLowerCase().includes('whatsapp') || (c.idempotencyKey || '').startsWith('WA_');
       if (isWA) waCount++; else simCount++;
     });
@@ -563,16 +549,46 @@ function SalestrailCallsInner() {
     const mins = Math.floor((totalDurSec % 3600) / 60);
 
     return {
-      totalCount: callsList.length,
+      totalCount: baseFilteredCalls.length,
       totalDurSec,
       totalTalkTimeStr: hours > 0 ? `${hours}h ${mins}m` : `${mins}m ${totalDurSec % 60}s`,
       answeredCount,
       shortCount,
+      longCount,
+      reviewedCount,
       withRecCount,
       waCount,
       simCount,
     };
-  }, [callsList]);
+  }, [baseFilteredCalls]);
+
+  // 3. Final filtered calls with Anomaly / Category Tab selection applied
+  const filteredCalls = useMemo(() => {
+    return baseFilteredCalls.filter((call) => {
+      if (anomalyFilter === 'short_calls') {
+        const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+        const dur = isAns ? Number(call.durationSeconds || 0) : 0;
+        if (!isAns || dur <= 0 || dur >= 15) return false;
+      } else if (anomalyFilter === 'recordings') {
+        const hasRec = (call.audioUrl || call.s3Key) && call.recordingStatus !== 'NONE';
+        if (!hasRec) return false;
+      } else if (anomalyFilter === 'long_calls') {
+        const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+        const dur = isAns ? Number(call.durationSeconds || 0) : 0;
+        if (!isAns || dur < 300) return false;
+      } else if (anomalyFilter === 'whatsapp') {
+        const isWA = (call.channel || '').toUpperCase() === 'WHATSAPP' || (call.disposition || '').toLowerCase().includes('whatsapp') || (call.idempotencyKey || '').startsWith('WA_');
+        if (!isWA) return false;
+      } else if (anomalyFilter === 'sim') {
+        const isWA = (call.channel || '').toUpperCase() === 'WHATSAPP' || (call.disposition || '').toLowerCase().includes('whatsapp') || (call.idempotencyKey || '').startsWith('WA_');
+        if (isWA) return false;
+      } else if (anomalyFilter === 'bookmarked') {
+        if (!call.isBookmarked && !call.rating) return false;
+      }
+
+      return true;
+    });
+  }, [baseFilteredCalls, anomalyFilter]);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -949,7 +965,7 @@ function SalestrailCallsInner() {
                 }`}
             >
               <Flame className="w-3.5 h-3.5" />
-              <span>Long Calls &gt;5m</span>
+              <span>Long Calls &gt;5m ({callStats.longCount})</span>
             </button>
 
             <button
@@ -960,7 +976,7 @@ function SalestrailCallsInner() {
                 }`}
             >
               <Star className="w-3.5 h-3.5" />
-              <span>Reviewed / Exemplary</span>
+              <span>Reviewed / Exemplary ({callStats.reviewedCount})</span>
             </button>
           </div>
 

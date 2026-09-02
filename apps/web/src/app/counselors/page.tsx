@@ -47,22 +47,17 @@ function CounselorsAndTeamsInner() {
   const [newTeamSelectedMembers, setNewTeamSelectedMembers] = useState<string[]>([]);
   const [counselorSearchInModal, setCounselorSearchInModal] = useState('');
 
-  // Team Leads Dropdown Options (Strictly TEAM_LEAD, MANAGER, or ADMIN roles)
+  // Team Leads & Admins Dropdown Options (All counselors and provisioned admins)
   const teamLeadsOptions = React.useMemo(() => {
-    const leads = counselors
-      .filter((c) => {
-        const roleUpper = (c.role || '').toUpperCase();
-        return roleUpper === 'TEAM_LEAD' || roleUpper === 'MANAGER' || roleUpper === 'ADMIN' || roleUpper === 'COMPANY_ADMIN';
+    const list = counselors
+      .map((c) => {
+        const full = `${c.firstName || ''} ${c.lastName || ''}`.trim();
+        return full || c.name || c.email?.split('@')[0];
       })
-      .map((c) => `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.email?.split('@')[0])
       .filter(Boolean);
 
-    if (leads.length > 0) {
-      return Array.from(new Set(leads));
-    }
-
-    // Default Team Leads fallback (Excludes regular Counselors)
-    return ['Sachin Negi', 'Rajdeep', 'Dev admin'];
+    const merged = Array.from(new Set([...list, 'Rajdeep', 'Sachin Negi', 'Dev']));
+    return merged.filter(Boolean);
   }, [counselors]);
 
   // Counselor Selection for Active Team Modal
@@ -198,30 +193,87 @@ function CounselorsAndTeamsInner() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
+  const openCreateTeamModal = () => {
+    setNewTeamName('');
+    const defaultLead = teamLeadsOptions[0] || 'Rajdeep';
+    setNewTeamAdmin(defaultLead);
+    setNewTeamSelectedMembers([]);
+    setCounselorSearchInModal('');
+    setIsAddTeamModalOpen(true);
+  };
+
   const handleCreateTeam = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTeamName.trim()) return;
+    const adminSelected = newTeamAdmin.trim() || teamLeadsOptions[0] || 'Rajdeep';
     const members = newTeamSelectedMembers;
     const newTeam = {
       id: `t-${Date.now()}`,
       name: newTeamName.trim(),
-      admin: newTeamAdmin.trim() || 'Admin',
+      admin: adminSelected,
       installedRatio: `${members.length} / ${members.length}`,
       members: members,
-      admins: [newTeamAdmin.trim() || 'Admin']
+      admins: [adminSelected]
     };
     const updated = [newTeam, ...teamsList];
     setTeamsList(updated);
     if (typeof window !== 'undefined') {
       localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
     }
-    setToastMessage(`Successfully created team "${newTeam.name}"!`);
+    setToastMessage(`Successfully created team "${newTeam.name}" with admin "${adminSelected}"!`);
     setIsAddTeamModalOpen(false);
     setNewTeamName('');
     setNewTeamAdmin('');
     setNewTeamSelectedMembers([]);
     setCounselorSearchInModal('');
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const [isAddingAdminInDrawer, setIsAddingAdminInDrawer] = useState(false);
+  const [selectedAdminToAdd, setSelectedAdminToAdd] = useState('');
+
+  const handleAddAdminToTeam = (adminName: string) => {
+    if (!selectedTeam || !adminName) return;
+    const currentAdmins = selectedTeam.admins || (selectedTeam.admin ? [selectedTeam.admin] : []);
+    const updatedAdmins = Array.from(new Set([...currentAdmins, adminName]));
+    const updatedTeam = {
+      ...selectedTeam,
+      admin: updatedAdmins[0] || adminName,
+      admins: updatedAdmins
+    };
+    setSelectedTeam(updatedTeam);
+    setTeamsList((prev) => {
+      const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
+      }
+      return updated;
+    });
+    setIsAddingAdminInDrawer(false);
+    setSelectedAdminToAdd('');
+    setToastMessage(`Assigned team admin "${adminName}" to ${selectedTeam.name}!`);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleSetPrimaryAdmin = (adminName: string) => {
+    if (!selectedTeam) return;
+    const currentAdmins = selectedTeam.admins || (selectedTeam.admin ? [selectedTeam.admin] : []);
+    const reordered = [adminName, ...currentAdmins.filter((a: string) => a !== adminName)];
+    const updatedTeam = {
+      ...selectedTeam,
+      admin: adminName,
+      admins: reordered
+    };
+    setSelectedTeam(updatedTeam);
+    setTeamsList((prev) => {
+      const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
+      }
+      return updated;
+    });
+    setToastMessage(`Set "${adminName}" as primary lead for ${selectedTeam.name}`);
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
   const handleRemoveMemberFromTeam = (memberName: string) => {
@@ -246,8 +298,13 @@ function CounselorsAndTeamsInner() {
 
   const handleRemoveAdminFromTeam = (adminName: string) => {
     if (!selectedTeam) return;
-    const updatedAdmins = selectedTeam.admins.filter((a: string) => a !== adminName);
-    const updatedTeam = { ...selectedTeam, admins: updatedAdmins };
+    const currentAdmins = selectedTeam.admins || (selectedTeam.admin ? [selectedTeam.admin] : []);
+    const updatedAdmins = currentAdmins.filter((a: string) => a !== adminName);
+    const updatedTeam = {
+      ...selectedTeam,
+      admin: updatedAdmins[0] || (updatedAdmins.length > 0 ? updatedAdmins[0] : 'Unassigned'),
+      admins: updatedAdmins
+    };
     setSelectedTeam(updatedTeam);
     setTeamsList((prev) => {
       const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
@@ -456,8 +513,8 @@ function CounselorsAndTeamsInner() {
             <div>
               {isAdmin ? (
                 <button
-                  onClick={() => setIsAddTeamModalOpen(true)}
-                  className="inline-flex items-center space-x-3 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-sm px-6 py-3 rounded-xl transition-all shadow-md"
+                  onClick={openCreateTeamModal}
+                  className="inline-flex items-center space-x-3 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-sm px-6 py-3 rounded-xl transition-all shadow-md cursor-pointer"
                 >
                   <div className="w-5 h-5 rounded-full border-2 border-white/80 flex items-center justify-center">
                     <Plus className="w-3.5 h-3.5 text-white stroke-[3]" />
@@ -811,28 +868,104 @@ function CounselorsAndTeamsInner() {
 
                 {/* Team Admins Section */}
                 <div className="space-y-2 pt-2">
-                  <div className="flex items-center space-x-1.5 text-sm font-bold text-slate-900">
-                    <span>Team admins</span>
-                    <Info className="w-4 h-4 text-slate-400" />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-1.5 text-sm font-bold text-slate-900">
+                      <span>Team admins</span>
+                      <Info className="w-4 h-4 text-slate-400" />
+                    </div>
+
+                    {isAdmin && !isAddingAdminInDrawer && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedAdminToAdd(teamLeadsOptions[0] || 'Rajdeep');
+                          setIsAddingAdminInDrawer(true);
+                        }}
+                        className="text-xs font-bold text-rose-600 hover:text-rose-700 flex items-center space-x-1 hover:underline cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add / Change Admin</span>
+                      </button>
+                    )}
                   </div>
 
-                  <div className="border border-slate-200 rounded-xl p-3.5 divide-y divide-slate-100">
+                  {/* Inline Add Admin Form */}
+                  {isAddingAdminInDrawer && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 animate-in fade-in duration-150">
+                      <label className="block text-xs font-bold text-slate-700">Select Counselor / Lead to Assign</label>
+                      <div className="flex items-center space-x-2">
+                        <select
+                          value={selectedAdminToAdd}
+                          onChange={(e) => setSelectedAdminToAdd(e.target.value)}
+                          className="flex-1 bg-white border border-slate-300 text-slate-900 text-xs font-medium rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                        >
+                          {teamLeadsOptions.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => handleAddAdminToTeam(selectedAdminToAdd)}
+                          className="bg-slate-900 hover:bg-black text-white px-3.5 py-2 rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                        >
+                          Assign
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingAdminInDrawer(false)}
+                          className="text-slate-400 hover:text-slate-600 px-2 py-2 text-xs font-semibold cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-52 overflow-y-auto">
                     {selectedTeam.admins && selectedTeam.admins.length > 0 ? (
-                      selectedTeam.admins.map((admin: string, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between py-1 text-sm text-slate-800 font-medium">
-                          <span>{admin}</span>
-                          {isAdmin && (
-                            <button 
-                              onClick={() => handleRemoveAdminFromTeam(admin)}
-                              className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50"
-                            >
-                              <X className="w-4 h-4 text-rose-400" />
-                            </button>
-                          )}
-                        </div>
-                      ))
+                      selectedTeam.admins.map((admin: string, idx: number) => {
+                        const isPrimary = selectedTeam.admin === admin || (idx === 0 && !selectedTeam.admin);
+                        return (
+                          <div key={idx} className="flex items-center justify-between p-3.5 text-sm text-slate-800 font-medium hover:bg-slate-50 transition-colors">
+                            <div className="flex items-center space-x-2">
+                              <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 font-bold text-xs flex items-center justify-center">
+                                {admin.charAt(0)}
+                              </div>
+                              <span className="font-semibold text-slate-900">{admin}</span>
+                              {isPrimary ? (
+                                <span className="bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold px-2 py-0.5 rounded-md">
+                                  Primary Lead
+                                </span>
+                              ) : (
+                                isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetPrimaryAdmin(admin)}
+                                    className="text-[10px] text-slate-400 hover:text-slate-700 hover:underline cursor-pointer"
+                                  >
+                                    (Set as Primary)
+                                  </button>
+                                )
+                              )}
+                            </div>
+                            {isAdmin && (
+                              <button 
+                                onClick={() => handleRemoveAdminFromTeam(admin)}
+                                className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50 cursor-pointer"
+                                title="Remove admin"
+                              >
+                                <X className="w-4 h-4 text-rose-400" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })
                     ) : (
-                      <div className="text-xs text-slate-400">Sachin Negi</div>
+                      <div className="p-4 text-xs text-slate-400 text-center">
+                        No team admin assigned. Click &quot;Add / Change Admin&quot; above.
+                      </div>
                     )}
                   </div>
                 </div>
