@@ -208,7 +208,7 @@ class CallSyncWorker(
         }
     }
 
-    private fun uploadAudioDirect(
+    private suspend fun uploadAudioDirect(
         uploadInfo: com.academically.recordhub.data.remote.UploadUrlInfo,
         evt: CallEventEntity,
         db: AppDatabase
