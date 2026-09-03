@@ -700,7 +700,7 @@ function SalestrailCallsInner() {
     return (
       <th
         onClick={() => handleSort(field)}
-        className={`p-4 text-center font-bold cursor-pointer select-none group hover:bg-slate-100/70 transition-colors ${extraClasses}`}
+        className={`p-4 text-center font-bold whitespace-nowrap cursor-pointer select-none group hover:bg-slate-100/70 transition-colors ${extraClasses}`}
         title={`Sort by ${label} (${isActive ? (sortOrder === 'asc' ? 'Ascending' : 'Descending') : 'Click to sort'})`}
       >
         <div className="flex items-center justify-center space-x-1.5">
@@ -991,7 +991,7 @@ function SalestrailCallsInner() {
         {/* Calls Table (Matching Salestrail Order) */}
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-800">
+            <table className="w-full text-left text-xs text-slate-800 whitespace-nowrap">
               <thead className="bg-white text-slate-900 font-extrabold border-b border-slate-200">
                 <tr>
                   {renderSortHeader('user', 'User', 'pl-6')}
@@ -1002,7 +1002,6 @@ function SalestrailCallsInner() {
                   {renderSortHeader('direction', 'Direction')}
                   {renderSortHeader('status', 'Status')}
                   {renderSortHeader('duration', 'Duration')}
-                  <th className="p-4 text-center font-bold">Quality / Review</th>
                   {renderSortHeader('audio', 'Audio Recording', 'pr-6')}
                 </tr>
               </thead>
@@ -1053,40 +1052,40 @@ function SalestrailCallsInner() {
                     return (
                       <tr key={call.id || call._id || idx} className="hover:bg-slate-50 transition-colors">
                         {/* User */}
-                        <td className="p-4 pl-6 font-semibold text-slate-900 text-center">
+                        <td className="p-4 pl-6 font-semibold text-slate-900 text-center whitespace-nowrap">
                           {resolveCounselorName(call)}
                         </td>
                         {/* Phone Number */}
-                        <td className="p-4 text-center font-mono font-medium text-slate-900">
+                        <td className="p-4 text-center font-mono font-medium text-slate-900 whitespace-nowrap">
                           {cleanPhone}
                         </td>
                         {/* Name */}
-                        <td className="p-4 text-center font-medium text-slate-800">
+                        <td className="p-4 text-center font-medium text-slate-800 whitespace-nowrap">
                           {contactName}
                         </td>
                         {/* Type */}
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center whitespace-nowrap">
                           <span className={`inline-block px-2.5 py-1 rounded-md text-[11px] font-semibold ${isWhatsApp ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-800'
                             }`}>
                             {isWhatsApp ? 'WhatsApp' : 'SIM'}
                           </span>
                         </td>
                         {/* Call Time */}
-                        <td className="p-4 text-center font-mono text-slate-700 text-[11px]">
+                        <td className="p-4 text-center font-mono text-slate-700 text-[11px] whitespace-nowrap">
                           {startTimeStr}
                         </td>
                         {/* Direction */}
-                        <td className="p-4 text-center font-medium text-slate-800">
+                        <td className="p-4 text-center font-medium text-slate-800 whitespace-nowrap">
                           {isOutbound ? 'Outbound' : 'Inbound'}
                         </td>
                         {/* Status */}
-                        <td className="p-4 text-center font-medium text-slate-800">
+                        <td className="p-4 text-center font-medium text-slate-800 whitespace-nowrap">
                           {isAnswered ? 'Answered' : 'Unanswered'}
                         </td>
                         {/* Duration */}
-                        <td className="p-4 text-center font-semibold text-slate-900">
+                        <td className="p-4 text-center font-semibold text-slate-900 whitespace-nowrap">
                           {isAnswered && effectiveDuration > 0 && effectiveDuration < 15 ? (
-                            <div className="flex items-center justify-center space-x-1.5">
+                            <div className="flex items-center justify-center space-x-1.5 whitespace-nowrap">
                               <span className="text-amber-800 font-bold">{durationStr}</span>
                               <span
                                 className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs"
@@ -1096,33 +1095,12 @@ function SalestrailCallsInner() {
                               </span>
                             </div>
                           ) : (
-                            <span>{durationStr}</span>
+                            <span className="whitespace-nowrap">{durationStr}</span>
                           )}
-                        </td>
-                        {/* Quality / Review */}
-                        <td className="p-4 text-center">
-                          <button
-                            type="button"
-                            onClick={() => openReviewModal(call)}
-                            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors text-[11px] font-semibold"
-                            title={call.notes ? `Manager Note: ${call.notes}` : 'Click to rate pitch & add coaching notes'}
-                          >
-                            {call.isBookmarked && <span className="text-amber-500 font-bold">★</span>}
-                            {call.rating ? (
-                              <span className="text-amber-500 font-bold flex items-center tracking-tighter">
-                                {'★'.repeat(call.rating)}
-                              </span>
-                            ) : (
-                              <span className="text-slate-500 font-medium">+ Review</span>
-                            )}
-                            {call.notes && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-600 ml-1" title="Has coaching note" />
-                            )}
-                          </button>
                         </td>
 
                         {/* Audio Recording */}
-                        <td className="p-4 pr-6 text-center">
+                        <td className="p-4 pr-6 text-center whitespace-nowrap">
                           <AudioCell call={call} idx={idx} canListen={canUserAccessCall(call).canListen} />
                         </td>
                       </tr>
