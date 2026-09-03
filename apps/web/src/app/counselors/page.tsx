@@ -802,7 +802,7 @@ function CounselorsAndTeamsInner() {
                   resetForm();
                   setIsCreateModalOpen(true);
                 }}
-                className="flex items-center space-x-2 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-xs px-4.5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer"
+                className="inline-flex items-center space-x-2 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 <span>Create New User</span>
@@ -870,19 +870,19 @@ function CounselorsAndTeamsInner() {
                 <table className="w-full text-left">
                   <thead className="bg-white border-b border-slate-100">
                     <tr>
-                      <th className="py-4.5 pl-8 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[24%]">
+                      <th className="py-4 pl-8 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[24%]">
                         NAME
                       </th>
-                      <th className="py-4.5 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[32%]">
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[32%]">
                         EMAIL
                       </th>
-                      <th className="py-4.5 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[15%]">
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[15%]">
                         ROLE
                       </th>
-                      <th className="py-4.5 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[17%]">
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[17%]">
                         STATUS
                       </th>
-                      <th className="py-4.5 pr-8 font-semibold text-slate-500 uppercase text-xs tracking-wider text-right w-[12%]">
+                      <th className="py-4 pr-8 font-semibold text-slate-500 uppercase text-xs tracking-wider text-right w-[12%]">
                         ACTIONS
                       </th>
                     </tr>
