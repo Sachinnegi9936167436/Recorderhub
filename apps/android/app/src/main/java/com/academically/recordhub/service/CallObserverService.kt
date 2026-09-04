@@ -214,6 +214,21 @@ class CallObserverService : Service() {
         }
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        AppLogManager.log("INFO", TAG, "Task removed from recents. Keeping CallObserverService active.")
+        try {
+            val restartServiceIntent = Intent(applicationContext, CallObserverService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(restartServiceIntent)
+            } else {
+                applicationContext.startService(restartServiceIntent)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error in onTaskRemoved restarting service: ${e.message}")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         telephonyManager?.listen(callStateListener, PhoneStateListener.LISTEN_NONE)
