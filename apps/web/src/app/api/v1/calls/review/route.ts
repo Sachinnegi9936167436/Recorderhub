@@ -2,17 +2,14 @@ import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 import { cacheDel } from '@/lib/redis';
-
 export async function POST(req: Request) {
   try {
     await connectToDatabase();
     const body = await req.json();
     const { callId, rating, notes, isBookmarked } = body;
-
     if (!callId) {
       return NextResponse.json({ message: 'callId is required' }, { status: 400 });
     }
-
     const updateFields: any = {
       reviewedAt: new Date(),
     };
@@ -20,7 +17,6 @@ export async function POST(req: Request) {
     if (rating !== undefined) updateFields.rating = rating;
     if (notes !== undefined) updateFields.notes = notes;
     if (isBookmarked !== undefined) updateFields.isBookmarked = isBookmarked;
-
     const updatedCall = await (CallModel as any).findOneAndUpdate(
       {
         $or: [
@@ -35,7 +31,6 @@ export async function POST(req: Request) {
     if (!updatedCall) {
       return NextResponse.json({ message: 'Call not found' }, { status: 404 });
     }
-
     // Invalidate Redis cache
     await cacheDel('cache:calls:latest').catch(() => {});
 
