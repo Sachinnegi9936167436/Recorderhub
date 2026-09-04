@@ -179,7 +179,7 @@ object CallLogScanner {
                             evt.copy(
                                 recordingPath = matchedFile.absolutePath,
                                 recordingStatus = "PENDING_UPLOAD",
-                                syncStatus = evt.syncStatus
+                                syncStatus = "PENDING"
                             )
                         )
                         importedCount++

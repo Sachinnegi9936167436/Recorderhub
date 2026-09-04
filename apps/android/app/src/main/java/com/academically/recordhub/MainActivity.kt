@@ -13,6 +13,8 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import com.academically.recordhub.data.local.AppDatabase
 import com.academically.recordhub.service.CallObserverService
 import com.academically.recordhub.ui.screens.MainContainerScreen
@@ -48,9 +50,23 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             RecordHubTheme {
-                val prefs = remember { getSharedPreferences("recordhub_prefs", MODE_PRIVATE) }
-                val isLoggedIn = remember { prefs.getBoolean("is_logged_in", false) }
-                var currentStep by remember { mutableStateOf(if (isLoggedIn) 2 else 0) }
+                val appPrefs = remember { getSharedPreferences("recordhub_prefs", MODE_PRIVATE) }
+                val isLoggedIn = remember { appPrefs.getBoolean("is_logged_in", false) }
+                val hasCallLogPermission = remember {
+                    ContextCompat.checkSelfPermission(
+                        applicationContext,
+                        android.Manifest.permission.READ_CALL_LOG
+                    ) == PackageManager.PERMISSION_GRANTED
+                }
+                var currentStep by remember {
+                    mutableIntStateOf(
+                        when {
+                            !isLoggedIn -> 0
+                            !hasCallLogPermission -> 1
+                            else -> 2
+                        }
+                    )
+                }
                 val scope = rememberCoroutineScope()
 
                 val db = remember { AppDatabase.getInstance(applicationContext) }
@@ -159,6 +175,7 @@ class MainActivity : ComponentActivity() {
                         val perms = mutableListOf(
                             android.Manifest.permission.READ_CALL_LOG,
                             android.Manifest.permission.READ_PHONE_STATE,
+                            android.Manifest.permission.READ_CONTACTS,
                             android.Manifest.permission.RECORD_AUDIO
                         )
                         if (Build.VERSION.SDK_INT >= 33) {

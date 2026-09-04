@@ -35,15 +35,27 @@ class CallObserverService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        startForegroundServiceNotification()
-        registerCallStateListener()
-        registerCallLogContentObserver()
-        ensureWhatsAppListenerActive()
+        try {
+            startForegroundServiceNotification()
+        } catch (e: Exception) {
+            AppLogManager.log("ERROR", TAG, "Error in startForeground: ${e.message}")
+        }
+        try {
+            registerCallStateListener()
+            registerCallLogContentObserver()
+            ensureWhatsAppListenerActive()
+        } catch (e: Exception) {
+            AppLogManager.log("ERROR", TAG, "Error registering listeners: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        registerCallStateListener()
-        registerCallLogContentObserver()
+        try {
+            registerCallStateListener()
+            registerCallLogContentObserver()
+        } catch (e: Exception) {
+            AppLogManager.log("ERROR", TAG, "Error in onStartCommand: ${e.message}")
+        }
         return START_STICKY
     }
 
@@ -68,24 +80,24 @@ class CallObserverService : Service() {
                     true,
                     callLogContentObserver!!
                 )
-                AppLogManager.log("INFO", TAG, "Registered CallLog ContentObserver for automatic SIM call log sync.")
+                AppLogManager.log("INFO", TAG, "SIM CallLog ContentObserver registered successfully.")
             } else {
                 Log.w(TAG, "READ_CALL_LOG permission not granted yet for ContentObserver.")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error registering CallLog ContentObserver: ${e.message}")
+            AppLogManager.log("ERROR", TAG, "Failed to register CallLog ContentObserver: ${e.message}")
         }
     }
 
     private fun triggerAutoScanAndSync() {
         serviceScope.launch {
             try {
-                // Initial scan after 4.5s to let OEM dialers finish encoding and writing the audio file
-                delay(4500)
-                var count = CallLogScanner.scanRecentCallLogs(applicationContext)
-                AppLogManager.log("SYNC", TAG, "Auto-scanned $count SIM call log(s) on initial pass.")
+                // Short delay to allow Android telephony provider to commit duration & contact info
+                delay(2500)
+                val newCallsCount = CallLogScanner.scanRecentCallLogs(applicationContext)
+                AppLogManager.log("SYNC", TAG, "Auto-scanned $newCallsCount new/updated call record(s).")
 
-                // Enqueue immediate CallSyncWorker
+                // Enqueue immediate OneTime WorkManager upload to AWS S3 / CRM API
                 val syncRequest = androidx.work.OneTimeWorkRequestBuilder<CallSyncWorker>().build()
                 androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
                     "CallSyncWorkerOneTime",
@@ -124,30 +136,40 @@ class CallObserverService : Service() {
     }
 
     private fun startForegroundServiceNotification() {
-        val notification: Notification = NotificationCompat.Builder(this, RecordHubApp.SERVICE_CHANNEL_ID)
-            .setContentTitle("RecordHub Active Monitoring")
-            .setContentText("Sales call tracking active for Academically Global Healthcare Academy")
-            .setSmallIcon(android.R.drawable.stat_sys_phone_call)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        try {
+            val notification: Notification = NotificationCompat.Builder(this, RecordHubApp.SERVICE_CHANNEL_ID)
+                .setContentTitle("RecordHub Active Monitoring")
+                .setContentText("Sales call tracking active for Academically Global Healthcare Academy")
+                .setSmallIcon(android.R.drawable.stat_sys_phone_call)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-                )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    if (Build.VERSION.SDK_INT >= 34) {
+                        startForeground(
+                            NOTIFICATION_ID,
+                            notification,
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                        )
+                    } else {
+                        startForeground(
+                            NOTIFICATION_ID,
+                            notification,
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                        )
+                    }
+                } catch (e: Exception) {
+                    AppLogManager.log("WARN", TAG, "Typed startForeground exception (${e.message}), attempting standard fallback...")
+                    startForeground(NOTIFICATION_ID, notification)
+                }
             } else {
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                )
+                startForeground(NOTIFICATION_ID, notification)
             }
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            AppLogManager.log("ERROR", TAG, "Failed startForegroundServiceNotification: ${e.message}")
         }
     }
 

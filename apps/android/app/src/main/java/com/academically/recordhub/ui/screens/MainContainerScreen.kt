@@ -1,19 +1,30 @@
 package com.academically.recordhub.ui.screens
 
-import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.ListAlt
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.academically.recordhub.data.local.CallEventEntity
-import com.academically.recordhub.ui.theme.*
+
+private val ScreenBg = Color(0xFFFAFAFA)
+private val BottomNavBg = Color(0xFFFFFFFF)
+private val TextPrimary = Color(0xFF1A1F2C)
+private val TextSecondary = Color(0xFF64748B)
+private val AmberActive = Color(0xFFFAB005)
 
 @Composable
 fun MainContainerScreen(
@@ -22,84 +33,199 @@ fun MainContainerScreen(
     onScanCallLogs: () -> Unit,
     onLogout: () -> Unit
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var showLogsModal by remember { mutableStateOf(false) }
+
+    val pendingUploadsCount = remember(trackedCalls) {
+        trackedCalls.count { it.recordingStatus == "PENDING_UPLOAD" }
+    }
 
     Scaffold(
+        containerColor = ScreenBg,
         bottomBar = {
             NavigationBar(
-                containerColor = Navy900,
-                contentColor = Slate200
+                containerColor = BottomNavBg,
+                contentColor = TextSecondary,
+                tonalElevation = 8.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(68.dp)
             ) {
+                // Tab 0: Call History
                 NavigationBarItem(
                     selected = selectedTab == 0,
-                    onClick = { 
-                        selectedTab = 0 
-                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 0: Tracked Calls")
+                    onClick = { selectedTab = 0 },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Call,
+                            contentDescription = "Call History",
+                            tint = if (selectedTab == 0) AmberActive else TextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
                     },
-                    icon = { Icon(Icons.Default.Call, contentDescription = "Calls") },
-                    label = { Text("Tracked", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
+                    label = {
+                        Text(
+                            text = "Call History",
+                            fontSize = 10.5.sp,
+                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selectedTab == 0) TextPrimary else TextSecondary
+                        )
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        indicatorColor = AmberActive.copy(alpha = 0.15f)
+                    )
                 )
+
+                // Tab 1: Analytics
                 NavigationBarItem(
                     selected = selectedTab == 1,
-                    onClick = { 
-                        selectedTab = 1 
-                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 1: Uploads & Recordings")
+                    onClick = { selectedTab = 1 },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.BarChart,
+                            contentDescription = "Analytics",
+                            tint = if (selectedTab == 1) AmberActive else TextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
                     },
-                    icon = { Icon(Icons.Default.CloudUpload, contentDescription = "Uploads") },
-                    label = { Text("Uploads", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
+                    label = {
+                        Text(
+                            text = "Analytics",
+                            fontSize = 10.5.sp,
+                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selectedTab == 1) TextPrimary else TextSecondary
+                        )
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        indicatorColor = AmberActive.copy(alpha = 0.15f)
+                    )
                 )
+
+                // Tab 2: Cloud / Recordings
                 NavigationBarItem(
                     selected = selectedTab == 2,
-                    onClick = { 
-                        selectedTab = 2 
-                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 2: System & Sync Logs")
+                    onClick = { selectedTab = 2 },
+                    icon = {
+                        BadgedBox(
+                            badge = {
+                                if (pendingUploadsCount > 0) {
+                                    Badge(containerColor = Color(0xFFEF4444)) {
+                                        Text(
+                                            text = "$pendingUploadsCount",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudUpload,
+                                contentDescription = "Cloud Sync",
+                                tint = if (selectedTab == 2) AmberActive else TextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     },
-                    icon = { Icon(Icons.Default.ListAlt, contentDescription = "Logs") },
-                    label = { Text("Logs", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = Emerald400, indicatorColor = Navy800)
+                    label = {
+                        Text(
+                            text = "Cloud Sync",
+                            fontSize = 10.5.sp,
+                            fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selectedTab == 2) TextPrimary else TextSecondary
+                        )
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        indicatorColor = AmberActive.copy(alpha = 0.15f)
+                    )
                 )
+
+                // Tab 3: Contacts
                 NavigationBarItem(
                     selected = selectedTab == 3,
-                    onClick = { 
-                        selectedTab = 3 
-                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 3: Device Health")
+                    onClick = { selectedTab = 3 },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Contacts",
+                            tint = if (selectedTab == 3) AmberActive else TextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
                     },
-                    icon = { Icon(Icons.Default.Smartphone, contentDescription = "Health") },
-                    label = { Text("Health", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
+                    label = {
+                        Text(
+                            text = "Contacts",
+                            fontSize = 10.5.sp,
+                            fontWeight = if (selectedTab == 3) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selectedTab == 3) TextPrimary else TextSecondary
+                        )
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        indicatorColor = AmberActive.copy(alpha = 0.15f)
+                    )
                 )
+
+                // Tab 4: More / Settings
                 NavigationBarItem(
                     selected = selectedTab == 4,
-                    onClick = { 
-                        selectedTab = 4 
-                        com.academically.recordhub.utils.AppLogManager.log("INFO", "UI_Nav", "Switched to Tab 4: Settings")
+                    onClick = { selectedTab = 4 },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "More",
+                            tint = if (selectedTab == 4) AmberActive else TextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
                     },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings", maxLines = 1, fontSize = 9.5.sp, softWrap = false) },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = MedicalTeal400, indicatorColor = Navy800)
+                    label = {
+                        Text(
+                            text = "More",
+                            fontSize = 10.5.sp,
+                            fontWeight = if (selectedTab == 4) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selectedTab == 4) TextPrimary else TextSecondary
+                        )
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        indicatorColor = AmberActive.copy(alpha = 0.15f)
+                    )
                 )
             }
         }
-    ) { innerPadding ->
-        Surface(
-            modifier = Modifier.padding(innerPadding),
-            color = Navy950
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
         ) {
-            when (selectedTab) {
-                0 -> TrackedCallsScreen(
-                    callEvents = trackedCalls,
-                    onScanCallLogs = onScanCallLogs
+            if (showLogsModal) {
+                AppLogsScreen(
+                    onScanLogsTrigger = onScanCallLogs,
+                    onClose = { showLogsModal = false }
                 )
-                1 -> RecordingUploadScreen(
-                    recordings = trackedCalls,
-                    onSelectSafFolder = onSelectSafFolder,
-                    onSyncNow = onScanCallLogs
-                )
-                2 -> AppLogsScreen(onScanLogsTrigger = onScanCallLogs)
-                3 -> DeviceHealthScreen()
-                4 -> SettingsScreen(onLogout = onLogout, onSelectSafFolder = onSelectSafFolder)
+            } else {
+                when (selectedTab) {
+                    0 -> TrackedCallsScreen(
+                        callEvents = trackedCalls,
+                        onScanCallLogs = onScanCallLogs
+                    )
+                    1 -> AnalyticsScreen(
+                        callEvents = trackedCalls
+                    )
+                    2 -> RecordingUploadScreen(
+                        recordings = trackedCalls,
+                        onSelectSafFolder = onSelectSafFolder,
+                        onSyncNow = onScanCallLogs
+                    )
+                    3 -> ContactsScreen(
+                        callEvents = trackedCalls
+                    )
+                    4 -> SettingsScreen(
+                        onLogout = onLogout,
+                        onSelectSafFolder = onSelectSafFolder,
+                        onOpenLogs = { showLogsModal = true }
+                    )
+                }
             }
         }
     }

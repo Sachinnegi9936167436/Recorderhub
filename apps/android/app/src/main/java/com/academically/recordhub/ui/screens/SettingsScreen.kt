@@ -1,351 +1,476 @@
 package com.academically.recordhub.ui.screens
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.sp
-import com.academically.recordhub.ui.theme.*
+import androidx.compose.ui.window.Dialog
 import com.academically.recordhub.utils.AppLogManager
+
+private val ScreenBg = Color(0xFFFAFAFA)
+private val CardBg = Color(0xFFFFFFFF)
+private val TextPrimary = Color(0xFF1A1F2C)
+private val TextSecondary = Color(0xFF64748B)
+private val CardBorderColor = Color(0xFFE2E8F0)
+private val AmberGold = Color(0xFFFAB005)
+private val GreenActive = Color(0xFF22C55E)
+private val BluePrimary = Color(0xFF2563EB)
+private val RedDanger = Color(0xFFEF4444)
 
 @Composable
 fun SettingsScreen(
     onLogout: () -> Unit,
-    onSelectSafFolder: () -> Unit = {}
+    onSelectSafFolder: () -> Unit = {},
+    onOpenLogs: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE) }
     
-    var wifiOnlyUpload by remember { mutableStateOf(prefs.getBoolean("wifi_only_upload", true)) }
+    val counselorEmail = remember { prefs.getString("counselor_email", "counselor@academically.com") ?: "counselor@academically.com" }
+    val counselorName = remember { prefs.getString("counselor_name", "Academic Counselor") ?: "Academic Counselor" }
+    val initials = remember(counselorName, counselorEmail) {
+        if (counselorName.isNotBlank() && counselorName != "Academic Counselor") {
+            counselorName.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("").uppercase()
+        } else {
+            counselorEmail.take(2).uppercase()
+        }
+    }
 
+    var wifiOnlyUpload by remember { mutableStateOf(prefs.getBoolean("wifi_only_upload", false)) }
+    var autoSyncEnabled by remember { mutableStateOf(prefs.getBoolean("auto_sync_enabled", true)) }
     val scrollState = rememberScrollState()
+    var showLogoutDialog by remember { mutableStateOf(false) }
+
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    val isAccessibilityOn = remember {
+        mutableStateOf(com.academically.recordhub.service.RecordHubAccessibilityService.isAccessibilityServiceEnabled(context))
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isAccessibilityOn.value = com.academically.recordhub.service.RecordHubAccessibilityService.isAccessibilityServiceEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    var activeFolderPath by remember {
+        mutableStateOf(
+            prefs.getString("custom_recording_folder", null)
+                ?: prefs.getString("custom_recording_tree_uri", null)
+                ?: "/Recordings/Call"
+        )
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Navy950)
-            .verticalScroll(scrollState)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .background(ScreenBg)
+            .statusBarsPadding()
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = "Counselor Agent Settings",
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+                text = "Settings & Profile",
+                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                color = TextPrimary
             )
+        }
 
-            // WhatsApp VoIP Call Recording & Accessibility Connector Card
-            val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-            val isAccessibilityOn = remember {
-                mutableStateOf(com.academically.recordhub.service.RecordHubAccessibilityService.isAccessibilityServiceEnabled(context))
-            }
-
-            DisposableEffect(lifecycleOwner) {
-                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                        isAccessibilityOn.value = com.academically.recordhub.service.RecordHubAccessibilityService.isAccessibilityServiceEnabled(context)
-                    }
-                }
-                lifecycleOwner.lifecycle.addObserver(observer)
-                onDispose {
-                    lifecycleOwner.lifecycle.removeObserver(observer)
-                }
-            }
-
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(scrollState)
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // 1. Counselor Profile Card
             Card(
-                colors = CardDefaults.cardColors(containerColor = Navy900),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                border = BorderStroke(1.dp, CardBorderColor),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Dns,
-                                contentDescription = null,
-                                tint = if (isAccessibilityOn.value) Emerald400 else Amber400,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "WhatsApp Call Recording",
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                fontSize = 13.sp
-                            )
-                        }
-
-                        Surface(
-                            color = if (isAccessibilityOn.value) Emerald400.copy(alpha = 0.15f) else Amber400.copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(6.dp)
-                        ) {
-                            Text(
-                                text = if (isAccessibilityOn.value) "ACTIVE" else "NOT ENABLED",
-                                color = if (isAccessibilityOn.value) Emerald400 else Amber400,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = if (isAccessibilityOn.value)
-                            "RecordHub App Connector is running with elevated audio hooks to capture WhatsApp calls."
-                        else
-                            "Enable RecordHub in Android Accessibility settings so the app can record WhatsApp calls.",
-                        color = Slate400,
-                        fontSize = 11.sp
-                    )
-
-                    Button(
-                        onClick = {
-                            try {
-                                val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                                }
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Could not open Accessibility settings", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isAccessibilityOn.value) Navy800 else MedicalTeal400
-                        )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(AmberGold),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isAccessibilityOn.value) "Open Accessibility Settings" else "Enable RecordHub App Connector",
-                            fontSize = 12.sp,
+                            text = initials,
+                            color = TextPrimary,
                             fontWeight = FontWeight.Bold,
-                            color = if (isAccessibilityOn.value) Slate200 else Color.White
+                            fontSize = 20.sp
                         )
                     }
-                }
-            }
 
-            // Native SIM Call Recording Folder Selection Card
-            var activeFolderPath by remember {
-                mutableStateOf(
-                    prefs.getString("custom_recording_folder", null)
-                        ?: prefs.getString("custom_recording_tree_uri", null)
-                        ?: "Not set (Tap below to select)"
-                )
-            }
-            var customRecordingFolderInput by remember { mutableStateOf(prefs.getString("custom_recording_folder", "") ?: "") }
+                    Spacer(modifier = Modifier.width(14.dp))
 
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Navy900),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "SIM Call Recording Folder",
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 13.sp
-                    )
-
-                    Surface(
-                        color = Navy800,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FolderOpen,
-                                contentDescription = null,
-                                tint = MedicalTeal400,
-                                modifier = Modifier.size(18.dp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = counselorName,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = TextPrimary
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(text = "Active Recording Folder Location:", color = Slate400, fontSize = 10.sp)
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFFECFDF5)
+                            ) {
                                 Text(
-                                    text = activeFolderPath,
-                                    color = Color.White,
+                                    text = "● Online",
+                                    color = GreenActive,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                 )
                             }
                         }
-                    }
-
-                    // 1. Primary Folder Picker Button (System SAF Picker)
-                    Button(
-                        onClick = onSelectSafFolder,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MedicalTeal400)
-                    ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Option 1: Pick Folder (System Picker)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    // 2. Preset Phone Folders
-                    Text(
-                        text = "Option 2: Tap your phone brand preset folder:",
-                        color = Slate400,
-                        fontSize = 11.sp
-                    )
-
-                    val presets = listOf(
-                        "Samsung / Standard" to "/Recordings/Call",
-                        "Xiaomi / Redmi / Poco" to "/MIUI/sound_recorder/call_rec",
-                        "OnePlus / Realme / Oppo" to "/CallRecordings",
-                        "Vivo / iQOO" to "/Call",
-                        "Google / Moto" to "/Recordings"
-                    )
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        presets.forEach { (label, folderPath) ->
-                            val isSelected = activeFolderPath == folderPath
-                            OutlinedButton(
-                                onClick = {
-                                    prefs.edit().putString("custom_recording_folder", folderPath).apply()
-                                    activeFolderPath = folderPath
-                                    customRecordingFolderInput = folderPath
-                                    AppLogManager.log("INFO", "Settings", "Set Recording Folder to Preset: $folderPath")
-                                    Toast.makeText(context, "Set recording folder to $folderPath", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (isSelected) MedicalTeal400.copy(alpha = 0.15f) else Color.Transparent,
-                                    contentColor = Slate200
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    if (isSelected) MedicalTeal400 else Slate400
-                                ),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                                    Text(text = folderPath, fontSize = 10.sp, color = MedicalTeal400, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-
-                    // 3. Manual Text Path Input
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Option 3: Enter folder path manually:",
-                        color = Slate400,
-                        fontSize = 11.sp
-                    )
-
-                    OutlinedTextField(
-                        value = customRecordingFolderInput,
-                        onValueChange = { customRecordingFolderInput = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        placeholder = { Text("e.g. /Recordings/Call or /Call", color = Slate400, fontSize = 12.sp) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MedicalTeal400,
-                            unfocusedBorderColor = Slate400,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Slate200
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = counselorEmail,
+                            fontSize = 13.sp,
+                            color = TextSecondary
                         )
-                    )
-
-                    OutlinedButton(
-                        onClick = {
-                            val cleanFolder = customRecordingFolderInput.trim()
-                            if (cleanFolder.isNotBlank()) {
-                                val formatted = if (cleanFolder.startsWith("/")) cleanFolder else "/$cleanFolder"
-                                prefs.edit().putString("custom_recording_folder", formatted).apply()
-                                activeFolderPath = formatted
-                                AppLogManager.log("INFO", "Settings", "Saved Custom Recording Folder Path: $formatted")
-                                Toast.makeText(context, "Saved recording folder: $formatted", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Slate200)
-                    ) {
-                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Save Manual Folder Path", fontSize = 12.sp)
                     }
                 }
             }
 
+            // 2. Recording & S3 Cloud Sync Card
             Card(
-                colors = CardDefaults.cardColors(containerColor = Navy900),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                border = BorderStroke(1.dp, CardBorderColor),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
                     Text(
-                        text = "Network & S3 Upload Preferences",
+                        text = "Recording & Cloud Storage",
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 13.sp
+                        fontSize = 15.sp,
+                        color = TextPrimary
                     )
 
+                    // SAF Folder Selector
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Active Recording Folder", fontSize = 12.5.sp, color = TextSecondary)
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFF8FAFC),
+                            border = BorderStroke(1.dp, CardBorderColor),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelectSafFolder() }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(imageVector = Icons.Default.FolderOpen, contentDescription = null, tint = AmberGold, modifier = Modifier.size(20.dp))
+                                    Text(text = activeFolderPath, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                                }
+                                Text("Change", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BluePrimary)
+                            }
+                        }
+                    }
+
+                    // Preset Chips
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        PresetChip(title = "Cube ACR", isSelected = activeFolderPath.contains("CubeCallRecorder", ignoreCase = true)) {
+                            val path = "/Android/data/com.catalinagroup.callrecorder/files"
+                            prefs.edit().putString("custom_recording_folder", path).apply()
+                            activeFolderPath = path
+                        }
+                        PresetChip(title = "CallBox", isSelected = activeFolderPath.contains("CallBox", ignoreCase = true)) {
+                            val path = "/CallBox/Audio"
+                            prefs.edit().putString("custom_recording_folder", path).apply()
+                            activeFolderPath = path
+                        }
+                        PresetChip(title = "Truecaller", isSelected = activeFolderPath.contains("Truecaller", ignoreCase = true)) {
+                            val path = "/Truecaller/Voice"
+                            prefs.edit().putString("custom_recording_folder", path).apply()
+                            activeFolderPath = path
+                        }
+                    }
+
+                    Divider(color = CardBorderColor)
+
+                    // Auto Upload Toggle
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text(text = "Wi-Fi Only Recording Upload", color = Slate200, fontSize = 12.sp)
-                            Text(text = "Save mobile data during large file transfers", color = Slate400, fontSize = 11.sp)
+                            Text("Automatic S3 Upload", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
+                            Text("Upload call audio instantly after call completes", fontSize = 11.5.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = autoSyncEnabled,
+                            onCheckedChange = {
+                                autoSyncEnabled = it
+                                prefs.edit().putBoolean("auto_sync_enabled", it).apply()
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AmberGold)
+                        )
+                    }
+
+                    // Wi-Fi Only Upload Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Wi-Fi Only Sync", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
+                            Text("Pause recording uploads when on mobile data", fontSize = 11.5.sp, color = TextSecondary)
                         }
                         Switch(
                             checked = wifiOnlyUpload,
-                            onCheckedChange = { 
-                                wifiOnlyUpload = it 
+                            onCheckedChange = {
+                                wifiOnlyUpload = it
                                 prefs.edit().putBoolean("wifi_only_upload", it).apply()
-                                AppLogManager.log("INFO", "Settings", "Wi-Fi Only Upload set to: $it")
                             },
-                            colors = SwitchDefaults.colors(checkedThumbColor = MedicalTeal500)
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AmberGold)
                         )
                     }
                 }
             }
-        }
 
-        Button(
-            onClick = onLogout,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Red400),
-            shape = RoundedCornerShape(12.dp)
+            // 3. Telemetry & Hardware Health Card
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                border = BorderStroke(1.dp, CardBorderColor),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        text = "System Diagnostics & Services",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = TextPrimary
+                    )
+
+                    SettingStatusRow(
+                        title = "WhatsApp Audio Connector",
+                        subtitle = if (isAccessibilityOn.value) "Active & capturing" else "Tap to enable Accessibility",
+                        isActive = isAccessibilityOn.value,
+                        onClick = {
+                            try {
+                                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Cannot open accessibility settings", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+
+                    SettingStatusRow(
+                        title = "Battery Optimization Bypass",
+                        subtitle = "Ensures background call tracking survives OS sleep",
+                        isActive = true,
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                try {
+                                    val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Battery settings unavailable", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
+            // 4. Developer Tools & Logs Action
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                border = BorderStroke(1.dp, CardBorderColor),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenLogs() }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFF1F5F9)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(imageVector = Icons.Default.Terminal, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(20.dp))
+                        }
+                        Column {
+                            Text("System Logs & Console", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                            Text("View live background sync events & telemetry", fontSize = 11.5.sp, color = TextSecondary)
+                        }
+                    }
+                    Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = TextSecondary)
+                }
+            }
+
+            // 5. Sign Out Button
+            Button(
+                onClick = { showLogoutDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFEE2E2),
+                    contentColor = RedDanger
+                ),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(imageVector = Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = RedDanger, modifier = Modifier.size(18.dp))
+                    Text("Sign Out of RecordHub", fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = RedDanger)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+    }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Sign Out", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = { Text("Are you sure you want to sign out? Call sync will pause until you log back in.", color = TextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutDialog = false
+                        onLogout()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = RedDanger)
+                ) {
+                    Text("Sign Out", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = CardBg,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+}
+
+@Composable
+private fun PresetChip(title: String, isSelected: Boolean, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (isSelected) AmberGold.copy(alpha = 0.2f) else Color(0xFFF1F5F9),
+        border = BorderStroke(1.dp, if (isSelected) AmberGold else CardBorderColor),
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Text(
+            text = title,
+            fontSize = 11.5.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = if (isSelected) Color(0xFFB45309) else TextSecondary,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+        )
+    }
+}
+
+@Composable
+private fun SettingStatusRow(title: String, subtitle: String, isActive: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = TextPrimary)
+            Text(subtitle, fontSize = 11.5.sp, color = TextSecondary)
+        }
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = if (isActive) Color(0xFFECFDF5) else Color(0xFFFEF3C7)
         ) {
-            Text(text = "Sign Out of RecordHub", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(
+                text = if (isActive) "Enabled" else "Setup",
+                color = if (isActive) GreenActive else Color(0xFFD97706),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            )
         }
     }
 }
