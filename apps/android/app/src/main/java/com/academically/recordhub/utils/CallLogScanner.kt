@@ -111,7 +111,8 @@ object CallLogScanner {
                         rawNumber, 
                         dateMs, 
                         endTimeMs, 
-                        claimedPaths
+                        claimedPaths,
+                        effectiveDurationSec
                     )
 
                     if (audioFile != null && audioFile.exists()) {
@@ -144,32 +145,20 @@ object CallLogScanner {
                 }
             }
 
-            // Secondary pass: Attach audio recordings strictly 1-to-1 to existing calls in Room DB missing recording paths
+            // Secondary pass: Attach audio recordings strictly 1-to-1 to existing calls in Room DB missing or misaligned recording paths
             val allDbEvents = db.callEventDao().getAllEvents()
-            val waDir = File(context.filesDir, "whatsapp_recordings")
 
             for (evt in allDbEvents) {
-                if (evt.recordingPath.isNullOrEmpty() || evt.recordingStatus == "NONE") {
-                    // Try SIM audio recording scanner with claimedPaths set
-                    var matchedFile = SimCallRecordingScanner.findAudioForCall(
+                val isUnlinked = evt.recordingPath.isNullOrEmpty() || evt.recordingStatus == "NONE"
+                if (isUnlinked && evt.durationSeconds > 0) {
+                    val matchedFile = SimCallRecordingScanner.findAudioForCall(
                         context, 
                         evt.phoneNumber, 
                         evt.startTime, 
                         evt.endTime,
-                        claimedPaths
+                        claimedPaths,
+                        evt.durationSeconds
                     )
-
-                    // WhatsApp call audio recording is currently PAUSED (only native SIM call recordings are active)
-                    /*
-                    if (matchedFile == null && waDir.exists() && waDir.isDirectory) {
-                        val waFiles = waDir.listFiles() ?: emptyArray()
-                        matchedFile = waFiles.firstOrNull { file ->
-                            !claimedPaths.contains(file.absolutePath) && !claimedPaths.contains(file.name) &&
-                            (file.name.endsWith(".wav") || file.name.endsWith(".m4a")) && file.length() > 0 &&
-                            Math.abs(evt.startTime - file.lastModified()) < 120000
-                        }
-                    }
-                    */
 
                     if (matchedFile != null && matchedFile.exists()) {
                         claimedPaths.add(matchedFile.absolutePath)

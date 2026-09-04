@@ -47,7 +47,8 @@ object SimCallRecordingScanner {
         phoneNumber: String,
         startTimeMs: Long,
         endTimeMs: Long,
-        claimedPaths: Set<String> = emptySet()
+        claimedPaths: Set<String> = emptySet(),
+        expectedDurationSec: Int = 0
     ): File? {
         val cleanPhone = phoneNumber.replace("\\D".toRegex(), "").takeLast(10)
         val prefs = context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
@@ -55,6 +56,20 @@ object SimCallRecordingScanner {
         val accountCreatedAtMs = prefs.getLong("account_created_at", 0L)
 
         val candidates = mutableListOf<CandidateMatch>()
+
+        // Helper to extract audio duration in seconds
+        fun getAudioDuration(file: File): Int {
+            return try {
+                val retriever = android.media.MediaMetadataRetriever()
+                retriever.setDataSource(file.absolutePath)
+                val time = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                retriever.release()
+                val timeMs = time?.toLongOrNull() ?: 0L
+                (timeMs / 1000L).toInt()
+            } catch (_: Exception) {
+                0
+            }
+        }
 
         // 1. Helper to extract timestamp & raw date string from filename
         fun extractTimestamp(fileName: String): Pair<Long?, String?> {
@@ -129,7 +144,7 @@ object SimCallRecordingScanner {
         }
 
         // 2. Score evaluation for any candidate file
-        fun evaluateScore(fileName: String, fileLastModified: Long): Long {
+        fun evaluateScore(fileName: String, fileLastModified: Long, fileDurationSec: Int = 0): Long {
             val (parsedTs, dateStr) = extractTimestamp(fileName)
             val effectiveTime = parsedTs ?: fileLastModified
 
@@ -155,28 +170,51 @@ object SimCallRecordingScanner {
             val timeDiffStartSec = Math.abs(effectiveTime - startTimeMs) / 1000L
             val minDeltaSec = Math.min(timeDiffEndSec, timeDiffStartSec)
 
-            // Case A: Filename contains the customer's phone number digits
-            if (cleanPhone.length >= 7 && remainingDigits.contains(cleanPhone)) {
-                // High confidence match!
-                return if (minDeltaSec <= 1800) { // within 30 minutes
-                    3000L - minDeltaSec
+            var score = 0L
+
+            // Phone number matching logic
+            val hasPhoneMatch = cleanPhone.length >= 7 && remainingDigits.contains(cleanPhone)
+            val hasMismatchPhone = remainingDigits.length >= 7 && cleanPhone.length >= 7 && !remainingDigits.contains(cleanPhone)
+
+            if (hasMismatchPhone) {
+                return -1L // Explicitly recorded for a different customer
+            }
+
+            if (hasPhoneMatch) {
+                score += 3000L
+            } else {
+                // Generic / Timestamp only filename
+                if (minDeltaSec > 360) {
+                    return -1L // Too far in time (> 6 minutes)
+                }
+                score += (1800L - (minDeltaSec * 4))
+            }
+
+            // Proximity bonus to call start/end time
+            if (minDeltaSec <= 15) {
+                score += 1500L
+            } else if (minDeltaSec <= 60) {
+                score += 800L
+            } else if (minDeltaSec <= 300) {
+                score += 300L
+            }
+
+            // Duration alignment bonus / penalty
+            if (expectedDurationSec > 0 && fileDurationSec > 0) {
+                val durDelta = Math.abs(fileDurationSec - expectedDurationSec)
+                if (durDelta <= 2) {
+                    score += 2500L // Exact duration match!
+                } else if (durDelta <= 5) {
+                    score += 1200L
+                } else if (durDelta <= 10) {
+                    score += 400L
                 } else {
-                    1500L
+                    // Massive penalty for mismatched audio length (e.g. 5s call vs 21s audio or 30s call vs 6s audio)
+                    score -= (durDelta * 80L)
                 }
             }
 
-            // Case B: Filename contains a DIFFERENT distinct 7+ digit phone number
-            if (remainingDigits.length >= 7 && cleanPhone.length >= 7 && !remainingDigits.contains(cleanPhone)) {
-                return -1L // Explicitly for another contact
-            }
-
-            // Case C: Generic or timestamp-only filename (e.g. 20260904_123626.m4a or REC_001.mp3)
-            // Match based on time proximity to call end/start
-            return if (minDeltaSec <= 360) { // within 6 minutes of the call
-                2000L - (minDeltaSec * 3)
-            } else {
-                -1L
-            }
+            return score
         }
 
         // --- Source 1: MediaStore Audio ---
@@ -194,6 +232,7 @@ object SimCallRecordingScanner {
                 MediaStore.Audio.Media.DATE_ADDED,
                 MediaStore.Audio.Media.DATE_MODIFIED,
                 MediaStore.Audio.Media.SIZE,
+                MediaStore.Audio.Media.DURATION,
                 MediaStore.Audio.Media.DATA
             )
 
@@ -212,6 +251,7 @@ object SimCallRecordingScanner {
                     val modIdx = c.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
                     val addIdx = c.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
                     val sizeIdx = c.getColumnIndex(MediaStore.Audio.Media.SIZE)
+                    val durIdx = c.getColumnIndex(MediaStore.Audio.Media.DURATION)
                     val dataIdx = c.getColumnIndex(MediaStore.Audio.Media.DATA)
 
                     var count = 0
@@ -220,6 +260,8 @@ object SimCallRecordingScanner {
                         val id = if (idIdx >= 0) c.getLong(idIdx) else -1L
                         val name = if (nameIdx >= 0) c.getString(nameIdx) ?: "" else ""
                         val size = if (sizeIdx >= 0) c.getLong(sizeIdx) else 0L
+                        val durMs = if (durIdx >= 0) c.getLong(durIdx) else 0L
+                        val durSec = (durMs / 1000L).toInt()
                         val rawPath = if (dataIdx >= 0) c.getString(dataIdx) ?: "" else ""
                         val modSec = if (modIdx >= 0) c.getLong(modIdx) else 0L
                         val addSec = if (addIdx >= 0) c.getLong(addIdx) else 0L
@@ -234,13 +276,17 @@ object SimCallRecordingScanner {
                             continue
                         }
 
-                        val score = evaluateScore(name.ifEmpty { rawPath }, effectiveModMs)
+                        val score = evaluateScore(name.ifEmpty { rawPath }, effectiveModMs, durSec)
                         if (score > 0) {
                             if (rawPath.isNotBlank()) {
                                 val directFile = File(rawPath)
                                 if (directFile.exists() && directFile.canRead() && directFile.length() > 0) {
-                                    candidates.add(CandidateMatch(directFile, score, "MediaStore_Direct"))
-                                    continue
+                                    val finalDur = if (durSec > 0) durSec else getAudioDuration(directFile)
+                                    val refinedScore = evaluateScore(name.ifEmpty { directFile.name }, effectiveModMs, finalDur)
+                                    if (refinedScore > 0) {
+                                        candidates.add(CandidateMatch(directFile, refinedScore, "MediaStore_Direct"))
+                                        continue
+                                    }
                                 }
                             }
 
@@ -251,7 +297,11 @@ object SimCallRecordingScanner {
                                     cacheFile.outputStream().use { output -> input.copyTo(output) }
                                 }
                                 if (cacheFile.exists() && cacheFile.length() > 0) {
-                                    candidates.add(CandidateMatch(cacheFile, score, "MediaStore_Stream"))
+                                    val finalDur = if (durSec > 0) durSec else getAudioDuration(cacheFile)
+                                    val refinedScore = evaluateScore(name.ifEmpty { cacheFile.name }, effectiveModMs, finalDur)
+                                    if (refinedScore > 0) {
+                                        candidates.add(CandidateMatch(cacheFile, refinedScore, "MediaStore_Stream"))
+                                    }
                                 }
                             } catch (_: Exception) {}
                         }
@@ -277,13 +327,14 @@ object SimCallRecordingScanner {
                                 continue
                             }
 
-                            val score = evaluateScore(fileName, doc.lastModified())
-                            if (score > 0) {
-                                val localTempFile = File(context.cacheDir, "SAF_REC_${System.currentTimeMillis()}_$fileName")
-                                context.contentResolver.openInputStream(doc.uri)?.use { input ->
-                                    localTempFile.outputStream().use { output -> input.copyTo(output) }
-                                }
-                                if (localTempFile.exists() && localTempFile.length() > 0) {
+                            val localTempFile = File(context.cacheDir, "SAF_REC_${System.currentTimeMillis()}_$fileName")
+                            context.contentResolver.openInputStream(doc.uri)?.use { input ->
+                                localTempFile.outputStream().use { output -> input.copyTo(output) }
+                            }
+                            if (localTempFile.exists() && localTempFile.length() > 0) {
+                                val fileDur = getAudioDuration(localTempFile)
+                                val score = evaluateScore(fileName, doc.lastModified(), fileDur)
+                                if (score > 0) {
                                     candidates.add(CandidateMatch(localTempFile, score, "SAF_Folder"))
                                 }
                             }
@@ -316,7 +367,8 @@ object SimCallRecordingScanner {
                                 continue
                             }
 
-                            val score = evaluateScore(file.name, file.lastModified())
+                            val fileDur = getAudioDuration(file)
+                            val score = evaluateScore(file.name, file.lastModified(), fileDur)
                             if (score > 0) {
                                 candidates.add(CandidateMatch(file, score, "FileSystem_$relPath"))
                             }
@@ -334,7 +386,8 @@ object SimCallRecordingScanner {
                 for (file in waFiles) {
                     if (file.isFile && isAudioFile(file.name) && file.length() > 0) {
                         if (!claimedPaths.contains(file.absolutePath) && !claimedPaths.contains(file.name)) {
-                            val score = evaluateScore(file.name, file.lastModified())
+                            val fileDur = getAudioDuration(file)
+                            val score = evaluateScore(file.name, file.lastModified(), fileDur)
                             if (score > 0) {
                                 candidates.add(CandidateMatch(file, score, "WhatsApp_Internal"))
                             }

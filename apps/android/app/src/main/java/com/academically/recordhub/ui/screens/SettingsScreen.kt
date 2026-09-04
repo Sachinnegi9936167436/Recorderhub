@@ -60,7 +60,9 @@ fun SettingsScreen(
         }
     }
 
-    var wifiOnlyUpload by remember { mutableStateOf(prefs.getBoolean("wifi_only_upload", false)) }
+    LaunchedEffect(Unit) {
+        prefs.edit().putBoolean("wifi_only_upload", false).apply()
+    }
     var autoSyncEnabled by remember { mutableStateOf(prefs.getBoolean("auto_sync_enabled", true)) }
     val scrollState = rememberScrollState()
     var showLogoutDialog by remember { mutableStateOf(false) }
@@ -269,24 +271,28 @@ fun SettingsScreen(
                         )
                     }
 
-                    // Wi-Fi Only Upload Toggle
+                    // Upload Network Policy
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Wi-Fi Only Sync", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
-                            Text("Pause recording uploads when on mobile data", fontSize = 11.5.sp, color = TextSecondary)
+                            Text("Upload Network Policy", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
+                            Text("Syncs recordings over both Mobile Data & Wi-Fi", fontSize = 11.5.sp, color = TextSecondary)
                         }
-                        Switch(
-                            checked = wifiOnlyUpload,
-                            onCheckedChange = {
-                                wifiOnlyUpload = it
-                                prefs.edit().putBoolean("wifi_only_upload", it).apply()
-                            },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AmberGold)
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFECFDF5)
+                        ) {
+                            Text(
+                                text = "Any Network",
+                                color = GreenActive,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                 }
             }

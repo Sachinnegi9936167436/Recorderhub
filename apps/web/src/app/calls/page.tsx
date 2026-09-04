@@ -38,6 +38,7 @@ import {
 function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; canListen?: boolean }) {
   const [hasError, setHasError] = useState(false);
   const [speed, setSpeed] = useState<number>(1);
+  const [audioDurationSec, setAudioDurationSec] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const isAnswered = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
@@ -70,6 +71,12 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
     }
   };
 
+  const handleLoadedMetadata = () => {
+    if (audioRef.current && !isNaN(audioRef.current.duration) && audioRef.current.duration > 0) {
+      setAudioDurationSec(Math.round(audioRef.current.duration));
+    }
+  };
+
   const rawPhone = call.phoneNumber || call.phone || '';
   const cleanDigits = rawPhone.replace(/\D/g, '').slice(-10) || 'Contact';
   const contactName = (call.leadName || call.name || cleanDigits).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -93,6 +100,7 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
           controls
           preload="metadata"
           src={audioSrc}
+          onLoadedMetadata={handleLoadedMetadata}
           onError={() => setHasError(true)}
           className="h-7 w-44 rounded-md bg-slate-100 border border-slate-200 shadow-xs focus:outline-none"
         />
@@ -118,9 +126,13 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
       <div className="flex items-center space-x-1.5 text-[10px] text-slate-500 font-mono">
         <Clock className="w-2.5 h-2.5 text-slate-400" />
         <span>Rec: {timeDisplayStr}</span>
-        {call.durationSeconds > 0 && (
+        {audioDurationSec !== null ? (
+          <span className="text-slate-500 font-semibold" title={`Actual Audio: ${audioDurationSec}s (Connected Talk Time: ${call.durationSeconds || 0}s)`}>
+            • {audioDurationSec}s audio
+          </span>
+        ) : call.durationSeconds > 0 ? (
           <span className="text-slate-400">({call.durationSeconds}s)</span>
-        )}
+        ) : null}
       </div>
     </div>
   );
