@@ -70,24 +70,58 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
     }
   };
 
+  const rawPhone = call.phoneNumber || call.phone || '';
+  const cleanDigits = rawPhone.replace(/\D/g, '').slice(-10) || 'Contact';
+  const contactName = (call.leadName || call.name || cleanDigits).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const recordDate = call.startTime ? new Date(call.startTime) : new Date();
+  const dateFormatted = recordDate.toISOString().slice(0, 10);
+  const timeFormatted = recordDate.toTimeString().slice(0, 8).replace(/:/g, '-');
+  const downloadFileName = `Recording_${contactName}_${cleanDigits}_${dateFormatted}_${timeFormatted}.m4a`;
+
+  const timeDisplayStr = recordDate.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+
   return (
-    <div className="flex items-center justify-center space-x-1.5 py-1">
-      <audio
-        ref={audioRef}
-        controls
-        preload="metadata"
-        src={audioSrc}
-        onError={() => setHasError(true)}
-        className="h-7 w-44 rounded-md bg-slate-100 border border-slate-200 shadow-xs focus:outline-none"
-      />
-      <button
-        type="button"
-        onClick={toggleSpeed}
-        title="Change audio playback speed (1x, 1.25x, 1.5x, 2x)"
-        className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] font-bold border border-slate-200 transition-colors shadow-2xs"
-      >
-        {speed}x
-      </button>
+    <div className="flex flex-col items-center justify-center py-1 space-y-1">
+      <div className="flex items-center justify-center space-x-1.5">
+        <audio
+          ref={audioRef}
+          controls
+          preload="metadata"
+          src={audioSrc}
+          onError={() => setHasError(true)}
+          className="h-7 w-44 rounded-md bg-slate-100 border border-slate-200 shadow-xs focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={toggleSpeed}
+          title="Change audio playback speed (1x, 1.25x, 1.5x, 2x)"
+          className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] font-bold border border-slate-200 transition-colors shadow-2xs"
+        >
+          {speed}x
+        </button>
+        <a
+          href={audioSrc}
+          download={downloadFileName}
+          title={`Download audio file: ${downloadFileName}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200 transition-colors shadow-2xs"
+        >
+          <Download className="w-3.5 h-3.5" />
+        </a>
+      </div>
+      <div className="flex items-center space-x-1.5 text-[10px] text-slate-500 font-mono">
+        <Clock className="w-2.5 h-2.5 text-slate-400" />
+        <span>Rec: {timeDisplayStr}</span>
+        {call.durationSeconds > 0 && (
+          <span className="text-slate-400">({call.durationSeconds}s)</span>
+        )}
+      </div>
     </div>
   );
 }

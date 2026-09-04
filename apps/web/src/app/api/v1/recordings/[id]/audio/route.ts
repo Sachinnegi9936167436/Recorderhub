@@ -97,7 +97,12 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         }
 
         const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-        const command = new GetObjectCommand({ Bucket: s3Info.bucket, Key: targetKey });
+        const downloadFilename = `Recording_${recordingId}.m4a`;
+        const command = new GetObjectCommand({
+          Bucket: s3Info.bucket,
+          Key: targetKey,
+          ResponseContentDisposition: `inline; filename="${downloadFilename}"`
+        });
         const presignedUrl = await getSignedUrl(s3Info.client, command, { expiresIn: 3600 });
 
         // Cache in Redis for 55 minutes (3300 seconds)
