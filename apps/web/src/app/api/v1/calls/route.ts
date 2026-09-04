@@ -205,20 +205,29 @@ export async function GET() {
 
             const fileName = key.split('/').pop() || '';
             const recId = fileName.replace(/\.[^/.]+$/, '');
-            const digitsOnly = fileName.replace(/\D/g, '');
-            const clean10 = digitsOnly.length >= 10 ? digitsOnly.slice(0, 10) : '';
+            
+            // Extract 10-digit phone number accurately from S3 filename
+            let clean10 = '';
+            const parts = recId.split('_');
+            for (const part of parts) {
+              const partDigits = part.replace(/\D/g, '');
+              if (partDigits.length === 10) {
+                clean10 = partDigits;
+                break;
+              }
+            }
+            if (!clean10) {
+              const match = recId.match(/(\d{10})/);
+              if (match) clean10 = match[1];
+            }
 
             // Find matching call in deduplicated calls
             const matchingCall = deduplicatedCalls.find((c) => {
-              if (c.idempotencyKey && key.includes(c.idempotencyKey)) return true;
+              if (c.idempotencyKey && (key.includes(c.idempotencyKey) || recId.includes(c.idempotencyKey))) return true;
               if (c.s3Key === key) return true;
               if (c.audioUrl && c.audioUrl.includes(recId)) return true;
               const callDigits = (c.phoneNumber || '').replace(/\D/g, '').slice(-10);
               if (clean10 && callDigits && clean10 === callDigits) {
-                // If timestamp in S3 file matches call within 15 minutes
-                const s3Date = s3Obj.LastModified ? new Date(s3Obj.LastModified).getTime() : 0;
-                const callDate = c.startTime ? new Date(c.startTime).getTime() : 0;
-                if (Math.abs(s3Date - callDate) <= 15 * 60 * 1000) return true;
                 return true;
               }
               return false;

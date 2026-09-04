@@ -189,7 +189,7 @@ class CallSyncWorker(
                 for (evt in pendingAudioUploads) {
                     val directUploadInfo = uploadUrlsMap[evt.idempotencyKey]
                     if (directUploadInfo != null) {
-                        uploadAudioDirect(directUploadInfo, evt, db)
+                        uploadAudioDirect(api, authHeader, directUploadInfo, evt, db)
                     } else {
                         // Fallback to initiate upload if direct presigned URL was not in response
                         uploadAudioFile(api, baseUrl, authHeader, db, evt)
@@ -209,6 +209,8 @@ class CallSyncWorker(
     }
 
     private suspend fun uploadAudioDirect(
+        api: RecordHubApi,
+        authHeader: String,
         uploadInfo: com.academically.recordhub.data.remote.UploadUrlInfo,
         evt: CallEventEntity,
         db: AppDatabase
@@ -239,6 +241,12 @@ class CallSyncWorker(
 
             val putResponse = httpClient.newCall(putRequest).execute()
             if (putResponse.isSuccessful) {
+                try {
+                    val compReq = com.academically.recordhub.data.remote.UploadCompleteRequest(callId = evt.idempotencyKey)
+                    api.completeUpload(authHeader, uploadInfo.recordingId, compReq)
+                } catch (cErr: Exception) {
+                    Log.w("CallSyncWorker", "completeUpload notification warning: ${cErr.message}")
+                }
                 db.callEventDao().updateRecordingStatus(evt.idempotencyKey, "SYNCED")
                 AppLogManager.log("SYNC", "AWS S3", "Direct 1-Step AWS S3 PUT upload succeeded for ${file.name} to ${uploadInfo.s3Key}!")
                 return true
