@@ -180,14 +180,19 @@ object SimCallRecordingScanner {
                 return -1L // Explicitly recorded for a different customer
             }
 
+            // Reject generic files created before this specific call started
+            if (!hasPhoneMatch && effectiveTime < (startTimeMs - 10000L)) {
+                return -1L // Finished before call even began
+            }
+
             if (hasPhoneMatch) {
                 score += 3000L
             } else {
                 // Generic / Timestamp only filename
-                if (minDeltaSec > 360) {
-                    return -1L // Too far in time (> 6 minutes)
+                if (minDeltaSec > 120) {
+                    return -1L // Too far in time (> 2 minutes)
                 }
-                score += (1800L - (minDeltaSec * 4))
+                score += (1800L - (minDeltaSec * 10))
             }
 
             // Proximity bonus to call start/end time
@@ -195,7 +200,7 @@ object SimCallRecordingScanner {
                 score += 1500L
             } else if (minDeltaSec <= 60) {
                 score += 800L
-            } else if (minDeltaSec <= 300) {
+            } else if (minDeltaSec <= 120) {
                 score += 300L
             }
 
@@ -204,13 +209,15 @@ object SimCallRecordingScanner {
                 val durDelta = Math.abs(fileDurationSec - expectedDurationSec)
                 if (durDelta <= 2) {
                     score += 2500L // Exact duration match!
-                } else if (durDelta <= 5) {
+                } else if (durDelta <= 4) {
                     score += 1200L
-                } else if (durDelta <= 10) {
+                } else if (durDelta <= 7 && hasPhoneMatch) {
                     score += 400L
+                } else if (!hasPhoneMatch && durDelta > 4) {
+                    return -1L // Reject mismatched generic file (e.g. 18s audio for 9s call)
                 } else {
-                    // Massive penalty for mismatched audio length (e.g. 5s call vs 21s audio or 30s call vs 6s audio)
-                    score -= (durDelta * 80L)
+                    // Massive penalty for mismatched audio length
+                    score -= (durDelta * 150L)
                 }
             }
 

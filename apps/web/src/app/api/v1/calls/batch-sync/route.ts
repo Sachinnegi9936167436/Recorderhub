@@ -226,7 +226,7 @@ export async function POST(req: Request) {
         // Check 2: Deduplicate within 120-second time window for same clean 10-digit number & channel
         let matchByTimeWindow = null;
         if (cleanDigits.length === 10) {
-          const regexPattern = new RegExp(`${cleanDigits}$`);
+          const regexPattern = new RegExp(cleanDigits.split('').join('\\s*') + '$');
           matchByTimeWindow = await (CallModel as any).findOne({
             phoneNumber: { $regex: regexPattern },
             startTime: { $gte: minTime, $lte: maxTime },

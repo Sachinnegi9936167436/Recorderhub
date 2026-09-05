@@ -4,9 +4,41 @@ import { CallModel } from '@/lib/models';
 import { getS3Client } from '@/lib/aws';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { cacheDel } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+function parseTimestamp(str: string): Date | null {
+  if (!str) return null;
+  const match14 = str.match(/\b(20\d{12})\b/);
+  if (match14) {
+    const s = match14[1];
+    const year = parseInt(s.slice(0, 4), 10);
+    const month = parseInt(s.slice(4, 6), 10) - 1;
+    const day = parseInt(s.slice(6, 8), 10);
+    const hour = parseInt(s.slice(8, 10), 10);
+    const min = parseInt(s.slice(10, 12), 10);
+    const sec = parseInt(s.slice(12, 14), 10);
+    return new Date(Date.UTC(year, month, day, hour, min, sec));
+  }
+
+  const matchEpoch = str.match(/\b(1[67]\d{11})\b/);
+  if (matchEpoch) {
+    const ms = Number(matchEpoch[1]);
+    if (!isNaN(ms) && ms > 1000000000000) {
+      return new Date(ms);
+    }
+  }
+
+  return null;
+}
+
+function buildPhoneRegex(digits: string): RegExp {
+  const clean = digits.replace(/\D/g, '').slice(-10);
+  const pattern = clean.split('').join('\\s*') + '$';
+  return new RegExp(pattern);
+}
 
 export async function POST(req: Request) {
   try {
@@ -16,9 +48,8 @@ export async function POST(req: Request) {
     const digitsOnly = (callId || '').replace(/\D/g, '');
     const cleanPhone = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : 'CALL';
 
-    const parts = (callId || '').split('-');
-    const timestampMs = parts.length >= 2 ? Number(parts[1]) : Date.now();
-    const callDate = !isNaN(timestampMs) && timestampMs > 1000000000000 ? new Date(timestampMs) : new Date();
+    const parsedDate = parseTimestamp(callId);
+    const callDate = parsedDate || new Date();
 
     // Format timestamp as YYYYMMDDHHmmss to mirror native phone recording naming
     const dateStr = callDate.toISOString().replace(/\D/g, '').slice(0, 14);
@@ -47,7 +78,7 @@ export async function POST(req: Request) {
         const command = new PutObjectCommand({
           Bucket: s3Info.bucket,
           Key: s3Key,
-          ContentType: mimeType || (ext === 'wav' ? 'audio/wav' : 'audio/m4a'),
+          ContentType: mimeType || (ext === 'wav' ? 'audio/wav' : ext === 'mp3' ? 'audio/mpeg' : 'audio/m4a'),
         });
 
         // Generate 15-minute AWS S3 presigned URL for direct APK upload
@@ -79,52 +110,45 @@ export async function POST(req: Request) {
           { new: true }
         ).exec();
 
-        if (!updatedCall) {
-          const parts = callId.split('-');
-          const timestampMs = parts.length >= 2 ? Number(parts[1]) : NaN;
-          const digitsOnly = callId.replace(/\D/g, '');
-          const cleanDigits = digitsOnly.slice(-10);
+        if (!updatedCall && cleanPhone.length === 10) {
+          const phoneRegex = buildPhoneRegex(cleanPhone);
+          const query: any = {
+            phoneNumber: { $regex: phoneRegex },
+            $or: [
+              { recordingStatus: { $in: ['PENDING', 'PENDING_UPLOAD', 'NONE'] } },
+              { audioUrl: { $exists: false } }
+            ]
+          };
 
-          if (cleanDigits.length === 10) {
-            const regexPattern = new RegExp(`${cleanDigits}$`);
-            const query: any = {
-              phoneNumber: { $regex: regexPattern },
-              $or: [
-                { recordingStatus: { $in: ['PENDING', 'PENDING_UPLOAD', 'NONE'] } },
-                { audioUrl: { $exists: false } }
-              ]
-            };
-
-            if (deviceId) {
-              query.deviceId = deviceId;
-            } else if (counselorEmail) {
-              query.counselorEmail = counselorEmail;
-            }
-
-            // If idempotencyKey contains embedded timestamp, enforce strict 2-minute time window match
-            if (!isNaN(timestampMs) && timestampMs > 1000000000000) {
-              const callTime = new Date(timestampMs);
-              query.startTime = {
-                $gte: new Date(callTime.getTime() - 120000),
-                $lte: new Date(callTime.getTime() + 120000)
-              };
-            }
-
-            updatedCall = await (CallModel as any).findOneAndUpdate(
-              query,
-              {
-                $set: {
-                  recordingStatus: 'PENDING_UPLOAD',
-                  audioUrl: audioUrl,
-                  s3Key: s3Key,
-                },
-              },
-              { sort: { startTime: -1, createdAt: -1 }, new: true }
-            ).exec();
+          if (deviceId) {
+            query.deviceId = deviceId;
+          } else if (counselorEmail) {
+            query.counselorEmail = counselorEmail;
           }
+
+          if (parsedDate) {
+            query.startTime = {
+              $gte: new Date(parsedDate.getTime() - 180000),
+              $lte: new Date(parsedDate.getTime() + 180000)
+            };
+          }
+
+          updatedCall = await (CallModel as any).findOneAndUpdate(
+            query,
+            {
+              $set: {
+                recordingStatus: 'PENDING_UPLOAD',
+                audioUrl: audioUrl,
+                s3Key: s3Key,
+              },
+            },
+            { sort: { startTime: -1, createdAt: -1 }, new: true }
+          ).exec();
         }
+
         if (updatedCall) {
           console.log(`Linked audioUrl ${audioUrl} strictly to call ${updatedCall.idempotencyKey || updatedCall._id}`);
+          await cacheDel('cache:calls:latest').catch(() => {});
         } else {
           console.warn(`Could not find matching call for audio upload: ${callId}`);
         }

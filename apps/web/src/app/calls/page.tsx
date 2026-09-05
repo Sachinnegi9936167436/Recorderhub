@@ -53,13 +53,41 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
     );
   }
 
-  if (hasError || !isAnswered || call.recordingStatus === 'NONE' || (!hasRecording && !call.audioUrl)) {
+  if (hasError) {
+    return (
+      <div className="flex items-center justify-center space-x-1 text-[11px]">
+        <span className="text-slate-400 font-medium">No Recording</span>
+        <button
+          onClick={() => {
+            setHasError(false);
+            if (audioRef.current) {
+              audioRef.current.load();
+            }
+          }}
+          className="text-indigo-600 hover:text-indigo-800 ml-1 font-semibold"
+          title="Retry audio stream"
+        >
+          ↻
+        </button>
+      </div>
+    );
+  }
+
+  if (!isAnswered || call.recordingStatus === 'NONE' || (!hasRecording && !call.audioUrl)) {
     return <span className="text-slate-400 font-medium text-[11px]">No Recording</span>;
   }
 
   const audioSrc = call.audioUrl || (call.s3Key ? `/api/v1/recordings/stream?key=${encodeURIComponent(call.s3Key)}` : null);
 
   if (!audioSrc) {
+    if (call.recordingStatus === 'PENDING_UPLOAD') {
+      return (
+        <span className="inline-flex items-center space-x-1 text-amber-600 font-medium text-[11px] bg-amber-50 px-2 py-0.5 rounded border border-amber-200" title="Audio recording is syncing to AWS S3...">
+          <span>⏳</span>
+          <span>Syncing...</span>
+        </span>
+      );
+    }
     return <span className="text-slate-400 font-medium text-[11px]">No Recording</span>;
   }
 
@@ -248,6 +276,16 @@ function SalestrailCallsInner() {
   useEffect(() => {
     fetchCalls();
     fetchProvisionedCounselors();
+    // Reconcile any unlinked S3 recordings in the background
+    fetch('/api/v1/recordings/reconcile', { method: 'POST' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.reconciledCount > 0) {
+          fetchCalls();
+        }
+      })
+      .catch(() => {});
+
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchCalls();
@@ -1012,17 +1050,6 @@ function SalestrailCallsInner() {
             >
               <Flame className="w-3.5 h-3.5" />
               <span>Long Calls &gt;5m ({callStats.longCount})</span>
-            </button>
-
-            <button
-              onClick={() => setAnomalyFilter('bookmarked')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'bookmarked'
-                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                : 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
-                }`}
-            >
-              <Star className="w-3.5 h-3.5" />
-              <span>Reviewed / Exemplary ({callStats.reviewedCount})</span>
             </button>
           </div>
 

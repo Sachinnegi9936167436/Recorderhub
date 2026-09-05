@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { getS3Client } from '@/lib/aws';
-import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 import { cacheGet, cacheSet } from '@/lib/redis';
@@ -21,7 +21,7 @@ function getUploadsDir() {
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
     let recordingId = params.id;
-    let s3KeyTarget = `recordings/${recordingId}.m4a`;
+    let s3KeyTarget: string | null = null;
 
     // 1. Resolve actual recordingId or s3Key from MongoDB Atlas
     try {
@@ -38,7 +38,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       if (callDoc) {
         if (callDoc.s3Key) {
           s3KeyTarget = callDoc.s3Key;
-        } else if (callDoc.audioUrl) {
+        }
+        if (callDoc.audioUrl) {
           const match = callDoc.audioUrl.match(/recordings\/([^\/]+)\/audio/);
           if (match && match[1]) {
             recordingId = match[1];
@@ -48,6 +49,83 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     } catch (dbErr) {
       console.warn('DB lookup for recording ID failed:', dbErr);
     }
+
+    // 2. Try fetching from AWS S3 Bucket via direct Presigned GET URL
+    const s3Info = getS3Client();
+    if (s3Info) {
+      try {
+        const parts = recordingId.split('_');
+        const devPrefix = parts.length >= 2 ? parts[0] : '';
+
+        const candidateKeys: string[] = [];
+        if (s3KeyTarget) candidateKeys.push(s3KeyTarget);
+        if (devPrefix) {
+          candidateKeys.push(`recordings/${devPrefix}/${recordingId}.mp3`);
+          candidateKeys.push(`recordings/${devPrefix}/${recordingId}.m4a`);
+          candidateKeys.push(`recordings/${devPrefix}/${recordingId}.wav`);
+        }
+        candidateKeys.push(`recordings/${recordingId}.mp3`);
+        candidateKeys.push(`recordings/${recordingId}.m4a`);
+        candidateKeys.push(`recordings/${recordingId}.wav`);
+        candidateKeys.push(`recordings/${recordingId}.3gp`);
+        candidateKeys.push(`recordings/${recordingId}`);
+        candidateKeys.push(`${recordingId}.mp3`);
+        candidateKeys.push(`${recordingId}.m4a`);
+
+        let resolvedS3Key: string | null = s3KeyTarget;
+
+        if (!resolvedS3Key) {
+          for (const key of candidateKeys) {
+            try {
+              await s3Info.client.send(new HeadObjectCommand({ Bucket: s3Info.bucket, Key: key }));
+              resolvedS3Key = key;
+              break;
+            } catch {
+              // candidate key not in bucket, continue
+            }
+          }
+        }
+
+        const finalKey = resolvedS3Key || (devPrefix ? `recordings/${devPrefix}/${recordingId}.mp3` : `recordings/${recordingId}.mp3`);
+        const S3_CACHE_KEY = `s3:audio:${finalKey}`;
+
+        // Check Redis cache for instant 1ms redirect
+        const cachedUrl = await cacheGet<string>(S3_CACHE_KEY);
+        if (cachedUrl) {
+          return NextResponse.redirect(cachedUrl, 307);
+        }
+
+        const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+        const ext = finalKey.endsWith('.mp3') ? 'mp3' : finalKey.endsWith('.wav') ? 'wav' : 'm4a';
+        const mime = ext === 'mp3' ? 'audio/mpeg' : ext === 'wav' ? 'audio/wav' : 'audio/mp4';
+        const downloadFilename = `Recording_${recordingId}.${ext}`;
+
+        const command = new GetObjectCommand({
+          Bucket: s3Info.bucket,
+          Key: finalKey,
+          ResponseContentType: mime,
+          ResponseContentDisposition: `inline; filename="${downloadFilename}"`
+        });
+        const presignedUrl = await getSignedUrl(s3Info.client, command, { expiresIn: 3600 });
+
+        // Cache in Redis for 55 minutes
+        await cacheSet(S3_CACHE_KEY, presignedUrl, 3300);
+
+        return NextResponse.redirect(presignedUrl, 307);
+      } catch (s3Err) {
+        console.warn(`S3 Presigned Redirect failed for ${recordingId}, checking fallback:`, s3Err);
+      }
+    }
+
+    // 3. Try fetching from Local Disk Storage fallback
+    const uploadsDir = getUploadsDir();
+    const possibleLocalFiles = [
+      path.join(uploadsDir, `${recordingId}.mp3`),
+      path.join(uploadsDir, `${recordingId}.m4a`),
+      path.join(uploadsDir, `${recordingId}.wav`),
+      path.join(uploadsDir, `${recordingId}.3gp`),
+      path.join(uploadsDir, `${recordingId}`)
+    ];
 
     const createAudioResponse = (buffer: Buffer, mimeType: string = 'audio/mp4') => {
       const rangeHeader = req.headers.get('range');
@@ -82,47 +160,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         },
       });
     };
-
-    // 2. Try fetching from AWS S3 Bucket via direct Presigned GET URL (0 MB Vercel bandwidth)
-    const s3Info = getS3Client();
-    if (s3Info) {
-      try {
-        const targetKey = s3KeyTarget || `recordings/${recordingId}.m4a`;
-        const S3_CACHE_KEY = `s3:audio:${targetKey}`;
-
-        // Check Redis cache for instant 1ms redirect
-        const cachedUrl = await cacheGet<string>(S3_CACHE_KEY);
-        if (cachedUrl) {
-          return NextResponse.redirect(cachedUrl, 307);
-        }
-
-        const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-        const downloadFilename = `Recording_${recordingId}.m4a`;
-        const command = new GetObjectCommand({
-          Bucket: s3Info.bucket,
-          Key: targetKey,
-          ResponseContentDisposition: `inline; filename="${downloadFilename}"`
-        });
-        const presignedUrl = await getSignedUrl(s3Info.client, command, { expiresIn: 3600 });
-
-        // Cache in Redis for 55 minutes (3300 seconds)
-        await cacheSet(S3_CACHE_KEY, presignedUrl, 3300);
-
-        return NextResponse.redirect(presignedUrl, 307);
-      } catch (s3Err) {
-        console.warn(`S3 Presigned Redirect failed for ${recordingId}, checking fallback:`, s3Err);
-      }
-    }
-
-    // 3. Try fetching from Local Disk Storage fallback
-    const uploadsDir = getUploadsDir();
-    const possibleLocalFiles = [
-      path.join(uploadsDir, `${recordingId}.wav`),
-      path.join(uploadsDir, `${recordingId}.mp3`),
-      path.join(uploadsDir, `${recordingId}.m4a`),
-      path.join(uploadsDir, `${recordingId}.3gp`),
-      path.join(uploadsDir, `${recordingId}`)
-    ];
 
     for (const filePath of possibleLocalFiles) {
       try {

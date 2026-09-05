@@ -3,12 +3,43 @@ import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 import { promises as fs } from 'fs';
 import path from 'path';
-
 import { getS3Client } from '@/lib/aws';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { cacheDel } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+function parseTimestamp(str: string): Date | null {
+  if (!str) return null;
+  const match14 = str.match(/\b(20\d{12})\b/);
+  if (match14) {
+    const s = match14[1];
+    const year = parseInt(s.slice(0, 4), 10);
+    const month = parseInt(s.slice(4, 6), 10) - 1;
+    const day = parseInt(s.slice(6, 8), 10);
+    const hour = parseInt(s.slice(8, 10), 10);
+    const min = parseInt(s.slice(10, 12), 10);
+    const sec = parseInt(s.slice(12, 14), 10);
+    return new Date(Date.UTC(year, month, day, hour, min, sec));
+  }
+
+  const matchEpoch = str.match(/\b(1[67]\d{11})\b/);
+  if (matchEpoch) {
+    const ms = Number(matchEpoch[1]);
+    if (!isNaN(ms) && ms > 1000000000000) {
+      return new Date(ms);
+    }
+  }
+
+  return null;
+}
+
+function buildPhoneRegex(digits: string): RegExp {
+  const clean = digits.replace(/\D/g, '').slice(-10);
+  const pattern = clean.split('').join('\\s*') + '$';
+  return new RegExp(pattern);
+}
 
 function getUploadsDir() {
   const rootDir = process.cwd();
@@ -32,7 +63,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
               : reqContentType.includes('3gp') ? '3gp'
               : reqContentType.includes('amr') ? 'amr' : 'm4a';
 
-    const contentType = reqContentType || (ext === 'wav' ? 'audio/wav' : 'audio/m4a');
+    const contentType = reqContentType || (ext === 'wav' ? 'audio/wav' : ext === 'mp3' ? 'audio/mpeg' : 'audio/m4a');
     let s3Key = `recordings/${recordingId}.${ext}`;
     let uploadedToS3 = false;
 
@@ -60,13 +91,13 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const filePath = path.join(uploadsDir, `${recordingId}.${ext}`);
     await fs.writeFile(filePath, buffer);
 
-    // Save fallback file with .m4a extension as well if ext is different to guarantee legacy URL compatibility
     if (ext !== 'm4a') {
       const fallbackM4aPath = path.join(uploadsDir, `${recordingId}.m4a`);
       await fs.writeFile(fallbackM4aPath, buffer).catch(() => {});
     }
 
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
+    const targetDate = parseTimestamp(recordingId);
 
     // Attach recording to the specific target call record
     let updatedCall = await (CallModel as any).findOneAndUpdate(
@@ -89,7 +120,6 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     );
 
     if (!updatedCall) {
-      // Extract devicePrefix and cleanPhone from recordingId if available (e.g. AGENT_9876543210_20260819...)
       const parts = recordingId.split('_');
       let extractedPhone = '';
       let extractedDevice = '';
@@ -104,8 +134,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       }
 
       if (extractedPhone.length === 10) {
+        const phoneRegex = buildPhoneRegex(extractedPhone);
         const query: any = {
-          phoneNumber: { $regex: new RegExp(`${extractedPhone}$`) },
+          phoneNumber: { $regex: phoneRegex },
           $or: [
             { recordingStatus: { $in: ['PENDING_UPLOAD', 'PENDING', 'NONE'] } },
             { audioUrl: { $exists: false } }
@@ -114,6 +145,13 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
         if (extractedDevice) {
           query.deviceId = extractedDevice;
+        }
+
+        if (targetDate) {
+          query.startTime = {
+            $gte: new Date(targetDate.getTime() - 180000),
+            $lte: new Date(targetDate.getTime() + 180000)
+          };
         }
 
         updatedCall = await (CallModel as any).findOneAndUpdate(
@@ -129,6 +167,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         );
       }
     }
+
+    // Invalidate Redis calls cache so the dashboard immediately updates
+    await cacheDel('cache:calls:latest').catch(() => {});
 
     if (updatedCall) {
       console.log(`Successfully attached uploaded audio recording to call ${updatedCall.idempotencyKey || updatedCall._id}`);
