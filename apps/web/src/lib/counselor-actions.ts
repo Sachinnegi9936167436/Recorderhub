@@ -10,7 +10,7 @@ export async function deleteCounselorCascade(identifier: string) {
 
   const filter = mongoose.Types.ObjectId.isValid(identifier)
     ? { _id: identifier }
-    : { email: identifier.toLowerCase() };
+    : { email: { $regex: new RegExp(`^${identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } };
 
   const user = await (UserModel as any).findOne(filter).lean().exec();
 
@@ -129,7 +129,11 @@ export async function deleteCounselorCascade(identifier: string) {
   }
 
   // 6. Delete user account from MongoDB
-  await (UserModel as any).deleteOne(filter).exec();
+  if (user?._id) {
+    await (UserModel as any).deleteOne({ _id: user._id }).exec();
+  } else {
+    await (UserModel as any).deleteOne(filter).exec();
+  }
 
   // 7. Clear Redis caches
   await cacheDel('cache:calls:latest').catch(() => {});

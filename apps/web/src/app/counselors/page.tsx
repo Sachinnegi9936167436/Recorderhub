@@ -159,11 +159,12 @@ function CounselorsAndTeamsInner() {
 
   const getCounselorId = (counselor: any) => {
     if (!counselor) return '';
-    if (counselor.email) return counselor.email;
     if (typeof counselor._id === 'string') return counselor._id;
     if (counselor._id?.$oid) return counselor._id.$oid;
     if (counselor._id?.toString) return counselor._id.toString();
-    return counselor.id || '';
+    if (counselor.id) return counselor.id;
+    if (counselor.email) return counselor.email;
+    return '';
   };
 
   const handleDeleteTeam = (teamId: string, teamName: string, e?: React.MouseEvent) => {
