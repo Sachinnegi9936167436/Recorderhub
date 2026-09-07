@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
-import { CallModel } from '@/lib/models';
+import { CallModel, DeviceModel, UserModel } from '@/lib/models';
 import { getS3Client } from '@/lib/aws';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -54,15 +54,35 @@ export async function POST(req: Request) {
     // Format timestamp as YYYYMMDDHHmmss to mirror native phone recording naming
     const dateStr = callDate.toISOString().replace(/\D/g, '').slice(0, 14);
     const uniqueSuffix = Math.random().toString(36).substring(2, 6);
-    const devicePrefix = deviceId ? deviceId.replace(/[^a-zA-Z0-9_-]/g, '_') : 'AGENT';
 
-    const recordingId = `${devicePrefix}_${cleanPhone}_${dateStr}_${uniqueSuffix}`;
+    let counselorName = body.agentName;
+    if (!counselorName && counselorEmail) {
+      const user = await (UserModel as any).findOne({ email: counselorEmail.toLowerCase() }).lean().exec();
+      if (user && (user.firstName || user.lastName)) {
+        counselorName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+      }
+    }
+    if (!counselorName && deviceId) {
+      const dev = await (DeviceModel as any).findOne({ deviceId }).lean().exec();
+      if (dev && dev.agentName && dev.agentName !== 'Counselor Agent') {
+        counselorName = dev.agentName;
+      }
+    }
+    if (!counselorName && counselorEmail) {
+      counselorName = counselorEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+    }
+
+    const counselorFolder = (counselorName && counselorName !== 'Counselor Agent')
+      ? counselorName.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '')
+      : (counselorEmail ? counselorEmail.split('@')[0].replace(/[._]/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') : (deviceId ? deviceId.replace(/[^a-zA-Z0-9_-]/g, '_') : 'AGENT'));
+
+    const recordingId = `${counselorFolder}_${cleanPhone}_${dateStr}_${uniqueSuffix}`;
     const ext = mimeType?.includes('mpeg') || mimeType?.includes('mp3') ? 'mp3'
               : mimeType?.includes('wav') ? 'wav'
               : mimeType?.includes('3gpp') || mimeType?.includes('3gp') ? '3gp'
               : mimeType?.includes('amr') ? 'amr' : 'm4a';
 
-    const s3Key = `recordings/${devicePrefix}/${recordingId}.${ext}`;
+    const s3Key = `recordings/${counselorFolder}/${recordingId}.${ext}`;
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
 
     const host = req.headers.get('host') || 'localhost:3000';

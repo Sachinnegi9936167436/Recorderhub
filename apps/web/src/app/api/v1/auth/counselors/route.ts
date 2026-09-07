@@ -43,9 +43,10 @@ export async function GET() {
   }
 }
 
+import { deleteCounselorCascade } from '@/lib/counselor-actions';
+
 export async function DELETE(req: Request) {
   try {
-    await connectToDatabase();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
 
@@ -53,10 +54,8 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ message: 'Invalid counselor ID provided' }, { status: 400 });
     }
 
-    const filter = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { email: id.toLowerCase() };
-    await (UserModel as any).findOneAndDelete(filter).exec();
-
-    return NextResponse.json({ success: true, message: `Deleted counselor ${id}` });
+    const result = await deleteCounselorCascade(id);
+    return NextResponse.json(result);
   } catch (err: any) {
     console.error('Error deleting counselor:', err);
     return NextResponse.json({ message: err.message || 'Error deleting counselor' }, { status: 500 });

@@ -37,7 +37,9 @@ object SimCallRecordingScanner {
     )
 
     data class CandidateMatch(
-        val file: File,
+        val file: File? = null,
+        val uri: Uri? = null,
+        val fileName: String,
         val score: Long,
         val source: String
     )
@@ -291,26 +293,14 @@ object SimCallRecordingScanner {
                                     val finalDur = if (durSec > 0) durSec else getAudioDuration(directFile)
                                     val refinedScore = evaluateScore(name.ifEmpty { directFile.name }, effectiveModMs, finalDur)
                                     if (refinedScore > 0) {
-                                        candidates.add(CandidateMatch(directFile, refinedScore, "MediaStore_Direct"))
+                                        candidates.add(CandidateMatch(file = directFile, fileName = directFile.name, score = refinedScore, source = "MediaStore_Direct"))
                                         continue
                                     }
                                 }
                             }
 
-                            try {
-                                val cleanName = name.ifEmpty { "call_rec_${id}.mp3" }
-                                val cacheFile = File(context.cacheDir, "MS_REC_${System.currentTimeMillis()}_$cleanName")
-                                context.contentResolver.openInputStream(fileUri)?.use { input ->
-                                    cacheFile.outputStream().use { output -> input.copyTo(output) }
-                                }
-                                if (cacheFile.exists() && cacheFile.length() > 0) {
-                                    val finalDur = if (durSec > 0) durSec else getAudioDuration(cacheFile)
-                                    val refinedScore = evaluateScore(name.ifEmpty { cacheFile.name }, effectiveModMs, finalDur)
-                                    if (refinedScore > 0) {
-                                        candidates.add(CandidateMatch(cacheFile, refinedScore, "MediaStore_Stream"))
-                                    }
-                                }
-                            } catch (_: Exception) {}
+                            val cleanName = name.ifEmpty { "call_rec_${id}.mp3" }
+                            candidates.add(CandidateMatch(uri = fileUri, fileName = cleanName, score = score, source = "MediaStore_Stream"))
                         }
                     }
                 }
@@ -334,16 +324,9 @@ object SimCallRecordingScanner {
                                 continue
                             }
 
-                            val localTempFile = File(context.cacheDir, "SAF_REC_${System.currentTimeMillis()}_$fileName")
-                            context.contentResolver.openInputStream(doc.uri)?.use { input ->
-                                localTempFile.outputStream().use { output -> input.copyTo(output) }
-                            }
-                            if (localTempFile.exists() && localTempFile.length() > 0) {
-                                val fileDur = getAudioDuration(localTempFile)
-                                val score = evaluateScore(fileName, doc.lastModified(), fileDur)
-                                if (score > 0) {
-                                    candidates.add(CandidateMatch(localTempFile, score, "SAF_Folder"))
-                                }
+                            val score = evaluateScore(fileName, doc.lastModified(), expectedDurationSec)
+                            if (score > 0) {
+                                candidates.add(CandidateMatch(uri = doc.uri, fileName = fileName, score = score, source = "SAF_Folder"))
                             }
                         }
                     }
@@ -377,7 +360,7 @@ object SimCallRecordingScanner {
                             val fileDur = getAudioDuration(file)
                             val score = evaluateScore(file.name, file.lastModified(), fileDur)
                             if (score > 0) {
-                                candidates.add(CandidateMatch(file, score, "FileSystem_$relPath"))
+                                candidates.add(CandidateMatch(file = file, fileName = file.name, score = score, source = "FileSystem_$relPath"))
                             }
                         }
                     }
@@ -396,7 +379,7 @@ object SimCallRecordingScanner {
                             val fileDur = getAudioDuration(file)
                             val score = evaluateScore(file.name, file.lastModified(), fileDur)
                             if (score > 0) {
-                                candidates.add(CandidateMatch(file, score, "WhatsApp_Internal"))
+                                candidates.add(CandidateMatch(file = file, fileName = file.name, score = score, source = "WhatsApp_Internal"))
                             }
                         }
                     }
@@ -407,8 +390,24 @@ object SimCallRecordingScanner {
         // Sort candidates by highest score and pick the best match
         val bestCandidate = candidates.maxByOrNull { it.score }
         if (bestCandidate != null) {
-            Log.i(TAG, "Selected best candidate audio file for $phoneNumber (Score: ${bestCandidate.score}, Source: ${bestCandidate.source}): ${bestCandidate.file.name}")
-            return bestCandidate.file
+            Log.i(TAG, "Selected best candidate audio file for $phoneNumber (Score: ${bestCandidate.score}, Source: ${bestCandidate.source}): ${bestCandidate.fileName}")
+            if (bestCandidate.file != null && bestCandidate.file.exists()) {
+                return bestCandidate.file
+            }
+            if (bestCandidate.uri != null) {
+                try {
+                    val cleanName = bestCandidate.fileName.ifEmpty { "call_rec_${System.currentTimeMillis()}.mp3" }
+                    val cacheFile = File(context.cacheDir, "REC_${System.currentTimeMillis()}_$cleanName")
+                    context.contentResolver.openInputStream(bestCandidate.uri)?.use { input ->
+                        cacheFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    if (cacheFile.exists() && cacheFile.length() > 0) {
+                        return cacheFile
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error copying best candidate URI to cache: ${e.message}")
+                }
+            }
         }
 
         return null

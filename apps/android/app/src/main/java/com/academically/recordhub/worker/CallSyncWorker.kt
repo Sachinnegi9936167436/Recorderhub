@@ -37,6 +37,12 @@ class CallSyncWorker(
         .build()
 
     override suspend fun doWork(): Result {
+        try {
+            com.academically.recordhub.utils.CallLogScanner.scanRecentCallLogs(applicationContext)
+        } catch (e: Exception) {
+            Log.w("CallSyncWorker", "Error pre-scanning call logs: ${e.message}")
+        }
+
         val db = AppDatabase.getInstance(applicationContext)
         val pendingEvents = db.callEventDao().getPendingSyncAndRecordingEvents()
 

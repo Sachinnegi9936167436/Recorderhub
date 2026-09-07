@@ -16,6 +16,7 @@ data class LogEntry(
 )
 
 object AppLogManager {
+    private val logBuffer = ArrayDeque<LogEntry>(300)
     private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())
     val logs: StateFlow<List<LogEntry>> = _logs
 
@@ -25,6 +26,7 @@ object AppLogManager {
         log("INFO", "WhatsAppListener", "Notification Listener Service Listening for VoIP Calls.")
     }
 
+    @Synchronized
     fun log(level: String, tag: String, message: String) {
         val timeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
         val entry = LogEntry(timestamp = timeStr, level = level, tag = tag, message = message)
@@ -36,11 +38,17 @@ object AppLogManager {
             else -> Log.i(tag, message)
         }
 
-        // Keep last 300 logs in memory flow for UI
-        _logs.value = (listOf(entry) + _logs.value).take(300)
+        // Keep last 300 logs in memory ring buffer for UI
+        if (logBuffer.size >= 300) {
+            logBuffer.removeLast()
+        }
+        logBuffer.addFirst(entry)
+        _logs.value = logBuffer.toList()
     }
 
+    @Synchronized
     fun clear() {
+        logBuffer.clear()
         _logs.value = emptyList()
         log("INFO", "System", "Logs cleared by user.")
     }

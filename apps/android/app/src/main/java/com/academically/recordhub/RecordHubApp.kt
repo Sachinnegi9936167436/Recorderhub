@@ -29,12 +29,16 @@ class RecordHubApp : Application(), Configuration.Provider {
             val prefs = getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
             val isLoggedIn = prefs.getBoolean("is_logged_in", false)
             if (isLoggedIn) {
-                // 1. Start persistent Foreground Service
-                val serviceIntent = Intent(this, CallObserverService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(serviceIntent)
-                } else {
-                    startService(serviceIntent)
+                // 1. Start persistent Foreground Service safely
+                try {
+                    val serviceIntent = Intent(this, CallObserverService::class.java)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(serviceIntent)
+                    } else {
+                        startService(serviceIntent)
+                    }
+                } catch (e: Exception) {
+                    Log.w("RecordHubApp", "Foreground service start deferred from background: ${e.message}")
                 }
 
                 // 2. Schedule 15-minute fallback Periodic WorkManager

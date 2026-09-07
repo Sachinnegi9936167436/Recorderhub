@@ -508,18 +508,22 @@ function CounselorsAndTeamsInner() {
   const handleDeleteCounselor = async (counselor: any) => {
     const targetId = getCounselorId(counselor);
     const displayName = (counselor.firstName || counselor.email || 'Counselor').trim();
-    if (!confirm(`Are you sure you want to revoke and delete counselor ${displayName}?`)) return;
+    if (!confirm(`Are you sure you want to delete counselor "${displayName}"?\n\nThis will permanently delete:\n- Counselor Account\n- All associated Call Logs from database\n- All associated Audio Recordings from AWS S3 storage`)) return;
 
     setCounselors((prev) =>
       prev.filter((item) => getCounselorId(item) !== targetId && item.email !== counselor.email)
     );
 
-    setToastMessage(`Deleted counselor ID for ${displayName}`);
+    setToastMessage(`Deleting ${displayName}, call logs, and S3 recordings...`);
 
     try {
-      await fetch(`/api/v1/auth/counselors?id=${encodeURIComponent(targetId)}`, {
+      const res = await fetch(`/api/v1/auth/counselors?id=${encodeURIComponent(targetId)}`, {
         method: 'DELETE',
       });
+      if (res.ok) {
+        const data = await res.json();
+        setToastMessage(`Deleted ${displayName} (${data.deletedCallsCount || 0} call logs & ${data.deletedS3RecordingsCount || 0} S3 recordings removed)`);
+      }
     } catch (err: any) {
       console.error('Error deleting counselor:', err);
     }

@@ -32,6 +32,10 @@ object CallLogScanner {
                 prefs.edit().putLong("account_created_at", accountCutoffMs).apply()
             }
 
+            // Cap scan window to recent 7 days or account creation timestamp to prevent scanning thousands of stale records
+            val sevenDaysAgo = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L)
+            val effectiveCutoffMs = maxOf(accountCutoffMs, sevenDaysAgo)
+
             val allDbEventsInitial = db.callEventDao().getAllEvents().toMutableList()
             val claimedPaths = allDbEventsInitial
                 .mapNotNull { it.recordingPath }
@@ -40,7 +44,7 @@ object CallLogScanner {
 
             val resolver = context.contentResolver
             val selection = "${CallLog.Calls.DATE} >= ?"
-            val selectionArgs = arrayOf(accountCutoffMs.toString())
+            val selectionArgs = arrayOf(effectiveCutoffMs.toString())
 
             val cursor = resolver.query(
                 CallLog.Calls.CONTENT_URI,
@@ -58,10 +62,10 @@ object CallLogScanner {
                 val accountIdx = c.getColumnIndex(CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME)
                 val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
 
-                while (c.moveToNext() && importedCount < 2000) {
+                while (c.moveToNext() && importedCount < 100) {
                     val dateMs = if (dateIdx >= 0) c.getLong(dateIdx) else System.currentTimeMillis()
-                    if (dateMs < accountCutoffMs) {
-                        // Strictly ignore all calls prior to account creation date
+                    if (dateMs < effectiveCutoffMs) {
+                        // Strictly ignore all calls prior to effective cutoff date
                         continue
                     }
                     val rawNumber = if (numberIdx >= 0) c.getString(numberIdx) else null
@@ -145,12 +149,12 @@ object CallLogScanner {
                 }
             }
 
-            // Secondary pass: Attach audio recordings strictly 1-to-1 to existing calls in Room DB missing or misaligned recording paths
+            // Secondary pass: Attach audio recordings strictly to recent calls in Room DB missing recording paths
             val allDbEvents = db.callEventDao().getAllEvents()
 
             for (evt in allDbEvents) {
                 val isUnlinked = evt.recordingPath.isNullOrEmpty() || evt.recordingStatus == "NONE"
-                if (isUnlinked && evt.durationSeconds > 0) {
+                if (isUnlinked && evt.durationSeconds > 0 && evt.startTime >= effectiveCutoffMs) {
                     val matchedFile = SimCallRecordingScanner.findAudioForCall(
                         context, 
                         evt.phoneNumber, 

@@ -132,8 +132,13 @@ export async function POST(req: Request) {
         const cleanP = rawDigits.length >= 10 ? rawDigits.slice(-10) : 'CALL';
         const dateString = evtStartTime.toISOString().replace(/\D/g, '').slice(0, 14);
         const uniqueSuffix = Math.random().toString(36).substring(2, 6);
-        const devPrefix = deviceIdVal ? deviceIdVal.replace(/[^a-zA-Z0-9_-]/g, '_') : 'AGENT';
-        const recId = `${devPrefix}_${cleanP}_${dateString}_${uniqueSuffix}`;
+        
+        // Format folder name with the Counselor Name as seen on Web Dashboard
+        const counselorFolder = (resolvedAgentName && resolvedAgentName !== 'Counselor Agent')
+          ? resolvedAgentName.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '')
+          : (email ? email.split('@')[0].replace(/[._]/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') : (deviceIdVal ? deviceIdVal.replace(/[^a-zA-Z0-9_-]/g, '_') : 'AGENT'));
+
+        const recId = `${counselorFolder}_${cleanP}_${dateString}_${uniqueSuffix}`;
 
         const mime = mimeTypeVal || 'audio/mp4';
         const ext = mime.includes('mpeg') || mime.includes('mp3') ? 'mp3'
@@ -141,7 +146,7 @@ export async function POST(req: Request) {
                   : mime.includes('3gpp') || mime.includes('3gp') ? '3gp'
                   : mime.includes('amr') ? 'amr' : 'm4a';
 
-        const s3KeyTarget = `recordings/${devPrefix}/${recId}.${ext}`;
+        const s3KeyTarget = `recordings/${counselorFolder}/${recId}.${ext}`;
         const audioUrlTarget = `/api/v1/recordings/${recId}/audio`;
         const fallbackUrl = `${protocol}://${host}/api/v1/recordings/${recId}/upload-data`;
 

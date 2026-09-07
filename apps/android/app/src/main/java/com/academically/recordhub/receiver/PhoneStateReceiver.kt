@@ -47,44 +47,32 @@ class PhoneStateReceiver : BroadcastReceiver() {
             Log.w(TAG, "Could not start CallObserverService from PhoneStateReceiver: ${e.message}")
         }
 
-        // When call ends (IDLE state), trigger auto-scan & immediate server sync
+        // When call ends (IDLE state), trigger auto-scan & immediate server sync via WorkManager
         if (stateStr == TelephonyManager.EXTRA_STATE_IDLE) {
-            AppLogManager.log("SYNC", TAG, "SIM Call ended (IDLE detected via BroadcastReceiver). Triggering auto-scan & upload...")
-            
-            val pendingResult = goAsync()
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    // Initial pass: wait 4.5s for OEM dialer (Xiaomi/Samsung/Vivo) to finish saving audio file
-                    delay(4500)
-                    val count = CallLogScanner.scanRecentCallLogs(context.applicationContext)
-                    AppLogManager.log("SYNC", TAG, "PhoneStateReceiver scanned $count call log(s). Enqueuing CallSyncWorker...")
+            AppLogManager.log("SYNC", TAG, "SIM Call ended (IDLE detected via BroadcastReceiver). Scheduling CallSyncWorker...")
 
-                    val syncRequest = OneTimeWorkRequestBuilder<CallSyncWorker>().build()
-                    WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-                        "CallSyncWorkerOneTime",
-                        ExistingWorkPolicy.REPLACE,
-                        syncRequest
-                    )
+            try {
+                // Pass 1: Run after 4s (allowing OEM dialers on Samsung/Xiaomi/Vivo to finish writing audio)
+                val primarySync = OneTimeWorkRequestBuilder<CallSyncWorker>()
+                    .setInitialDelay(4, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+                    "CallSyncWorkerOneTime",
+                    ExistingWorkPolicy.REPLACE,
+                    primarySync
+                )
 
-                    // Secondary safety scan for slow OEM encoders
-                    delay(8000)
-                    val retryCount = CallLogScanner.scanRecentCallLogs(context.applicationContext)
-                    if (retryCount > 0) {
-                        AppLogManager.log("SYNC", TAG, "Linked $retryCount additional recording(s) on secondary scan. Re-syncing...")
-                        val secondarySync = OneTimeWorkRequestBuilder<CallSyncWorker>().build()
-                        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-                            "CallSyncWorkerOneTime",
-                            ExistingWorkPolicy.REPLACE,
-                            secondarySync
-                        )
-                    }
-                } catch (e: Exception) {
-                    AppLogManager.log("ERROR", TAG, "Error in PhoneStateReceiver async scan: ${e.message}")
-                } finally {
-                    try {
-                        pendingResult.finish()
-                    } catch (_: Exception) {}
-                }
+                // Pass 2: Secondary safety pass after 12s for slow OEM encoders
+                val secondarySync = OneTimeWorkRequestBuilder<CallSyncWorker>()
+                    .setInitialDelay(12, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+                    "CallSyncWorkerSecondary",
+                    ExistingWorkPolicy.REPLACE,
+                    secondarySync
+                )
+            } catch (e: Exception) {
+                AppLogManager.log("ERROR", TAG, "Failed to schedule CallSyncWorker from PhoneStateReceiver: ${e.message}")
             }
         }
     }

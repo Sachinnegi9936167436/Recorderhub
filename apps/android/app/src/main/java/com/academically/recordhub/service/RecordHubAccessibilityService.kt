@@ -20,11 +20,10 @@ class RecordHubAccessibilityService : AccessibilityService() {
         
         try {
             val info = serviceInfo ?: AccessibilityServiceInfo()
-            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            info.flags = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-                    AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
-            info.notificationTimeout = 100
+            info.flags = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            info.notificationTimeout = 200
             serviceInfo = info
         } catch (e: Exception) {
             Log.e(TAG, "Error configuring AccessibilityServiceInfo: ${e.message}")
@@ -44,13 +43,15 @@ class RecordHubAccessibilityService : AccessibilityService() {
 
         try {
             val rootNode = rootInActiveWindow ?: return
-            inspectWhatsAppWindow(rootNode)
+            inspectWhatsAppWindow(rootNode, depth = 0)
         } catch (e: Exception) {
             Log.w(TAG, "Error inspecting WhatsApp accessibility node: ${e.message}")
         }
     }
 
-    private fun inspectWhatsAppWindow(node: AccessibilityNodeInfo) {
+    private fun inspectWhatsAppWindow(node: AccessibilityNodeInfo, depth: Int = 0) {
+        if (depth > 4) return // Guard against deep recursion and view recycling conflicts
+
         val text = node.text?.toString() ?: ""
         val contentDesc = node.contentDescription?.toString() ?: ""
         val viewId = node.viewIdResourceName ?: ""
@@ -60,12 +61,15 @@ class RecordHubAccessibilityService : AccessibilityService() {
             Log.d(TAG, "WhatsApp in-call UI detected via Accessibility node: text='$text', desc='$contentDesc'")
         }
 
-        // Recurse children safely
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                inspectWhatsAppWindow(child)
-            }
+        // Traverse immediate children safely without stressing target view hierarchy
+        val childCount = Math.min(node.childCount, 8)
+        for (i in 0 until childCount) {
+            try {
+                val child = node.getChild(i)
+                if (child != null) {
+                    inspectWhatsAppWindow(child, depth + 1)
+                }
+            } catch (_: Exception) {}
         }
     }
 
