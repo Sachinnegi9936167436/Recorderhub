@@ -32,7 +32,8 @@ export async function POST(req: Request) {
 
     let user = null;
     if (email) {
-      user = await (UserModel as any).findOne({ email }).lean().exec();
+      const emailRegex = new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      user = await (UserModel as any).findOne({ email: { $regex: emailRegex } }).lean().exec();
     }
 
     if (!user) {

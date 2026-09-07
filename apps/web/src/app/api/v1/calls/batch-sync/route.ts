@@ -73,11 +73,14 @@ export async function POST(req: Request) {
     ).lean().exec();
     const existingKeyMap = new Map(existingCalls.map((c: any) => [c.idempotencyKey, c]));
 
-    const counselorEmails = Array.from(new Set(callEvents.map((e: any) => (e.counselorEmail || e.email || '').toLowerCase()).filter(Boolean)));
-    const userAccounts = await (UserModel as any).find(
-      { email: { $in: counselorEmails } },
-      { email: 1, createdAt: 1, isActive: 1 }
-    ).lean().exec();
+    const counselorEmails = Array.from(new Set(callEvents.map((e: any) => (e.counselorEmail || e.email || '').trim().toLowerCase()).filter(Boolean)));
+    const emailRegexList = counselorEmails.map((em: string) => new RegExp(`^${em.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'));
+    const userAccounts = counselorEmails.length > 0
+      ? await (UserModel as any).find(
+          { email: { $in: emailRegexList } },
+          { email: 1, createdAt: 1, isActive: 1 }
+        ).lean().exec()
+      : [];
 
     if (counselorEmails.length > 0 && (!userAccounts || userAccounts.length === 0)) {
       return NextResponse.json(
