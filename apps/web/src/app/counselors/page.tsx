@@ -30,24 +30,12 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-const DEFAULT_SAMPLE_USERS = [
-  { _id: 'u-1', firstName: 'Finance', lastName: '', email: 'finance@academically.com', role: 'ADMIN', isActive: true },
-  { _id: 'u-2', firstName: 'Lekshmi', lastName: '', email: 'lekshmi.raj@academically.com', role: 'SALES', isActive: true },
-  { _id: 'u-3', firstName: 'Hira', lastName: 'Mirza', email: 'hira.mirza@academically.com', role: 'SALES', isActive: true },
-  { _id: 'u-4', firstName: 'Sameer', lastName: 'Ahmad', email: 'sameera@academically.com', role: 'SALES', isActive: true },
-  { _id: 'u-5', firstName: 'Syed', lastName: 'Zaigham', email: 'zaighamp@academically.com', role: 'SALES', isActive: true },
-  { _id: 'u-6', firstName: 'Aditi', lastName: '', email: 'aditir@academically.com', role: 'SALES', isActive: true },
-  { _id: 'u-7', firstName: 'Faiz', lastName: '', email: 'mohdf@academically.com', role: 'ADMIN', isActive: true },
-  { _id: 'u-8', firstName: 'Nasreen', lastName: 'Hussain', email: 'nasreen@academically.com', role: 'SALES', isActive: true },
-  { _id: 'u-9', firstName: 'Mayank', lastName: 'Mrinal', email: 'mayank@academically.com', role: 'SALES', isActive: false },
-];
-
 function CounselorsAndTeamsInner() {
   const { role: userRole, email: userEmail, isAdmin, isManager, isCounselor } = useUserRole();
   const searchParams = useSearchParams();
   const currentView = searchParams.get('view') || 'teams';
 
-  const [counselors, setCounselors] = useState<any[]>(DEFAULT_SAMPLE_USERS);
+  const [counselors, setCounselors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAddTeamModalOpen, setIsAddTeamModalOpen] = useState(false);
@@ -115,10 +103,8 @@ function CounselorsAndTeamsInner() {
       const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setCounselors(data);
-        } else {
-          setCounselors(DEFAULT_SAMPLE_USERS);
         }
       }
     } catch (err) {
@@ -131,26 +117,6 @@ function CounselorsAndTeamsInner() {
   useEffect(() => {
     fetchCounselors();
     if (typeof window !== 'undefined') {
-      const savedCounselors = localStorage.getItem('recorderhub_counselors');
-      if (savedCounselors) {
-        try {
-          const parsedC = JSON.parse(savedCounselors);
-          if (Array.isArray(parsedC) && parsedC.length > 0) {
-            setCounselors((prev) => {
-              const combined = [...prev];
-              parsedC.forEach((pc) => {
-                if (!combined.some((c) => c.email === pc.email)) {
-                  combined.push(pc);
-                }
-              });
-              return combined;
-            });
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-
       const saved = localStorage.getItem('recorderhub_teams');
       if (saved !== null) {
         try {
