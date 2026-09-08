@@ -114,32 +114,23 @@ function CounselorsAndTeamsInner() {
     }
   };
 
-  useEffect(() => {
-    fetchCounselors();
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('recorderhub_teams');
-      if (saved !== null) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            const cleaned = parsed.filter(
-              (t: any) =>
-                t &&
-                t.name &&
-                t.name !== 'Global Sales' &&
-                t.name !== 'NCLEX Counselors' &&
-                t.name !== 'DHA Counselors' &&
-                t.name !== 'Sales Team'
-            );
-            setTeamsList(cleaned);
-            return;
-          }
-        } catch (e) {
-          console.error('Failed to parse saved teams:', e);
+  const fetchTeams = async () => {
+    try {
+      const res = await fetch('/api/v1/teams', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setTeamsList(data);
         }
       }
-      setTeamsList([]);
+    } catch (err) {
+      console.error('Error fetching teams:', err);
     }
+  };
+
+  useEffect(() => {
+    fetchCounselors();
+    fetchTeams();
   }, []);
 
   const getAvailableCounselorObjects = () => {
@@ -167,19 +158,22 @@ function CounselorsAndTeamsInner() {
     return '';
   };
 
-  const handleDeleteTeam = (teamId: string, teamName: string, e?: React.MouseEvent) => {
+  const handleDeleteTeam = async (teamId: string, teamName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!confirm(`Are you sure you want to delete team "${teamName}"?`)) return;
 
-    setTeamsList((prev) => {
-      const updated = prev.filter((t) => t.id !== teamId);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
+    try {
+      const res = await fetch(`/api/v1/teams?id=${encodeURIComponent(teamId)}&name=${encodeURIComponent(teamName)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        await fetchTeams();
       }
-      return updated;
-    });
+    } catch (err) {
+      console.error('Error deleting team:', err);
+    }
 
-    if (selectedTeam && selectedTeam.id === teamId) {
+    if (selectedTeam && (selectedTeam.id === teamId || selectedTeam._id === teamId)) {
       setSelectedTeam(null);
     }
 
@@ -196,25 +190,33 @@ function CounselorsAndTeamsInner() {
     setIsAddTeamModalOpen(true);
   };
 
-  const handleCreateTeam = (e: React.FormEvent) => {
+  const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTeamName.trim()) return;
     const adminSelected = newTeamAdmin.trim() || teamLeadsOptions[0] || 'Rajdeep';
     const members = newTeamSelectedMembers;
-    const newTeam = {
-      id: `t-${Date.now()}`,
+    const newTeamPayload = {
       name: newTeamName.trim(),
       admin: adminSelected,
-      installedRatio: `${members.length} / ${members.length}`,
+      admins: [adminSelected],
       members: members,
-      admins: [adminSelected]
+      installedRatio: `${members.length} / ${members.length}`,
     };
-    const updated = [newTeam, ...teamsList];
-    setTeamsList(updated);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
+
+    try {
+      const res = await fetch('/api/v1/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTeamPayload),
+      });
+      if (res.ok) {
+        await fetchTeams();
+        setToastMessage(`Successfully created team "${newTeamPayload.name}" with admin "${adminSelected}"!`);
+      }
+    } catch (err) {
+      console.error('Error creating team:', err);
     }
-    setToastMessage(`Successfully created team "${newTeam.name}" with admin "${adminSelected}"!`);
+
     setIsAddTeamModalOpen(false);
     setNewTeamName('');
     setNewTeamAdmin('');
@@ -226,7 +228,7 @@ function CounselorsAndTeamsInner() {
   const [isAddingAdminInDrawer, setIsAddingAdminInDrawer] = useState(false);
   const [selectedAdminToAdd, setSelectedAdminToAdd] = useState('');
 
-  const handleAddAdminToTeam = (adminName: string) => {
+  const handleAddAdminToTeam = async (adminName: string) => {
     if (!selectedTeam || !adminName) return;
     const currentAdmins = selectedTeam.admins || (selectedTeam.admin ? [selectedTeam.admin] : []);
     const updatedAdmins = Array.from(new Set([...currentAdmins, adminName]));
@@ -236,20 +238,30 @@ function CounselorsAndTeamsInner() {
       admins: updatedAdmins
     };
     setSelectedTeam(updatedTeam);
-    setTeamsList((prev) => {
-      const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
-      }
-      return updated;
-    });
+
+    try {
+      await fetch('/api/v1/teams', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedTeam.id || selectedTeam._id,
+          name: selectedTeam.name,
+          admin: updatedTeam.admin,
+          admins: updatedTeam.admins,
+        }),
+      });
+      await fetchTeams();
+    } catch (err) {
+      console.error('Error adding admin to team:', err);
+    }
+
     setIsAddingAdminInDrawer(false);
     setSelectedAdminToAdd('');
     setToastMessage(`Assigned team admin "${adminName}" to ${selectedTeam.name}!`);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const handleSetPrimaryAdmin = (adminName: string) => {
+  const handleSetPrimaryAdmin = async (adminName: string) => {
     if (!selectedTeam) return;
     const currentAdmins = selectedTeam.admins || (selectedTeam.admin ? [selectedTeam.admin] : []);
     const reordered = [adminName, ...currentAdmins.filter((a: string) => a !== adminName)];
@@ -259,18 +271,28 @@ function CounselorsAndTeamsInner() {
       admins: reordered
     };
     setSelectedTeam(updatedTeam);
-    setTeamsList((prev) => {
-      const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
-      }
-      return updated;
-    });
+
+    try {
+      await fetch('/api/v1/teams', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedTeam.id || selectedTeam._id,
+          name: selectedTeam.name,
+          admin: adminName,
+          admins: reordered,
+        }),
+      });
+      await fetchTeams();
+    } catch (err) {
+      console.error('Error setting primary admin:', err);
+    }
+
     setToastMessage(`Set "${adminName}" as primary lead for ${selectedTeam.name}`);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const handleRemoveMemberFromTeam = (memberName: string) => {
+  const handleRemoveMemberFromTeam = async (memberName: string) => {
     if (!selectedTeam) return;
     const updatedMembers = selectedTeam.members.filter((m: string) => m !== memberName);
     const updatedTeam = { 
@@ -279,18 +301,27 @@ function CounselorsAndTeamsInner() {
       installedRatio: `${updatedMembers.length} / ${updatedMembers.length}` 
     };
     setSelectedTeam(updatedTeam);
-    setTeamsList((prev) => {
-      const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
-      }
-      return updated;
-    });
+
+    try {
+      await fetch('/api/v1/teams', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedTeam.id || selectedTeam._id,
+          name: selectedTeam.name,
+          members: updatedMembers,
+        }),
+      });
+      await fetchTeams();
+    } catch (err) {
+      console.error('Error removing member:', err);
+    }
+
     setToastMessage(`Removed ${memberName} from ${selectedTeam.name}`);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const handleRemoveAdminFromTeam = (adminName: string) => {
+  const handleRemoveAdminFromTeam = async (adminName: string) => {
     if (!selectedTeam) return;
     const currentAdmins = selectedTeam.admins || (selectedTeam.admin ? [selectedTeam.admin] : []);
     const updatedAdmins = currentAdmins.filter((a: string) => a !== adminName);
@@ -300,13 +331,23 @@ function CounselorsAndTeamsInner() {
       admins: updatedAdmins
     };
     setSelectedTeam(updatedTeam);
-    setTeamsList((prev) => {
-      const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
-      }
-      return updated;
-    });
+
+    try {
+      await fetch('/api/v1/teams', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedTeam.id || selectedTeam._id,
+          name: selectedTeam.name,
+          admin: updatedTeam.admin,
+          admins: updatedTeam.admins,
+        }),
+      });
+      await fetchTeams();
+    } catch (err) {
+      console.error('Error removing admin:', err);
+    }
+
     setToastMessage(`Removed admin ${adminName} from ${selectedTeam.name}`);
     setTimeout(() => setToastMessage(null), 3000);
   };
@@ -318,7 +359,7 @@ function CounselorsAndTeamsInner() {
     setIsAddCounselorModalOpen(true);
   };
 
-  const handleConfirmAddCounselorsToTeam = () => {
+  const handleConfirmAddCounselorsToTeam = async () => {
     if (!selectedTeam || selectedCounselorsToAdd.length === 0) return;
     const updatedMembers = Array.from(new Set([...selectedTeam.members, ...selectedCounselorsToAdd]));
     const updatedTeam = {
@@ -327,13 +368,22 @@ function CounselorsAndTeamsInner() {
       installedRatio: `${updatedMembers.length} / ${updatedMembers.length}`
     };
     setSelectedTeam(updatedTeam);
-    setTeamsList((prev) => {
-      const updated = prev.map((t) => (t.id === selectedTeam.id ? updatedTeam : t));
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('recorderhub_teams', JSON.stringify(updated));
-      }
-      return updated;
-    });
+
+    try {
+      await fetch('/api/v1/teams', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedTeam.id || selectedTeam._id,
+          name: selectedTeam.name,
+          members: updatedMembers,
+        }),
+      });
+      await fetchTeams();
+    } catch (err) {
+      console.error('Error adding counselors to team:', err);
+    }
+
     setToastMessage(`Added ${selectedCounselorsToAdd.length} counselor(s) to ${selectedTeam.name}!`);
     setIsAddCounselorModalOpen(false);
     setSelectedCounselorsToAdd([]);

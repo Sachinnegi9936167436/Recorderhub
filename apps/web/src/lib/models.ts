@@ -59,6 +59,21 @@ const DeviceSchema = new Schema(
   { timestamps: true },
 );
 
+const TeamSchema = new Schema(
+  {
+    organizationId: { type: String, default: '65c1f0000000000000000001' },
+    name: { type: String, required: true, trim: true },
+    admin: { type: String, default: 'Rajdeep' },
+    admins: [{ type: String }],
+    teamLeadId: { type: String },
+    teamLeadEmail: { type: String },
+    members: [{ type: String }],
+    installedRatio: { type: String, default: '0 / 0' },
+  },
+  { timestamps: true },
+);
+
 export const UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
 export const CallModel = mongoose.models.Call || mongoose.model('Call', CallSchema);
 export const DeviceModel = mongoose.models.Device || mongoose.model('Device', DeviceSchema);
+export const TeamModel = mongoose.models.Team || mongoose.model('Team', TeamSchema);

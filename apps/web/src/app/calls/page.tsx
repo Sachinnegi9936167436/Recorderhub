@@ -264,6 +264,7 @@ function SalestrailCallsInner() {
   useEffect(() => {
     fetchCalls();
     fetchProvisionedCounselors();
+    fetchTeams();
     // Reconcile any unlinked S3 recordings in the background
     fetch('/api/v1/recordings/reconcile', { method: 'POST' })
       .then((res) => res.json())
@@ -370,62 +371,71 @@ function SalestrailCallsInner() {
 
   const [teamsList, setTeamsList] = useState<any[]>([]);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('recorderhub_teams');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            // Filter out legacy dummy mock teams
-            const cleaned = parsed.filter(
-              (t: any) =>
-                t &&
-                t.name &&
-                t.name !== 'Global Sales' &&
-                t.name !== 'NCLEX Counselors' &&
-                t.name !== 'DHA Counselors' &&
-                t.name !== 'Sales Team'
-            );
-            setTeamsList(cleaned);
-          }
-        } catch (e) {
-          console.error('Failed to parse teams:', e);
+  const fetchTeams = async () => {
+    try {
+      const res = await fetch('/api/v1/teams', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setTeamsList(data);
         }
       }
+    } catch (err) {
+      console.error('Error fetching calls teams:', err);
     }
-  }, []);
+  };
 
   const activeTeams = teamsList;
 
   const myManagedTeams = useMemo(() => {
     if (isAdmin || isManager) return activeTeams;
-    const myEmailLower = (userEmail || '').toLowerCase();
+    const myEmailLower = (userEmail || '').toLowerCase().trim();
     const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
     return activeTeams.filter((team) => {
-      const adminStr = (team.admin || '').toLowerCase();
-      const adminsArr = Array.isArray(team.admins) ? team.admins.map((a: string) => a.toLowerCase()) : [];
-      return (
-        adminStr.includes(myNamePrefix) ||
-        adminStr.includes(myEmailLower) ||
-        adminsArr.some((a: string) => a.includes(myNamePrefix) || a.includes(myEmailLower))
+      const adminStr = (team.admin || '').toLowerCase().trim();
+      const teamLeadEmailStr = (team.teamLeadEmail || '').toLowerCase().trim();
+      const adminsArr = Array.isArray(team.admins) ? team.admins.map((a: string) => (a || '').toLowerCase().trim()) : [];
+
+      const isMatch = (
+        (teamLeadEmailStr && (teamLeadEmailStr === myEmailLower || myEmailLower.includes(teamLeadEmailStr))) ||
+        (adminStr && (
+          adminStr === myEmailLower ||
+          adminStr === myNamePrefix ||
+          adminStr.includes(myNamePrefix) ||
+          myNamePrefix.includes(adminStr) ||
+          (myNamePrefix.includes('rajdeep') && adminStr.includes('rajdeep'))
+        )) ||
+        adminsArr.some((a: string) => 
+          a === myEmailLower || 
+          a === myNamePrefix || 
+          a.includes(myNamePrefix) || 
+          myNamePrefix.includes(a) ||
+          (myNamePrefix.includes('rajdeep') && a.includes('rajdeep'))
+        )
       );
+      return isMatch;
     });
   }, [activeTeams, userEmail, isAdmin, isManager]);
 
   const myTeamMemberIdentifiers = useMemo(() => {
     if (isAdmin || isManager) return [];
     const memberSet = new Set<string>();
-    const myEmailLower = (userEmail || '').toLowerCase();
+    const myEmailLower = (userEmail || '').toLowerCase().trim();
     const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
 
     if (myEmailLower) memberSet.add(myEmailLower);
     if (myNamePrefix) memberSet.add(myNamePrefix);
+    if (myNamePrefix.includes('rajdeep')) memberSet.add('rajdeep');
 
     myManagedTeams.forEach((team) => {
       if (Array.isArray(team.members)) {
         team.members.forEach((m: string) => {
-          if (m) memberSet.add(m.toLowerCase().trim());
+          if (m) {
+            const mClean = m.toLowerCase().trim();
+            memberSet.add(mClean);
+            const mPrefix = mClean.split('@')[0].split(' ')[0];
+            if (mPrefix) memberSet.add(mPrefix);
+          }
         });
       }
     });
