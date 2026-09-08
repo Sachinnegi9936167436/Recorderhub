@@ -60,6 +60,7 @@ object CallLogScanner {
                 val dateIdx = c.getColumnIndex(CallLog.Calls.DATE)
                 val durationIdx = c.getColumnIndex(CallLog.Calls.DURATION)
                 val accountIdx = c.getColumnIndex(CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME)
+                val accountIdIdx = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) c.getColumnIndex(CallLog.Calls.PHONE_ACCOUNT_ID) else -1
                 val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
 
                 while (c.moveToNext() && importedCount < 100) {
@@ -74,9 +75,11 @@ object CallLogScanner {
                     val type = if (typeIdx >= 0) c.getInt(typeIdx) else CallLog.Calls.INCOMING_TYPE
                     val durationSec = if (durationIdx >= 0) c.getInt(durationIdx) else 30
                     val accountName = if (accountIdx >= 0) c.getString(accountIdx) ?: "" else ""
+                    val accountId = if (accountIdIdx >= 0) c.getString(accountIdIdx) ?: "" else ""
                     val cachedName = if (nameIdx >= 0) c.getString(nameIdx) ?: "" else ""
 
                     val isWhatsApp = accountName.lowercase().contains("whatsapp") ||
+                            accountId.lowercase().contains("whatsapp") ||
                             rawNumber.lowercase().contains("whatsapp") ||
                             cachedName.lowercase().contains("whatsapp")
 

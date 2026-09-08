@@ -95,16 +95,6 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
 
         val combinedStr = "$title $text $subText $category $tag".lowercase()
 
-        // Explicitly ignore text/chat message notifications
-        val isTextMessage = combinedStr.contains("messages") || 
-                combinedStr.contains("message") || 
-                combinedStr.contains("unread") || 
-                combinedStr.contains("reply") || 
-                combinedStr.contains("chat") ||
-                title.lowercase().contains("messages)")
-
-        if (isTextMessage) return
-
         val actions = notification.actions
         val hasCallActions = actions != null && actions.any { action ->
             val actionTitle = action.title?.toString()?.lowercase() ?: ""
@@ -118,16 +108,34 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                 combinedStr.contains("video call") ||
                 combinedStr.contains("ongoing voice call") ||
                 combinedStr.contains("ongoing video call") ||
+                combinedStr.contains("ongoing call") ||
                 combinedStr.contains("incoming voice call") ||
                 combinedStr.contains("incoming video call") ||
-                combinedStr.contains("calling...") ||
-                combinedStr.contains("ringing...") ||
+                combinedStr.contains("incoming call") ||
+                combinedStr.contains("outgoing call") ||
+                combinedStr.contains("calling") ||
+                combinedStr.contains("ringing") ||
+                combinedStr.contains("call in progress") ||
+                combinedStr.contains("return to call") ||
+                combinedStr.contains("tap to return") ||
+                combinedStr.contains("in call") ||
                 combinedStr.contains("आवाज कॉल") ||
-                combinedStr.contains("वीडियो कॉल")
+                combinedStr.contains("वीडियो कॉल") ||
+                combinedStr.contains("कॉल")
 
         val isCallNotification = category == Notification.CATEGORY_CALL ||
-                (hasCallActions && (hasExplicitCallPhrase || tag.contains("call", ignoreCase = true))) ||
-                hasExplicitCallPhrase
+                hasCallActions ||
+                hasExplicitCallPhrase ||
+                tag.contains("call", ignoreCase = true)
+
+        // Only filter out text messages if it is definitely NOT a call notification
+        if (!isCallNotification) {
+            val isTextMessage = combinedStr.contains("messages") || 
+                    combinedStr.contains("unread") || 
+                    combinedStr.contains("reply") || 
+                    title.lowercase().contains("messages)")
+            if (isTextMessage) return
+        }
 
         if (isCallNotification) {
             activeCallNotificationKey = sbn.key
@@ -145,11 +153,11 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
 
                 currentContactTitle = when {
                     title.isNotBlank() && !title.equals("WhatsApp", ignoreCase = true) -> title
-                    text.isNotBlank() && !text.contains("call", ignoreCase = true) -> text
+                    text.isNotBlank() && !text.contains("call", ignoreCase = true) && !text.contains(":") -> text
                     else -> "WhatsApp Contact"
                 }
 
-                AppLogManager.log("INFO", "WhatsAppListener", "Active WhatsApp call DETECTED: $packageName ($currentContactTitle) [$currentCallDirection] (Audio Recording Paused)")
+                AppLogManager.log("INFO", "WhatsAppListener", "Active WhatsApp call DETECTED: $packageName ($currentContactTitle) [$currentCallDirection]")
                 if (ENABLE_WHATSAPP_AUDIO_RECORDING) {
                     audioRecorder.startRecording(currentContactTitle)
                 }
@@ -166,7 +174,11 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                 packageName == "com.whatsapp.dual"
 
         if (isWhatsAppPackage && isCallRecordingActive) {
-            val isTargetNotification = sbn.key == activeCallNotificationKey || sbn.id == activeCallNotificationId
+            val isTargetNotification = sbn.key == activeCallNotificationKey || 
+                                       sbn.id == activeCallNotificationId ||
+                                       sbn.notification.category == Notification.CATEGORY_CALL ||
+                                       (sbn.tag ?: "").contains("call", ignoreCase = true)
+
             if (!isTargetNotification) return
 
             // Debounce: verify if any remaining active notification is still a WhatsApp call before ending call
@@ -175,14 +187,15 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                     other.packageName.startsWith("com.whatsapp") &&
                     other.key != sbn.key &&
                     (other.notification.category == Notification.CATEGORY_CALL ||
-                     (other.tag ?: "").contains("call", ignoreCase = true))
+                     (other.tag ?: "").contains("call", ignoreCase = true) ||
+                     (other.notification.actions?.any { a -> (a.title?.toString()?.lowercase() ?: "").contains("end") } == true))
                 } == true
             } catch (e: Exception) {
                 false
             }
 
             if (!hasOtherCallNotification) {
-                AppLogManager.log("INFO", "WhatsAppListener", "WhatsApp notification REMOVED for $packageName. Finishing call tracking.")
+                AppLogManager.log("INFO", "WhatsAppListener", "WhatsApp call notification REMOVED for $packageName. Finishing call tracking.")
                 finishWhatsAppCall()
             }
         }

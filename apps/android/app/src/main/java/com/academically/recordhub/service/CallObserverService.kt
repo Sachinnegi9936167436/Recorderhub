@@ -53,6 +53,7 @@ class CallObserverService : Service() {
         try {
             registerCallStateListener()
             registerCallLogContentObserver()
+            ensureWhatsAppListenerActive()
         } catch (e: Exception) {
             AppLogManager.log("ERROR", TAG, "Error in onStartCommand: ${e.message}")
         }
@@ -126,8 +127,20 @@ class CallObserverService : Service() {
 
     private fun ensureWhatsAppListenerActive() {
         try {
+            val componentName = android.content.ComponentName(this, WhatsAppCallNotificationListener::class.java)
+            val pm = packageManager
+            // Force re-toggle component enabled state to kickstart Android OS's notification listener binder
+            pm.setComponentEnabledSetting(
+                componentName,
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                android.content.pm.PackageManager.DONT_KILL_APP
+            )
+            pm.setComponentEnabledSetting(
+                componentName,
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                android.content.pm.PackageManager.DONT_KILL_APP
+            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                val componentName = android.content.ComponentName(this, WhatsAppCallNotificationListener::class.java)
                 android.service.notification.NotificationListenerService.requestRebind(componentName)
             }
         } catch (e: Exception) {
