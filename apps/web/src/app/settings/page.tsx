@@ -1,20 +1,52 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navigation, useUserRole } from '@/components/Navigation';
 import Link from 'next/link';
-import { Settings, ShieldCheck, Database, Award, Save, RefreshCw, Shield } from 'lucide-react';
+import { Settings, ShieldCheck, Database, Award, Save, RefreshCw, Shield, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function SettingsPage() {
   const { role: userRole, isAdmin } = useUserRole();
   const [crmUrl, setCrmUrl] = useState('https://api.pharmlly.com/v1');
   const [retentionDays, setRetentionDays] = useState(180);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  const handleSave = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetch('/api/v1/settings/retention')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.retentionDays) {
+          setRetentionDays(Number(data.retentionDays));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    setSaving(true);
+    setSaveMessage(null);
+    try {
+      const res = await fetch('/api/v1/settings/retention', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retentionDays }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSaved(true);
+        setSaveMessage(`S3 Lifecycle updated: auto-delete after ${retentionDays} days (${Math.round(retentionDays / 30)} months)`);
+        setTimeout(() => setSaved(false), 4000);
+      } else {
+        setSaveMessage(data?.error || 'Failed to update S3 policy');
+      }
+    } catch (err: any) {
+      setSaveMessage('Error saving settings');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!isAdmin) {
@@ -132,13 +164,61 @@ export default function SettingsPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">S3 Audio Recording Retention (Days)</label>
-                <input
-                  type="number"
-                  value={retentionDays}
-                  onChange={(e) => setRetentionDays(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-brand-500"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-semibold text-slate-300">S3 Audio Recording Retention</label>
+                  <span className="text-rose-400 font-mono text-[11px] font-bold">
+                    {retentionDays} Days (~{Math.round(retentionDays / 30)} Months)
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    value={retentionDays}
+                    onChange={(e) => setRetentionDays(Number(e.target.value))}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-brand-500 font-mono"
+                  />
+                  <div className="flex items-center space-x-1">
+                    <button
+                      type="button"
+                      onClick={() => setRetentionDays(180)}
+                      className={`px-2.5 py-2 rounded-lg text-[11px] font-bold border transition-colors ${
+                        retentionDays === 180 
+                          ? 'bg-rose-500/20 text-rose-400 border-rose-500/40' 
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                      }`}
+                      title="Set to 6 Months (180 Days)"
+                    >
+                      6 Months
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRetentionDays(90)}
+                      className={`px-2.5 py-2 rounded-lg text-[11px] font-bold border transition-colors ${
+                        retentionDays === 90 
+                          ? 'bg-rose-500/20 text-rose-400 border-rose-500/40' 
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                      }`}
+                      title="Set to 3 Months (90 Days)"
+                    >
+                      3 Months
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRetentionDays(365)}
+                      className={`px-2.5 py-2 rounded-lg text-[11px] font-bold border transition-colors ${
+                        retentionDays === 365 
+                          ? 'bg-rose-500/20 text-rose-400 border-rose-500/40' 
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                      }`}
+                      title="Set to 1 Year (365 Days)"
+                    >
+                      1 Year
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  AWS S3 lifecycle rule automatically expires and permanently purges audio files older than {retentionDays} days.
+                </p>
               </div>
 
               <div>
@@ -147,24 +227,30 @@ export default function SettingsPage() {
                   type="text"
                   value="365 Days (Automated TTL)"
                   disabled
-                  className="w-full bg-slate-950/60 border border-slate-800 rounded-lg p-2.5 text-slate-400"
+                  className="w-full bg-slate-950/60 border border-slate-800 rounded-lg p-2.5 text-slate-400 font-mono"
                 />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  MongoDB TTL index automatically purges raw transcripts after 365 days.
+                </p>
               </div>
             </div>
 
             <div className="flex items-center justify-between pt-2">
               <button
                 type="submit"
-                className="bg-brand-600 hover:bg-brand-500 text-white font-semibold px-6 py-2.5 rounded-lg text-xs transition-all flex items-center space-x-2"
+                disabled={saving}
+                className="bg-brand-600 hover:bg-brand-500 text-white font-semibold px-6 py-2.5 rounded-lg text-xs transition-all flex items-center space-x-2 disabled:opacity-50 shadow-md shadow-brand-600/20"
               >
-                <Save className="w-4 h-4" />
-                <span>Save Organization Policies</span>
+                {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>{saving ? 'Applying S3 Policy...' : 'Save Organization Policies'}</span>
               </button>
 
-              {saved && (
-                <span className="text-xs text-emerald-400 font-semibold flex items-center space-x-1">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Settings saved successfully!</span>
+              {saveMessage && (
+                <span className={`text-xs font-semibold flex items-center space-x-1.5 ${
+                  saved ? 'text-emerald-400' : 'text-rose-400'
+                }`}>
+                  {saved ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                  <span>{saveMessage}</span>
                 </span>
               )}
             </div>
