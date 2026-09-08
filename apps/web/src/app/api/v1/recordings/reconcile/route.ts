@@ -93,10 +93,21 @@ export async function POST() {
 
       const phoneRegex = buildPhoneRegex(cleanPhone);
       const audioUrl = `/api/v1/recordings/${baseName}/audio`;
+      const isWaRecording = baseName.startsWith('WA_') || s3Key.includes('/WA_');
 
       const query: any = {
         phoneNumber: { $regex: phoneRegex },
       };
+
+      if (isWaRecording) {
+        query.$or = [
+          { channel: 'WHATSAPP' },
+          { idempotencyKey: { $regex: /^WA_/ } }
+        ];
+      } else {
+        query.channel = { $ne: 'WHATSAPP' };
+        query.idempotencyKey = { $not: /^WA_/ };
+      }
 
       if (targetDate) {
         query.startTime = {

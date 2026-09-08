@@ -221,13 +221,35 @@ export async function GET() {
               if (match) clean10 = match[1];
             }
 
+            const isWaRecording = recId.startsWith('WA_') || key.includes('/WA_');
+
             // Find matching call in deduplicated calls
             const matchingCall = deduplicatedCalls.find((c) => {
+              const isWaCall = (c.channel || '').toUpperCase() === 'WHATSAPP' || (c.idempotencyKey || '').startsWith('WA_');
+              // Strict channel separation: SIM recordings only match SIM calls, WA recordings only match WA calls
+              if (isWaRecording !== isWaCall) return false;
+
               if (c.idempotencyKey && (key.includes(c.idempotencyKey) || recId.includes(c.idempotencyKey))) return true;
               if (c.s3Key === key) return true;
               if (c.audioUrl && c.audioUrl.includes(recId)) return true;
+
               const callDigits = (c.phoneNumber || '').replace(/\D/g, '').slice(-10);
               if (clean10 && callDigits && clean10 === callDigits) {
+                // If timestamp is present in recId, ensure call time is within 5 minutes
+                const match14 = recId.match(/\b(20\d{12})\b/);
+                if (match14 && c.startTime) {
+                  const s = match14[1];
+                  const recTime = Date.UTC(
+                    parseInt(s.slice(0, 4), 10),
+                    parseInt(s.slice(4, 6), 10) - 1,
+                    parseInt(s.slice(6, 8), 10),
+                    parseInt(s.slice(8, 10), 10),
+                    parseInt(s.slice(10, 12), 10),
+                    parseInt(s.slice(12, 14), 10)
+                  );
+                  const callTime = new Date(c.startTime).getTime();
+                  return Math.abs(recTime - callTime) <= 300000; // ±5 minutes
+                }
                 return true;
               }
               return false;

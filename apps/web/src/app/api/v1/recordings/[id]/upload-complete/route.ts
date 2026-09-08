@@ -77,6 +77,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
       if (cleanDigits.length === 10) {
         const phoneRegex = buildPhoneRegex(cleanDigits);
+        const isWaRecording = (callId && callId.startsWith('WA_')) || recordingId.startsWith('WA_');
         const query: any = {
           phoneNumber: { $regex: phoneRegex },
           $or: [
@@ -84,6 +85,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
             { audioUrl: { $exists: false } }
           ]
         };
+
+        if (isWaRecording) {
+          query.channel = 'WHATSAPP';
+        } else {
+          query.channel = { $ne: 'WHATSAPP' };
+          query.idempotencyKey = { $not: /^WA_/ };
+        }
 
         if (targetDate) {
           query.startTime = {
