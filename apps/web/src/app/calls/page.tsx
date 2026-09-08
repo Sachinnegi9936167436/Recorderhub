@@ -32,14 +32,14 @@ import {
   Volume2,
   Star,
   Bookmark,
-  Check
+  Check,
+  Play,
+  Pause
 } from 'lucide-react';
+import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 
 function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; canListen?: boolean }) {
-  const [hasError, setHasError] = useState(false);
-  const [speed, setSpeed] = useState<number>(1);
-  const [audioDurationSec, setAudioDurationSec] = useState<number | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const { currentCall, isPlaying, playCall } = useAudioPlayer();
 
   const isAnswered = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
   const hasRecording = call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD';
@@ -50,26 +50,6 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
         <span>🔒</span>
         <span>Restricted</span>
       </span>
-    );
-  }
-
-  if (hasError) {
-    return (
-      <div className="flex items-center justify-center space-x-1 text-[11px]">
-        <span className="text-slate-400 font-medium">No Recording</span>
-        <button
-          onClick={() => {
-            setHasError(false);
-            if (audioRef.current) {
-              audioRef.current.load();
-            }
-          }}
-          className="text-indigo-600 hover:text-indigo-800 ml-1 font-semibold"
-          title="Retry audio stream"
-        >
-          ↻
-        </button>
-      </div>
     );
   }
 
@@ -91,19 +71,14 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
     return <span className="text-slate-400 font-medium text-[11px]">No Recording</span>;
   }
 
-  const toggleSpeed = () => {
-    const nextSpeed = speed === 1 ? 1.25 : speed === 1.25 ? 1.5 : speed === 1.5 ? 2 : 1;
-    setSpeed(nextSpeed);
-    if (audioRef.current) {
-      audioRef.current.playbackRate = nextSpeed;
-    }
-  };
+  const isThisCallActive = Boolean(currentCall && (
+    (currentCall._id && currentCall._id === call._id) ||
+    (currentCall.id && currentCall.id === call.id) ||
+    (currentCall.idempotencyKey && currentCall.idempotencyKey === call.idempotencyKey) ||
+    (currentCall.audioUrl && currentCall.audioUrl === call.audioUrl)
+  ));
 
-  const handleLoadedMetadata = () => {
-    if (audioRef.current && !isNaN(audioRef.current.duration) && audioRef.current.duration > 0) {
-      setAudioDurationSec(Math.round(audioRef.current.duration));
-    }
-  };
+  const isThisCallPlaying = isThisCallActive && isPlaying;
 
   const rawPhone = call.phoneNumber || call.phone || '';
   const cleanDigits = rawPhone.replace(/\D/g, '').slice(-10) || 'Contact';
@@ -120,47 +95,59 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
     hour12: true
   });
 
+  const durationSec = call.durationSeconds || 0;
+  const durationLabel = durationSec > 0 
+    ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`
+    : 'Play';
+
   return (
-    <div className="flex flex-col items-center justify-center py-1 space-y-1">
+    <div className="flex flex-col items-center justify-center py-0.5 space-y-1">
       <div className="flex items-center justify-center space-x-1.5">
-        <audio
-          ref={audioRef}
-          controls
-          preload="metadata"
-          src={audioSrc}
-          onLoadedMetadata={handleLoadedMetadata}
-          onError={() => setHasError(true)}
-          className="h-7 w-44 rounded-md bg-slate-100 border border-slate-200 shadow-xs focus:outline-none"
-        />
         <button
           type="button"
-          onClick={toggleSpeed}
-          title="Change audio playback speed (1x, 1.25x, 1.5x, 2x)"
-          className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] font-bold border border-slate-200 transition-colors shadow-2xs"
+          onClick={() => playCall(call)}
+          title={isThisCallPlaying ? 'Pause recording (Space)' : 'Play recording (Hotkeys: Space, J/L to skip)'}
+          className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all shadow-2xs ${
+            isThisCallPlaying
+              ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20 ring-2 ring-rose-400/40'
+              : isThisCallActive
+                ? 'bg-rose-50 text-rose-600 border border-rose-300 hover:bg-rose-100'
+                : 'bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-700 border border-slate-200'
+          }`}
         >
-          {speed}x
+          {isThisCallPlaying ? (
+            <>
+              <Pause className="w-3.5 h-3.5 text-white fill-current" />
+              <div className="flex items-end space-x-0.5 h-3">
+                <span className="w-0.5 bg-white rounded-full animate-[bounce_0.6s_infinite] h-3" />
+                <span className="w-0.5 bg-white rounded-full animate-[bounce_0.8s_infinite] h-2" />
+                <span className="w-0.5 bg-white rounded-full animate-[bounce_0.5s_infinite] h-2.5" />
+              </div>
+              <span className="text-[11px] font-mono">Playing</span>
+            </>
+          ) : (
+            <>
+              <Play className="w-3.5 h-3.5 text-rose-600 fill-current" />
+              <span className="text-[11px] font-mono">{durationLabel}</span>
+            </>
+          )}
         </button>
+
         <a
           href={audioSrc}
           download={downloadFileName}
           title={`Download audio file: ${downloadFileName}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200 transition-colors shadow-2xs"
+          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200 transition-colors shadow-2xs"
         >
           <Download className="w-3.5 h-3.5" />
         </a>
       </div>
+
       <div className="flex items-center space-x-1.5 text-[10px] text-slate-500 font-mono">
         <Clock className="w-2.5 h-2.5 text-slate-400" />
         <span>Rec: {timeDisplayStr}</span>
-        {audioDurationSec !== null ? (
-          <span className="text-slate-500 font-semibold" title={`Actual Audio: ${audioDurationSec}s (Connected Talk Time: ${call.durationSeconds || 0}s)`}>
-            • {audioDurationSec}s audio
-          </span>
-        ) : call.durationSeconds > 0 ? (
-          <span className="text-slate-400">({call.durationSeconds}s)</span>
-        ) : null}
       </div>
     </div>
   );
@@ -168,6 +155,7 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
 
 function SalestrailCallsInner() {
   const { role, email: userEmail, isAdmin, isManager, isTeamLead, isCounselor } = useUserRole();
+  const { currentCall, isPlayerVisible } = useAudioPlayer();
   const searchParams = useSearchParams();
   const isRecordingsOnly = searchParams.get('filter') === 'recordings';
 
@@ -291,7 +279,29 @@ function SalestrailCallsInner() {
         fetchCalls();
       }
     }, 30000);
-    return () => clearInterval(interval);
+
+    const handleGlobalPlay = (e: Event) => {
+      const target = e.target as HTMLAudioElement;
+      if (target && target.tagName === 'AUDIO') {
+        const allAudios = document.querySelectorAll('audio');
+        allAudios.forEach((audio) => {
+          if (audio !== target && !audio.paused) {
+            audio.pause();
+          }
+        });
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('play', handleGlobalPlay, true);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('play', handleGlobalPlay, true);
+      }
+    };
   }, []);
 
   const handleAssignCounselor = async (deviceId: string, newCounselorName: string) => {
@@ -842,7 +852,7 @@ function SalestrailCallsInner() {
       <Navigation />
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-8 space-y-6">
+      <main className={`flex-1 overflow-y-auto p-8 space-y-6 ${isPlayerVisible ? 'pb-36' : ''}`}>
         {/* Header Right Bar: Profile Menu */}
         <div className="flex items-center justify-end">
           <UserProfileMenu />
@@ -1122,8 +1132,22 @@ function SalestrailCallsInner() {
                       (call.disposition || '').toLowerCase().includes('whatsapp') ||
                       (call.idempotencyKey || '').startsWith('WA_');
 
+                    const isThisRowActive = Boolean(currentCall && (
+                      (currentCall._id && currentCall._id === call._id) ||
+                      (currentCall.id && currentCall.id === call.id) ||
+                      (currentCall.idempotencyKey && currentCall.idempotencyKey === call.idempotencyKey) ||
+                      (currentCall.audioUrl && currentCall.audioUrl === call.audioUrl)
+                    ));
+
                     return (
-                      <tr key={call.id || call._id || idx} className="hover:bg-slate-50 transition-colors">
+                      <tr 
+                        key={call.id || call._id || idx} 
+                        className={`transition-colors ${
+                          isThisRowActive 
+                            ? 'bg-rose-50/70 border-l-4 border-rose-500' 
+                            : 'hover:bg-slate-50'
+                        }`}
+                      >
                         {/* User */}
                         <td className="p-4 pl-6 font-semibold text-slate-900 text-center whitespace-nowrap">
                           {resolveCounselorName(call)}

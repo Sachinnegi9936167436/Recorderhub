@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { SpeedInsights } from '@vercel/speed-insights/next';
+import { ClientProviders } from '@/components/AudioPlayer/ClientProviders';
 
 export const metadata: Metadata = {
   title: 'RecordHub | Sales Call Intelligence Platform',
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body>
-        {children}
+        <ClientProviders>
+          {children}
+        </ClientProviders>
         <SpeedInsights />
       </body>
     </html>

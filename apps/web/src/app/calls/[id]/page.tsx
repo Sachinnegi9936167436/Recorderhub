@@ -4,17 +4,36 @@ import React, { useState } from 'react';
 import { Navigation, useUserRole } from '@/components/Navigation';
 import Link from 'next/link';
 import { ArrowLeft, Play, Pause, Volume2, ShieldCheck, Check, MessageSquare, Smartphone, Clock, Calendar, User, PhoneCall, Shield } from 'lucide-react';
+import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 
 export default function CallDetailPage({ params }: { params: { id: string } }) {
   const { role, email: userEmail, isAdmin, isManager, isTeamLead, isCounselor } = useUserRole();
-  const [isPlaying, setIsPlaying] = useState(false);
+  const { currentCall, isPlaying: globalPlaying, playCall, togglePlay: globalTogglePlay } = useAudioPlayer();
   const [disposition, setDisposition] = useState('Enrolled in NCLEX-RN Prep');
   const [coachingNote, setCoachingNote] = useState('Counselor confirmed course eligibility credentials timeline.');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const isWhatsApp = params.id.endsWith('2') || params.id.endsWith('3') || params.id.endsWith('89') || params.id.endsWith('90');
 
-  const togglePlay = () => setIsPlaying(!isPlaying);
+  const isThisCallActive = currentCall?.id === params.id || currentCall?._id === params.id;
+  const isPlaying = isThisCallActive && globalPlaying;
+
+  const togglePlay = () => {
+    if (isThisCallActive) {
+      globalTogglePlay();
+    } else {
+      playCall({
+        id: params.id,
+        _id: params.id,
+        leadName: isWhatsApp ? 'Nurse Sunita Patel (Dubai)' : 'Dr. Rajesh Kumar',
+        phoneNumber: '+91 98765 43210',
+        counselorName: 'Ananya Sharma',
+        channel: isWhatsApp ? 'WHATSAPP' : 'SIM',
+        durationSeconds: 384,
+        audioUrl: `/api/v1/recordings/mock/audio`
+      });
+    }
+  };
 
   const handleSaveNotes = (e: React.FormEvent) => {
     e.preventDefault();
