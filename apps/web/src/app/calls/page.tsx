@@ -38,8 +38,10 @@ import {
 } from 'lucide-react';
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 
+const audioDurationCache = new Map<string, number>();
+
 function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; canListen?: boolean }) {
-  const { currentCall, isPlaying, playCall, duration } = useAudioPlayer();
+  const { currentCall, isPlaying, playCall, duration: activePlayerDuration } = useAudioPlayer();
 
   const isAnswered = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
   const hasRecording = call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD';
@@ -80,6 +82,50 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
 
   const isThisCallPlaying = isThisCallActive && isPlaying;
 
+  // Track actual audio file duration from metadata / cache
+  const [actualDuration, setActualDuration] = useState<number | null>(() => {
+    if (call.recordingDuration && call.recordingDuration > 0) return call.recordingDuration;
+    if (call.audioDuration && call.audioDuration > 0) return call.audioDuration;
+    if (audioSrc && audioDurationCache.has(audioSrc)) {
+      return audioDurationCache.get(audioSrc)!;
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (!audioSrc || actualDuration !== null) return;
+    if (audioDurationCache.has(audioSrc)) {
+      setActualDuration(audioDurationCache.get(audioSrc)!);
+      return;
+    }
+
+    const audio = new Audio();
+    audio.preload = 'metadata';
+    const onLoadedMetadata = () => {
+      if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration) && audio.duration > 0) {
+        const rounded = Math.round(audio.duration);
+        audioDurationCache.set(audioSrc, rounded);
+        setActualDuration(rounded);
+      }
+    };
+    audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    audio.src = audioSrc;
+
+    return () => {
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+      audio.src = '';
+    };
+  }, [audioSrc, actualDuration]);
+
+  // When active player is playing this call and reports duration, update cache and state
+  useEffect(() => {
+    if (isThisCallActive && activePlayerDuration > 0 && audioSrc) {
+      const rounded = Math.round(activePlayerDuration);
+      audioDurationCache.set(audioSrc, rounded);
+      setActualDuration(rounded);
+    }
+  }, [isThisCallActive, activePlayerDuration, audioSrc]);
+
   const rawPhone = call.phoneNumber || call.phone || '';
   const cleanDigits = rawPhone.replace(/\D/g, '').slice(-10) || 'Contact';
   const contactName = (call.leadName || call.name || cleanDigits).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -95,9 +141,7 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
     hour12: true
   });
 
-  const durationSec = (isThisCallActive && duration > 0)
-    ? duration
-    : (call.recordingDuration || call.audioDuration || call.durationSeconds || 0);
+  const durationSec = actualDuration ?? (isThisCallActive && activePlayerDuration > 0 ? activePlayerDuration : (call.recordingDuration || call.audioDuration || call.durationSeconds || 0));
 
   const formatAudioDuration = (sec: number) => {
     const totalSec = Math.round(sec || 0);
