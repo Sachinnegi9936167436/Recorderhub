@@ -39,7 +39,7 @@ import {
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 
 function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; canListen?: boolean }) {
-  const { currentCall, isPlaying, playCall } = useAudioPlayer();
+  const { currentCall, isPlaying, playCall, duration } = useAudioPlayer();
 
   const isAnswered = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
   const hasRecording = call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD';
@@ -95,10 +95,26 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
     hour12: true
   });
 
-  const durationSec = call.durationSeconds || 0;
-  const durationLabel = durationSec > 0 
-    ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`
-    : 'Play';
+  const durationSec = (isThisCallActive && duration > 0)
+    ? duration
+    : (call.recordingDuration || call.audioDuration || call.durationSeconds || 0);
+
+  const formatAudioDuration = (sec: number) => {
+    const totalSec = Math.round(sec || 0);
+    if (totalSec <= 0) return 'Play';
+    const mins = Math.floor(totalSec / 60);
+    const remainingSecs = totalSec % 60;
+
+    if (mins === 0) {
+      return `${remainingSecs}s`;
+    }
+    if (remainingSecs === 0) {
+      return `${mins}m`;
+    }
+    return `${mins}m ${remainingSecs}s`;
+  };
+
+  const durationLabel = formatAudioDuration(durationSec);
 
   return (
     <div className="flex flex-col items-center justify-center py-0.5 space-y-1">
@@ -1133,7 +1149,7 @@ function SalestrailCallsInner() {
                     const durationMins = effectiveDuration > 0 ? Math.floor(effectiveDuration / 60) : 0;
                     const durationSecs = effectiveDuration > 0 ? effectiveDuration % 60 : 0;
                     const durationStr = isAnswered && effectiveDuration > 0
-                      ? (durationMins > 0 ? `${durationMins}m:${durationSecs}s` : `${durationSecs}s`)
+                      ? (durationMins > 0 ? (durationSecs > 0 ? `${durationMins}m ${durationSecs}s` : `${durationMins}m`) : `${durationSecs}s`)
                       : '0s';
 
                     const isOutbound = (call.direction || 'OUTGOING').toUpperCase() === 'OUTGOING' || (call.direction || '').toUpperCase() === 'OUTBOUND';
