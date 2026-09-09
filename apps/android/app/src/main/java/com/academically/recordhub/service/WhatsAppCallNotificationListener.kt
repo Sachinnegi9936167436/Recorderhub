@@ -32,32 +32,37 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         audioRecorder = WhatsAppAudioRecorder(applicationContext)
         AppLogManager.log("INFO", "WhatsAppListener", "WhatsApp NotificationListenerService Initialized.")
     }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        isConnected = true
+        instance = this
         AppLogManager.log("INFO", "WhatsAppListener", "NotificationListenerService Connected to OS successfully!")
         scanActiveWhatsAppNotifications()
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        isConnected = false
         AppLogManager.log("WARN", "WhatsAppListener", "NotificationListenerService Disconnected. Requesting rebind...")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            try {
-                requestRebind(ComponentName(this, WhatsAppCallNotificationListener::class.java))
-            } catch (e: Exception) {
-                AppLogManager.log("ERROR", "WhatsAppListener", "Error rebinding listener: ${e.message}")
-            }
-        }
+        triggerRebind(applicationContext)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        isConnected = false
+        instance = null
+        AppLogManager.log("INFO", "WhatsAppListener", "WhatsApp NotificationListenerService Destroyed.")
     }
 
     private fun scanActiveWhatsAppNotifications() {
         try {
-            val activeNotifications = activeNotifications ?: return
-            for (sbn in activeNotifications) {
+            val activeNotifs = activeNotifications ?: return
+            for (sbn in activeNotifs) {
                 processNotificationPosted(sbn)
             }
         } catch (e: Exception) {
@@ -71,17 +76,12 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
     }
 
     private fun processNotificationPosted(sbn: StatusBarNotification) {
-        val packageName = sbn.packageName
+        val packageName = sbn.packageName ?: ""
 
-        val isWhatsAppPackage = packageName.startsWith("com.whatsapp") ||
-                packageName == "com.gbwhatsapp" ||
-                packageName == "com.whatsapp.clone" ||
-                packageName == "com.whatsapp.dual"
+        if (!isWhatsAppPackage(packageName)) return
 
-        if (!isWhatsAppPackage) return
-
-        val notification = sbn.notification
-        val extras = notification.extras
+        val notification = sbn.notification ?: return
+        val extras = notification.extras ?: android.os.Bundle()
 
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
             ?: extras.getCharSequence("android.title")?.toString() ?: ""
@@ -92,16 +92,25 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
         val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString() ?: ""
         val category = notification.category ?: ""
         val tag = sbn.tag ?: ""
+        val template = extras.getString(Notification.EXTRA_TEMPLATE) ?: ""
 
-        val combinedStr = "$title $text $subText $category $tag".lowercase()
+        val combinedStr = "$title $text $subText $category $tag $template".lowercase()
+        val isOngoing = (notification.flags and Notification.FLAG_ONGOING_EVENT) != 0 ||
+                (notification.flags and Notification.FLAG_FOREGROUND_SERVICE) != 0 ||
+                (notification.flags and Notification.FLAG_NO_CLEAR) != 0
 
         val actions = notification.actions
-        val hasCallActions = actions != null && actions.any { action ->
+        val hasCallActions = actions != null && actions.isNotEmpty() && actions.any { action ->
             val actionTitle = action.title?.toString()?.lowercase() ?: ""
             actionTitle.contains("decline") || actionTitle.contains("answer") || actionTitle.contains("hang") ||
             actionTitle.contains("mute") || actionTitle.contains("speaker") || actionTitle.contains("call") ||
-            actionTitle.contains("end") || actionTitle.contains("reject")
+            actionTitle.contains("end") || actionTitle.contains("reject") || actionTitle.contains("accept") ||
+            actionTitle.contains("dismiss") || actionTitle.contains("अस्वीकार") || actionTitle.contains("उत्तर") ||
+            actionTitle.contains("समाप्त") || actionTitle.contains("कॉल") || actionTitle.contains("जवाब") ||
+            actionTitle.contains("কল") || actionTitle.contains("رد") || actionTitle.contains("رفض")
         }
+
+        val isCallStyle = template.contains("CallStyle", ignoreCase = true)
 
         val hasExplicitCallPhrase = combinedStr.contains("whatsapp call") ||
                 combinedStr.contains("voice call") ||
@@ -121,19 +130,30 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                 combinedStr.contains("in call") ||
                 combinedStr.contains("आवाज कॉल") ||
                 combinedStr.contains("वीडियो कॉल") ||
-                combinedStr.contains("कॉल")
+                combinedStr.contains("कॉल") ||
+                combinedStr.contains("चल रही कॉल") ||
+                combinedStr.contains("इनकमिंग") ||
+                combinedStr.contains("आउटगोइंग")
 
-        val isCallNotification = category == Notification.CATEGORY_CALL ||
+        val isCategoryCall = category == Notification.CATEGORY_CALL ||
+                category.contains("call", ignoreCase = true) ||
+                category.contains("voip", ignoreCase = true)
+
+        val isCallNotification = isCallStyle ||
+                isCategoryCall ||
                 hasCallActions ||
                 hasExplicitCallPhrase ||
-                tag.contains("call", ignoreCase = true)
+                (isOngoing && tag.contains("call", ignoreCase = true))
 
-        // Only filter out text messages if it is definitely NOT a call notification
+        // Filter out simple text/chat messages
         if (!isCallNotification) {
-            val isTextMessage = combinedStr.contains("messages") || 
+            val isTextMessage = !isOngoing && (
+                    combinedStr.contains("messages") || 
                     combinedStr.contains("unread") || 
                     combinedStr.contains("reply") || 
+                    combinedStr.contains("संदेश") ||
                     title.lowercase().contains("messages)")
+            )
             if (isTextMessage) return
         }
 
@@ -145,17 +165,14 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                 isCallRecordingActive = true
                 callStartTimeMs = System.currentTimeMillis()
 
-                currentCallDirection = if (combinedStr.contains("incoming") || combinedStr.contains("आगमन")) {
+                currentCallDirection = if (combinedStr.contains("incoming") || combinedStr.contains("आगमन") || combinedStr.contains("इनकमिंग")) {
                     "INCOMING"
                 } else {
                     "OUTGOING"
                 }
 
-                currentContactTitle = when {
-                    title.isNotBlank() && !title.equals("WhatsApp", ignoreCase = true) -> title
-                    text.isNotBlank() && !text.contains("call", ignoreCase = true) && !text.contains(":") -> text
-                    else -> "WhatsApp Contact"
-                }
+                // Extract contact name or clean title
+                currentContactTitle = cleanContactTitle(title, text)
 
                 AppLogManager.log("INFO", "WhatsAppListener", "Active WhatsApp call DETECTED: $packageName ($currentContactTitle) [$currentCallDirection]")
                 if (ENABLE_WHATSAPP_AUDIO_RECORDING) {
@@ -165,15 +182,35 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
         }
     }
 
+    private fun cleanContactTitle(rawTitle: String, rawText: String): String {
+        val nonGenericTitle = if (rawTitle.isNotBlank() &&
+            !rawTitle.equals("WhatsApp", ignoreCase = true) &&
+            !rawTitle.equals("WhatsApp Business", ignoreCase = true)
+        ) rawTitle else ""
+
+        val candidate = if (nonGenericTitle.isNotBlank()) {
+            nonGenericTitle
+        } else if (rawText.isNotBlank() && !rawText.contains("call", ignoreCase = true) && !rawText.contains(":")) {
+            rawText
+        } else {
+            "WhatsApp Contact"
+        }
+
+        // Clean out common prefix strings like "Incoming voice call • " or "WhatsApp call • "
+        return candidate
+            .replace("(?i)incoming (voice|video)? ?call:?".toRegex(), "")
+            .replace("(?i)outgoing (voice|video)? ?call:?".toRegex(), "")
+            .replace("(?i)ongoing (voice|video)? ?call:?".toRegex(), "")
+            .replace("(?i)whatsapp (voice|video)? ?call:?".toRegex(), "")
+            .trim()
+            .ifBlank { "WhatsApp Contact" }
+    }
+
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         sbn ?: return
-        val packageName = sbn.packageName
-        val isWhatsAppPackage = packageName.startsWith("com.whatsapp") ||
-                packageName == "com.gbwhatsapp" ||
-                packageName == "com.whatsapp.clone" ||
-                packageName == "com.whatsapp.dual"
+        val packageName = sbn.packageName ?: ""
 
-        if (isWhatsAppPackage && isCallRecordingActive) {
+        if (isWhatsAppPackage(packageName) && isCallRecordingActive) {
             val isTargetNotification = sbn.key == activeCallNotificationKey || 
                                        sbn.id == activeCallNotificationId ||
                                        sbn.notification.category == Notification.CATEGORY_CALL ||
@@ -184,7 +221,7 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
             // Debounce: verify if any remaining active notification is still a WhatsApp call before ending call
             val hasOtherCallNotification = try {
                 activeNotifications?.any { other ->
-                    other.packageName.startsWith("com.whatsapp") &&
+                    isWhatsAppPackage(other.packageName ?: "") &&
                     other.key != sbn.key &&
                     (other.notification.category == Notification.CATEGORY_CALL ||
                      (other.tag ?: "").contains("call", ignoreCase = true) ||
@@ -220,11 +257,12 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "ANDROID_WHATSAPP_DEVICE"
         val deviceId = "ANDROID-${Build.MODEL.replace(" ", "_")}-$androidId"
 
-        // Clean phone digits if contactName contains a raw phone number with possible time prefixes
+        // Clean phone digits if contactName contains a raw phone number
         val digitsOnly = contactName.replace("\\D".toRegex(), "")
         val cleanPhone = if (digitsOnly.length >= 10) "+91 ${digitsOnly.takeLast(10).chunked(5).joinToString(" ")}" else contactName
 
-        val idempotencyKey = "WA_${System.currentTimeMillis()}_${cleanPhone.hashCode()}"
+        val randomSuffix = (1000..9999).random()
+        val idempotencyKey = "WA_${System.currentTimeMillis()}_${cleanPhone.hashCode()}_$randomSuffix"
 
         val event = CallEventEntity(
             deviceId = deviceId,
@@ -245,35 +283,8 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Check if a call for the same number was created in local DB within the last 120 seconds
-                val recentEvents = db.callEventDao().getAllEvents()
-                val existingMatch = recentEvents.firstOrNull { existing ->
-                    val existingDigits = existing.phoneNumber.replace("\\D".toRegex(), "").takeLast(10)
-                    val currentDigits = cleanPhone.replace("\\D".toRegex(), "").takeLast(10)
-                    (existing.disposition.contains("WhatsApp", ignoreCase = true) || existing.idempotencyKey.startsWith("WA_")) &&
-                    existingDigits == currentDigits &&
-                    Math.abs(existing.startTime - callStartTimeMs) < 120000
-                }
-
-                if (existingMatch != null) {
-                    AppLogManager.log("SYNC", "WhatsAppListener", "Merging with existing WhatsApp call record (${existingMatch.idempotencyKey}) instead of creating duplicate.")
-                    val updatedDuration = Math.max(existingMatch.durationSeconds, durationSeconds.toInt())
-                    val updatedRecording = audioFile?.absolutePath ?: existingMatch.recordingPath
-                    val updatedStatus = if (updatedRecording != null && File(updatedRecording).exists()) "PENDING_UPLOAD" else existingMatch.recordingStatus
-
-                    db.callEventDao().insertCallEvent(
-                        existingMatch.copy(
-                            durationSeconds = updatedDuration,
-                            recordingPath = updatedRecording,
-                            recordingStatus = updatedStatus,
-                            endTime = Math.max(existingMatch.endTime, System.currentTimeMillis()),
-                            syncStatus = "PENDING"
-                        )
-                    )
-                } else {
-                    db.callEventDao().insertCallEvent(event)
-                    AppLogManager.log("SYNC", "WhatsAppListener", "Saved WhatsApp call to Room DB: $cleanPhone (${durationSeconds}s)")
-                }
+                db.callEventDao().insertCallEvent(event)
+                AppLogManager.log("SYNC", "WhatsAppListener", "Saved new WhatsApp call to Room DB: $cleanPhone (${durationSeconds}s) [$idempotencyKey]")
 
                 val syncRequest = OneTimeWorkRequestBuilder<CallSyncWorker>().build()
                 WorkManager.getInstance(context).enqueueUniqueWork(
@@ -289,5 +300,58 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
 
     companion object {
         const val ENABLE_WHATSAPP_AUDIO_RECORDING = false
+        var instance: WhatsAppCallNotificationListener? = null
+        var isConnected: Boolean = false
+
+        fun isWhatsAppPackage(packageName: String): Boolean {
+            if (packageName.isBlank()) return false
+            return packageName == "com.whatsapp" ||
+                    packageName == "com.whatsapp.w4b" ||
+                    packageName.startsWith("com.whatsapp") ||
+                    packageName == "com.gbwhatsapp" ||
+                    packageName == "com.whatsapp.clone" ||
+                    packageName == "com.whatsapp.dual" ||
+                    packageName == "com.yowhats" ||
+                    packageName == "com.fmwhatsapp"
+        }
+
+        fun isNotificationListenerEnabled(context: Context): Boolean {
+            return try {
+                val enabledListeners = Settings.Secure.getString(
+                    context.contentResolver,
+                    "enabled_notification_listeners"
+                ) ?: return false
+                val myComponentName = ComponentName(context, WhatsAppCallNotificationListener::class.java).flattenToString()
+                val myShortComponentName = ComponentName(context, WhatsAppCallNotificationListener::class.java).flattenToShortString()
+                enabledListeners.contains(myComponentName) ||
+                        enabledListeners.contains(myShortComponentName) ||
+                        enabledListeners.contains(context.packageName)
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        fun triggerRebind(context: Context) {
+            try {
+                val componentName = ComponentName(context, WhatsAppCallNotificationListener::class.java)
+                val pm = context.packageManager
+                pm.setComponentEnabledSetting(
+                    componentName,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+                pm.setComponentEnabledSetting(
+                    componentName,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    requestRebind(componentName)
+                }
+                AppLogManager.log("INFO", "WhatsAppListener", "Triggered notification listener rebind.")
+            } catch (e: Exception) {
+                AppLogManager.log("WARN", "WhatsAppListener", "Error triggering rebind: ${e.message}")
+            }
+        }
     }
 }

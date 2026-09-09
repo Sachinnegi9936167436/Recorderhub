@@ -231,9 +231,9 @@ export async function POST(req: Request) {
           });
         }
 
-        // Check 2: Deduplicate within 120-second time window for same clean 10-digit number & channel
+        // Check 2: Deduplicate within 120-second time window for same clean 10-digit number & channel (CELLULAR only - WhatsApp calls always create distinct records)
         let matchByTimeWindow = null;
-        if (cleanDigits.length === 10) {
+        if (!isWhatsApp && cleanDigits.length === 10) {
           const regexPattern = new RegExp(cleanDigits.split('').join('\\s*') + '$');
           matchByTimeWindow = await (CallModel as any).findOne({
             phoneNumber: { $regex: regexPattern },

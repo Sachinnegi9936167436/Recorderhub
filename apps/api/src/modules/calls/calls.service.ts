@@ -33,8 +33,10 @@ export class CallsService {
         const isAnswered = (event.status || CallStatus.ANSWERED).toUpperCase() === 'ANSWERED';
         const effectiveDuration = isAnswered ? (event.durationSeconds || 0) : 0;
 
-        // Deduplicate within 120s window for same 10-digit number & channel
-        if (rawDigits.length === 10) {
+        const isWhatsApp = (event.channel || '').toUpperCase() === 'WHATSAPP' || (event.disposition || '').toLowerCase().includes('whatsapp') || (event.idempotencyKey || '').startsWith('WA_');
+
+        // Deduplicate within 120s window for same 10-digit number & channel (CELLULAR only)
+        if (!isWhatsApp && rawDigits.length === 10) {
           const match = await this.callModel.findOne({
             organizationId: new Types.ObjectId(organizationId),
             startTime: { $gte: minTime, $lte: maxTime },

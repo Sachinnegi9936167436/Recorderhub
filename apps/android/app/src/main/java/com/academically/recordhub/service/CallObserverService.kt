@@ -33,6 +33,8 @@ class CallObserverService : Service() {
     private var incomingNumber: String = ""
     private var callLogContentObserver: ContentObserver? = null
 
+    private var watchdogStarted = false
+
     override fun onCreate() {
         super.onCreate()
         try {
@@ -44,6 +46,7 @@ class CallObserverService : Service() {
             registerCallStateListener()
             registerCallLogContentObserver()
             ensureWhatsAppListenerActive()
+            startWatchdog()
         } catch (e: Exception) {
             AppLogManager.log("ERROR", TAG, "Error registering listeners: ${e.message}")
         }
@@ -54,10 +57,31 @@ class CallObserverService : Service() {
             registerCallStateListener()
             registerCallLogContentObserver()
             ensureWhatsAppListenerActive()
+            startWatchdog()
         } catch (e: Exception) {
             AppLogManager.log("ERROR", TAG, "Error in onStartCommand: ${e.message}")
         }
         return START_STICKY
+    }
+
+    private fun startWatchdog() {
+        if (watchdogStarted) return
+        watchdogStarted = true
+        serviceScope.launch {
+            while (true) {
+                delay(30_000)
+                try {
+                    if (WhatsAppCallNotificationListener.isNotificationListenerEnabled(applicationContext)) {
+                        if (!WhatsAppCallNotificationListener.isConnected || WhatsAppCallNotificationListener.instance == null) {
+                            AppLogManager.log("WARN", TAG, "Watchdog detected WhatsAppCallNotificationListener disconnected/unbound. Rebinding...")
+                            WhatsAppCallNotificationListener.triggerRebind(applicationContext)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Watchdog loop error: ${e.message}")
+                }
+            }
+        }
     }
 
     private fun registerCallLogContentObserver() {
@@ -127,21 +151,8 @@ class CallObserverService : Service() {
 
     private fun ensureWhatsAppListenerActive() {
         try {
-            val componentName = android.content.ComponentName(this, WhatsAppCallNotificationListener::class.java)
-            val pm = packageManager
-            // Force re-toggle component enabled state to kickstart Android OS's notification listener binder
-            pm.setComponentEnabledSetting(
-                componentName,
-                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                android.content.pm.PackageManager.DONT_KILL_APP
-            )
-            pm.setComponentEnabledSetting(
-                componentName,
-                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                android.content.pm.PackageManager.DONT_KILL_APP
-            )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                android.service.notification.NotificationListenerService.requestRebind(componentName)
+            if (WhatsAppCallNotificationListener.isNotificationListenerEnabled(this)) {
+                WhatsAppCallNotificationListener.triggerRebind(this)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error requesting rebind for WhatsApp listener: ${e.message}")
