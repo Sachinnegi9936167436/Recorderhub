@@ -99,15 +99,41 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                 (notification.flags and Notification.FLAG_FOREGROUND_SERVICE) != 0 ||
                 (notification.flags and Notification.FLAG_NO_CLEAR) != 0
 
+        // 0. Strict exclusion of all text chats, group chats, mentions, and media notifications
+        val isTextMessageTemplate = template.contains("MessagingStyle", ignoreCase = true) ||
+                template.contains("BigTextStyle", ignoreCase = true) ||
+                template.contains("InboxStyle", ignoreCase = true) ||
+                template.contains("BigPictureStyle", ignoreCase = true)
+
+        val hasTextMessagePhrase = combinedStr.contains("mentioned you") ||
+                combinedStr.contains("mention") ||
+                combinedStr.contains("group:") ||
+                combinedStr.contains("added you") ||
+                combinedStr.contains("messages") ||
+                combinedStr.contains("unread") ||
+                combinedStr.contains("reply") ||
+                combinedStr.contains("संदेश") ||
+                combinedStr.contains("photo") ||
+                combinedStr.contains("sticker") ||
+                combinedStr.contains("gif") ||
+                combinedStr.contains("document") ||
+                combinedStr.contains("pinned") ||
+                combinedStr.contains("reacted") ||
+                title.contains("messages)", ignoreCase = true)
+
+        // Only ongoing notifications with non-text templates can be live phone calls
+        if (isTextMessageTemplate || hasTextMessagePhrase || !isOngoing) {
+            return
+        }
+
         val actions = notification.actions
         val hasCallActions = actions != null && actions.isNotEmpty() && actions.any { action ->
             val actionTitle = action.title?.toString()?.lowercase() ?: ""
-            actionTitle.contains("decline") || actionTitle.contains("answer") || actionTitle.contains("hang") ||
-            actionTitle.contains("mute") || actionTitle.contains("speaker") || actionTitle.contains("call") ||
-            actionTitle.contains("end") || actionTitle.contains("reject") || actionTitle.contains("accept") ||
-            actionTitle.contains("dismiss") || actionTitle.contains("अस्वीकार") || actionTitle.contains("उत्तर") ||
-            actionTitle.contains("समाप्त") || actionTitle.contains("कॉल") || actionTitle.contains("जवाब") ||
-            actionTitle.contains("কল") || actionTitle.contains("رد") || actionTitle.contains("رفض")
+            actionTitle.contains("decline") || actionTitle.contains("answer") || actionTitle.contains("hang up") ||
+            actionTitle.contains("mute") || actionTitle.contains("speaker") || actionTitle.contains("end call") ||
+            actionTitle.contains("reject") || actionTitle.contains("accept") || actionTitle.contains("dismiss") ||
+            actionTitle.contains("अस्वीकार") || actionTitle.contains("उत्तर") || actionTitle.contains("समाप्त") ||
+            actionTitle.contains("जवाब") || actionTitle.contains("কল") || actionTitle.contains("رد") || actionTitle.contains("رفض")
         }
 
         val isCallStyle = template.contains("CallStyle", ignoreCase = true)
@@ -130,7 +156,6 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                 combinedStr.contains("in call") ||
                 combinedStr.contains("आवाज कॉल") ||
                 combinedStr.contains("वीडियो कॉल") ||
-                combinedStr.contains("कॉल") ||
                 combinedStr.contains("चल रही कॉल") ||
                 combinedStr.contains("इनकमिंग") ||
                 combinedStr.contains("आउटगोइंग")
@@ -139,23 +164,7 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                 category.contains("call", ignoreCase = true) ||
                 category.contains("voip", ignoreCase = true)
 
-        val isCallNotification = isCallStyle ||
-                isCategoryCall ||
-                hasCallActions ||
-                hasExplicitCallPhrase ||
-                (isOngoing && tag.contains("call", ignoreCase = true))
-
-        // Filter out simple text/chat messages
-        if (!isCallNotification) {
-            val isTextMessage = !isOngoing && (
-                    combinedStr.contains("messages") || 
-                    combinedStr.contains("unread") || 
-                    combinedStr.contains("reply") || 
-                    combinedStr.contains("संदेश") ||
-                    title.lowercase().contains("messages)")
-            )
-            if (isTextMessage) return
-        }
+        val isCallNotification = isOngoing && (isCallStyle || isCategoryCall || hasCallActions || hasExplicitCallPhrase || tag.contains("call", ignoreCase = true))
 
         if (isCallNotification) {
             activeCallNotificationKey = sbn.key

@@ -704,9 +704,16 @@ function SalestrailCallsInner() {
       const { canView } = canUserAccessCall(call);
       if (!canView) return false;
 
-      // 0. Exclude non-call text/chat message entries
+      // 0. Exclude non-call text/chat message entries and group mentions
       const combined = `${call.phoneNumber || ''} ${call.leadName || ''} ${call.disposition || ''}`.toLowerCase();
-      if (combined.includes('message') || combined.includes('messages') || combined.includes('unread')) {
+      if (
+        combined.includes('message') ||
+        combined.includes('messages') ||
+        combined.includes('unread') ||
+        combined.includes('mention') ||
+        combined.includes('group:') ||
+        combined.includes('sales group')
+      ) {
         return false;
       }
 

@@ -83,19 +83,19 @@ export async function GET() {
       calls = [initialWhatsAppCall];
     }
 
-    // Purge any text/chat message records mistakenly saved previously
+    // Purge any text/chat message / group mention records mistakenly saved previously
     await (CallModel as any).deleteMany({
       $or: [
-        { phoneNumber: { $regex: 'message', $options: 'i' } },
-        { leadName: { $regex: 'message', $options: 'i' } },
-        { disposition: { $regex: 'message', $options: 'i' } }
+        { phoneNumber: { $regex: 'message|unread|mention|group:|sales group|photo|sticker|gif', $options: 'i' } },
+        { leadName: { $regex: 'message|unread|mention|group:|sales group|photo|sticker|gif', $options: 'i' } },
+        { disposition: { $regex: 'message|unread|mention|group:|sales group', $options: 'i' } }
       ]
     }).catch(() => {});
 
-    // Filter out any text message entries from memory
+    // Filter out any text message / group mention entries from memory
     calls = calls.filter((c) => {
       const fullStr = `${c.phoneNumber || ''} ${c.leadName || ''} ${c.disposition || ''}`.toLowerCase();
-      return !fullStr.includes('message') && !fullStr.includes('messages') && !fullStr.includes('unread');
+      return !fullStr.includes('message') && !fullStr.includes('messages') && !fullStr.includes('unread') && !fullStr.includes('mention') && !fullStr.includes('group:');
     });
 
     // Update any existing MongoDB Atlas records starting with WA_ or containing WhatsApp disposition
