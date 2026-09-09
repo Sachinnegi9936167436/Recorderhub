@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/db';
+import { connectToDatabase, withDbRetry } from '@/lib/db';
 import { CallModel, DeviceModel } from '@/lib/models';
 import { cacheGet, cacheSet } from '@/lib/redis';
 
@@ -32,8 +32,9 @@ export async function GET() {
       return res;
     }
 
-    await connectToDatabase();
-    let calls = await (CallModel as any).find().sort({ startTime: -1, createdAt: -1 }).limit(5000).exec();
+    let calls = await withDbRetry(async () => {
+      return await (CallModel as any).find().sort({ startTime: -1, createdAt: -1 }).limit(5000).exec();
+    });
 
     // Enrich calls missing agentName from registered devices in MongoDB
     try {

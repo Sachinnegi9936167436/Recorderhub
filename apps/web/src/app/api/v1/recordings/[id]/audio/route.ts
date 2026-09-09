@@ -46,8 +46,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
           }
         }
       }
-    } catch (dbErr) {
-      console.warn('DB lookup for recording ID failed:', dbErr);
+    } catch (dbErr: any) {
+      console.warn('DB lookup for recording ID failed:', dbErr?.message || dbErr);
     }
 
     // 2. Try fetching from AWS S3 Bucket via direct Presigned GET URL
