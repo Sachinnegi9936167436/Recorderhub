@@ -25,6 +25,7 @@ import {
   Calendar,
   X,
   AlertTriangle,
+  AlertCircle,
   Mic,
   Clock,
   PhoneCall,
@@ -39,6 +40,33 @@ import {
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 
 const audioDurationCache = new Map<string, number>();
+
+function getCallAudioDuration(call: any): number | null {
+  if (typeof call.recordingDuration === 'number' && call.recordingDuration > 0) return call.recordingDuration;
+  if (typeof call.audioDuration === 'number' && call.audioDuration > 0) return call.audioDuration;
+  const audioSrc = call.audioUrl || (call.s3Key ? `/api/v1/recordings/stream?key=${encodeURIComponent(call.s3Key)}` : null);
+  if (audioSrc && audioDurationCache.has(audioSrc)) {
+    return audioDurationCache.get(audioSrc)!;
+  }
+  return null;
+}
+
+function isCallDurationMismatch(call: any): boolean {
+  // Ignore calls where recording does NOT exist (only compare calls that actually have recordings)
+  const hasRecording = (call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD') && call.recordingStatus !== 'NONE';
+  if (!hasRecording) return false;
+
+  const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+  const callDur = isAns ? Number(call.durationSeconds || 0) : 0;
+  const recDur = getCallAudioDuration(call);
+
+  if (recDur !== null) {
+    const diff = Math.abs(callDur - recDur);
+    // Mismatch when durations differ by >= 5s, or when one is 0 and the other is > 0, or call is long and diff >= 4s
+    return diff >= 5 || (callDur > 0 && recDur === 0) || (callDur === 0 && recDur > 0) || (callDur >= 30 && diff >= 4);
+  }
+  return false;
+}
 
 function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; canListen?: boolean }) {
   const { currentCall, isPlaying, playCall, duration: activePlayerDuration } = useAudioPlayer();
@@ -229,7 +257,8 @@ function SalestrailCallsInner() {
   const [repCategory, setRepCategory] = useState('Teams');
   const [subFilter, setSubFilter] = useState('All Teams');
   const [searchQuery, setSearchQuery] = useState('');
-  const [anomalyFilter, setAnomalyFilter] = useState<'all' | 'short_calls' | 'recordings' | 'sim' | 'whatsapp' | 'long_calls' | 'bookmarked'>('all');
+  const [anomalyFilter, setAnomalyFilter] = useState<'all' | 'short_calls' | 'recordings' | 'sim' | 'whatsapp' | 'long_calls' | 'mismatch' | 'bookmarked'>('all');
+  const [audioCacheVer, setAudioCacheVer] = useState(0);
 
   const [reviewingCall, setReviewingCall] = useState<any | null>(null);
   const [reviewRating, setReviewRating] = useState<number>(0);
@@ -364,6 +393,59 @@ function SalestrailCallsInner() {
       }
     };
   }, []);
+
+  // Background prefetch audio durations for calls with recordings to ensure accurate mismatch counting and filtering
+  useEffect(() => {
+    if (!callsList || callsList.length === 0) return;
+
+    let isMounted = true;
+    let updateTimer: any = null;
+
+    const notifyChange = () => {
+      if (!updateTimer) {
+        updateTimer = setTimeout(() => {
+          updateTimer = null;
+          if (isMounted) setAudioCacheVer((v) => v + 1);
+        }, 150);
+      }
+    };
+
+    const callsWithAudio = callsList.filter(
+      (c) => (c.audioUrl || c.s3Key) && c.recordingStatus !== 'NONE'
+    );
+
+    callsWithAudio.forEach((c) => {
+      const audioSrc = c.audioUrl || (c.s3Key ? `/api/v1/recordings/stream?key=${encodeURIComponent(c.s3Key)}` : null);
+      if (!audioSrc || audioDurationCache.has(audioSrc)) return;
+
+      const audio = new Audio();
+      audio.preload = 'metadata';
+      const onLoaded = () => {
+        if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration) && audio.duration > 0) {
+          audioDurationCache.set(audioSrc, Math.round(audio.duration));
+          notifyChange();
+        }
+        cleanup();
+      };
+      const onError = () => {
+        cleanup();
+      };
+      const cleanup = () => {
+        audio.removeEventListener('loadedmetadata', onLoaded);
+        audio.removeEventListener('error', onError);
+        audio.src = '';
+      };
+
+      audio.addEventListener('loadedmetadata', onLoaded);
+      audio.addEventListener('error', onError);
+      audio.src = audioSrc;
+    });
+
+    return () => {
+      isMounted = false;
+      if (updateTimer) clearTimeout(updateTimer);
+    };
+  }, [callsList]);
 
   const handleAssignCounselor = async (deviceId: string, newCounselorName: string) => {
     if (!deviceId || !newCounselorName) return;
@@ -694,6 +776,7 @@ function SalestrailCallsInner() {
     let withRecCount = 0;
     let waCount = 0;
     let simCount = 0;
+    let mismatchCount = 0;
 
     baseFilteredCalls.forEach((c) => {
       const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
@@ -702,7 +785,13 @@ function SalestrailCallsInner() {
       totalDurSec += dur;
       if (isAns && dur > 0 && dur < 15) shortCount++;
       if (isAns && dur >= 300) longCount++;
-      if ((c.audioUrl || c.s3Key) && c.recordingStatus !== 'NONE') withRecCount++;
+      const hasRec = (c.audioUrl || c.s3Key || c.recordingStatus === 'COMPLETED' || c.recordingStatus === 'PENDING_UPLOAD') && c.recordingStatus !== 'NONE';
+      if (hasRec) {
+        withRecCount++;
+        if (isCallDurationMismatch(c)) {
+          mismatchCount++;
+        }
+      }
       if (c.rating || c.isBookmarked) reviewedCount++;
 
       const isWA = (c.channel || '').toUpperCase() === 'WHATSAPP' || (c.disposition || '').toLowerCase().includes('whatsapp') || (c.idempotencyKey || '').startsWith('WA_');
@@ -723,8 +812,9 @@ function SalestrailCallsInner() {
       withRecCount,
       waCount,
       simCount,
+      mismatchCount,
     };
-  }, [baseFilteredCalls]);
+  }, [baseFilteredCalls, audioCacheVer]);
 
   // 3. Final filtered calls with Anomaly / Category Tab selection applied
   const filteredCalls = useMemo(() => {
@@ -734,7 +824,7 @@ function SalestrailCallsInner() {
         const dur = isAns ? Number(call.durationSeconds || 0) : 0;
         if (!isAns || dur <= 0 || dur >= 15) return false;
       } else if (anomalyFilter === 'recordings') {
-        const hasRec = (call.audioUrl || call.s3Key) && call.recordingStatus !== 'NONE';
+        const hasRec = (call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD') && call.recordingStatus !== 'NONE';
         if (!hasRec) return false;
       } else if (anomalyFilter === 'long_calls') {
         const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
@@ -746,13 +836,15 @@ function SalestrailCallsInner() {
       } else if (anomalyFilter === 'sim') {
         const isWA = (call.channel || '').toUpperCase() === 'WHATSAPP' || (call.disposition || '').toLowerCase().includes('whatsapp') || (call.idempotencyKey || '').startsWith('WA_');
         if (isWA) return false;
+      } else if (anomalyFilter === 'mismatch') {
+        if (!isCallDurationMismatch(call)) return false;
       } else if (anomalyFilter === 'bookmarked') {
         if (!call.isBookmarked && !call.rating) return false;
       }
 
       return true;
     });
-  }, [baseFilteredCalls, anomalyFilter]);
+  }, [baseFilteredCalls, anomalyFilter, audioCacheVer]);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -1131,6 +1223,18 @@ function SalestrailCallsInner() {
               <Flame className="w-3.5 h-3.5" />
               <span>Long Calls &gt;5m ({callStats.longCount})</span>
             </button>
+
+            <button
+              onClick={() => setAnomalyFilter('mismatch')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'mismatch'
+                ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                : 'bg-red-50 text-red-800 border-red-200 hover:bg-red-100'
+                }`}
+              title="Calls where call talk duration and recording audio duration do not match (ignoring calls without recordings)"
+            >
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>Duration Mismatch ({callStats.mismatchCount})</span>
+            </button>
           </div>
 
           <div className="flex items-center space-x-3 text-xs font-semibold text-slate-600 px-2">
@@ -1202,6 +1306,8 @@ function SalestrailCallsInner() {
                       (call.disposition || '').toLowerCase().includes('whatsapp') ||
                       (call.idempotencyKey || '').startsWith('WA_');
 
+                    const isMismatchRow = isCallDurationMismatch(call);
+
                     const isThisRowActive = Boolean(currentCall && (
                       (currentCall._id && currentCall._id === call._id) ||
                       (currentCall.id && currentCall.id === call.id) ||
@@ -1259,6 +1365,16 @@ function SalestrailCallsInner() {
                                 title="Suspicious short call (< 15s) - click audio to audit pitch"
                               >
                                 ⚠️ Short
+                              </span>
+                            </div>
+                          ) : isMismatchRow ? (
+                            <div className="flex items-center justify-center space-x-1.5 whitespace-nowrap">
+                              <span className="text-red-700 font-bold">{durationStr}</span>
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-red-100 text-red-800 border border-red-300 shadow-2xs"
+                                title="Duration mismatch: Call talk time and audio recording length do not match"
+                              >
+                                ⚠️ Mismatch
                               </span>
                             </div>
                           ) : (
