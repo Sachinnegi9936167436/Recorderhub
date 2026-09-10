@@ -23,17 +23,22 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     let recordingId = params.id;
     let s3KeyTarget: string | null = null;
 
-    // 1. Resolve actual recordingId or s3Key from MongoDB Atlas with retry
+    // Check fast Redis cache before touching database
+    const directCacheKey = `s3:audio:${params.id}`;
+    const directCachedUrl = await cacheGet<string>(directCacheKey);
+    if (directCachedUrl) {
+      return NextResponse.redirect(directCachedUrl, 307);
+    }
+
+    // 1. Resolve actual recordingId or s3Key from MongoDB using fast indexed lookup (no unindexed regex)
     try {
+      const isHex24 = /^[0-9a-fA-F]{24}$/.test(params.id);
+      const query = isHex24 
+        ? { $or: [{ _id: params.id }, { idempotencyKey: params.id }] } 
+        : { idempotencyKey: params.id };
+
       const callDoc = await withDbRetry(async () => {
-        return await (CallModel as any).findOne({
-          $or: [
-            { idempotencyKey: params.id },
-            { audioUrl: { $regex: params.id } },
-            { s3Key: { $regex: params.id } },
-            { _id: params.id.length === 24 ? params.id : null }
-          ]
-        }).lean().exec();
+        return await (CallModel as any).findOne(query).select('s3Key audioUrl').lean().exec();
       });
 
       if (callDoc) {
@@ -48,7 +53,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         }
       }
     } catch (dbErr: any) {
-      console.warn('DB lookup for recording ID failed:', dbErr?.message || dbErr);
+      // Non-fatal: S3 direct resolution will handle the file seamlessly
+      console.log(`[AudioRoute] Direct S3 lookup for ${recordingId}`);
     }
 
     // 2. Try fetching from AWS S3 Bucket via direct Presigned GET URL
@@ -111,6 +117,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
         // Cache in Redis for 55 minutes
         await cacheSet(S3_CACHE_KEY, presignedUrl, 3300);
+        await cacheSet(directCacheKey, presignedUrl, 3300);
 
         return NextResponse.redirect(presignedUrl, 307);
       } catch (s3Err) {

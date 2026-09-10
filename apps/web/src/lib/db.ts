@@ -36,14 +36,14 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
   if (!cached.promise) {
     const opts: mongoose.ConnectOptions = {
       bufferCommands: false,
-      maxPoolSize: 10,
+      maxPoolSize: 2, // Optimized for Vercel Serverless containers
       minPoolSize: 0,
-      maxIdleTimeMS: 10000,
+      maxIdleTimeMS: 5000,
       serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 30000,
-      connectTimeoutMS: 10000,
+      socketTimeoutMS: 20000,
+      connectTimeoutMS: 5000,
       heartbeatFrequencyMS: 10000,
-      family: 4,
+      autoIndex: false,
       retryWrites: true,
       retryReads: true,
     };
@@ -111,11 +111,15 @@ export async function withDbRetry<T>(operation: () => Promise<T>, maxRetries = 2
         err?.errorLabelSet?.has?.('RetryableWriteError');
 
       if (isNetworkOrTlsError && attempts <= maxRetries) {
-        console.warn(`[withDbRetry] Transient MongoDB TLS/Network error detected (attempt ${attempts}/${maxRetries}): ${err?.message || err}. Resetting pool and retrying...`);
+        console.warn(`[withDbRetry] Transient MongoDB TLS/Network error (attempt ${attempts}/${maxRetries}). Force-closing dead socket pool and reconnecting...`);
         cached.conn = null;
         cached.promise = null;
-        await mongoose.disconnect().catch(() => {});
-        await new Promise((r) => setTimeout(r, 200 * attempts));
+        try {
+          if (mongoose.connection && mongoose.connection.readyState !== 0) {
+            await mongoose.connection.close(true).catch(() => {});
+          }
+        } catch {}
+        await new Promise((r) => setTimeout(r, 250 * attempts));
         continue;
       }
       throw err;
