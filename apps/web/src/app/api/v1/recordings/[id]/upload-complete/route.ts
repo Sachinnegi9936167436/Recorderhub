@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
-import { cacheDel } from '@/lib/redis';
+import { patchCallInCache, revalidateCallsCacheInBackground } from '@/lib/cache-service';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -113,8 +113,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       }
     }
 
-    // Invalidate Redis calls cache so the dashboard immediately updates
-    await cacheDel('cache:calls:latest').catch(() => {});
+    // Update Redis calls cache non-destructively so dashboard gets updated immediately
+    if (updated) {
+      await patchCallInCache(updated._id?.toString() || updated.idempotencyKey, {
+        recordingStatus: 'COMPLETED',
+        audioUrl: audioUrl,
+      }).catch(() => {});
+    }
+    revalidateCallsCacheInBackground();
 
     if (updated) {
       console.log(`Upload complete confirmed for call ${updated.idempotencyKey || updated._id}`);

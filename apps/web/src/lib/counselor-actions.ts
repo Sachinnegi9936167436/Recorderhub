@@ -135,8 +135,10 @@ export async function deleteCounselorCascade(identifier: string) {
     await (UserModel as any).deleteOne(filter).exec();
   }
 
-  // 7. Clear Redis caches
-  await cacheDel('cache:calls:latest').catch(() => {});
+  // 7. Clear & refresh Redis caches
+  await cacheDel('cache:auth:counselors').catch(() => {});
+  const { revalidateCallsCacheInBackground } = await import('@/lib/cache-service');
+  revalidateCallsCacheInBackground();
 
   return {
     success: true,

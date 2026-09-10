@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel, DeviceModel, UserModel } from '@/lib/models';
-import { cacheDel } from '@/lib/redis';
+import { revalidateCallsCacheInBackground } from '@/lib/cache-service';
 import { getS3Client } from '@/lib/aws';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -318,8 +318,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // Invalidate Redis cache so dashboard immediately gets latest calls
-    await cacheDel('cache:calls:latest').catch(() => {});
+    // Revalidate Redis cache in background so dashboard gets updated calls without cold-start delay
+    revalidateCallsCacheInBackground();
 
     console.log(`Batch sync completed: ${syncedIds.length} synced, ${duplicates.length} dups, ${uploadUrls.length} S3 presigned URLs generated.`);
 

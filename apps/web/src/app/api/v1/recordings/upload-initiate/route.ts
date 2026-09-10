@@ -4,7 +4,7 @@ import { CallModel, DeviceModel, UserModel } from '@/lib/models';
 import { getS3Client } from '@/lib/aws';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { cacheDel } from '@/lib/redis';
+import { patchCallInCache, revalidateCallsCacheInBackground } from '@/lib/cache-service';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -176,7 +176,12 @@ export async function POST(req: Request) {
 
         if (updatedCall) {
           console.log(`Linked audioUrl ${audioUrl} strictly to call ${updatedCall.idempotencyKey || updatedCall._id}`);
-          await cacheDel('cache:calls:latest').catch(() => {});
+          await patchCallInCache(updatedCall._id?.toString() || updatedCall.idempotencyKey, {
+            recordingStatus: 'PENDING_UPLOAD',
+            audioUrl: audioUrl,
+            s3Key: s3Key,
+          }).catch(() => {});
+          revalidateCallsCacheInBackground();
         } else {
           console.warn(`Could not find matching call for audio upload: ${callId}`);
         }

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
-import { cacheDel } from '@/lib/redis';
+import { patchCallInCache, revalidateCallsCacheInBackground } from '@/lib/cache-service';
+
 export async function POST(req: Request) {
   try {
     await connectToDatabase();
@@ -31,8 +32,9 @@ export async function POST(req: Request) {
     if (!updatedCall) {
       return NextResponse.json({ message: 'Call not found' }, { status: 404 });
     }
-    // Invalidate Redis cache
-    await cacheDel('cache:calls:latest').catch(() => {});
+    // Update Redis cache non-destructively
+    await patchCallInCache(callId, updateFields).catch(() => {});
+    revalidateCallsCacheInBackground();
 
     return NextResponse.json({
       success: true,

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { UserModel } from '@/lib/models';
+import { cacheDel } from '@/lib/redis';
+import { COUNSELORS_CACHE_KEY } from '@/lib/cache-service';
 import bcrypt from 'bcryptjs';
 
 export async function POST(req: Request) {
@@ -46,6 +48,7 @@ export async function POST(req: Request) {
       phoneNumber: '',
     });
 
+    await cacheDel(COUNSELORS_CACHE_KEY).catch(() => {});
     return NextResponse.json(newUser);
   } catch (err: any) {
     console.error('Error registering counselor:', err);

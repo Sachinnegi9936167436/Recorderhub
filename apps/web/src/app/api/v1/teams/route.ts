@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { TeamModel, UserModel } from '@/lib/models';
+import { cacheGet, cacheSet, cacheDel } from '@/lib/redis';
+import { TEAMS_CACHE_KEY, TEAMS_CACHE_TTL } from '@/lib/cache-service';
 import mongoose from 'mongoose';
 
 export const dynamic = 'force-dynamic';
@@ -8,6 +10,13 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
+    const cached = await cacheGet<any[]>(TEAMS_CACHE_KEY);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      const res = NextResponse.json(cached);
+      res.headers.set('X-Cache', 'HIT');
+      return res;
+    }
+
     await connectToDatabase();
     let teams = await (TeamModel as any).find().sort({ createdAt: -1 }).lean().exec();
 
@@ -69,7 +78,13 @@ export async function GET() {
       updatedAt: t.updatedAt,
     }));
 
-    return NextResponse.json(formatted);
+    if (formatted && formatted.length > 0) {
+      await cacheSet(TEAMS_CACHE_KEY, formatted, TEAMS_CACHE_TTL);
+    }
+
+    const res = NextResponse.json(formatted);
+    res.headers.set('X-Cache', 'MISS');
+    return res;
   } catch (err: any) {
     console.error('Error fetching teams:', err);
     return NextResponse.json({ message: err.message || 'Error fetching teams' }, { status: 500 });
@@ -115,6 +130,8 @@ export async function POST(req: Request) {
       },
       { upsert: true, new: true }
     ).lean().exec();
+
+    await cacheDel(TEAMS_CACHE_KEY).catch(() => {});
 
     return NextResponse.json({
       success: true,
@@ -168,6 +185,8 @@ export async function PUT(req: Request) {
       return NextResponse.json({ message: 'Team not found' }, { status: 404 });
     }
 
+    await cacheDel(TEAMS_CACHE_KEY).catch(() => {});
+
     return NextResponse.json({
       success: true,
       team: {
@@ -202,6 +221,8 @@ export async function DELETE(req: Request) {
       : { name: new RegExp(`^${name || id}$`, 'i') };
 
     await (TeamModel as any).deleteOne(filter);
+    await cacheDel(TEAMS_CACHE_KEY).catch(() => {});
+
     return NextResponse.json({ success: true, message: 'Team deleted successfully' });
   } catch (err: any) {
     console.error('Error deleting team:', err);

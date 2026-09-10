@@ -147,7 +147,8 @@ export async function POST() {
     }
 
     if (reconciledCount > 0) {
-      await cacheDel('cache:calls:latest').catch(() => {});
+      const { revalidateCallsCacheInBackground } = await import('@/lib/cache-service');
+      revalidateCallsCacheInBackground();
     }
 
     return NextResponse.json({

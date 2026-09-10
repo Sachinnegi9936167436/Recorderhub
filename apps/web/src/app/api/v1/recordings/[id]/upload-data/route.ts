@@ -5,7 +5,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { getS3Client } from '@/lib/aws';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { cacheDel } from '@/lib/redis';
+import { patchCallInCache, revalidateCallsCacheInBackground } from '@/lib/cache-service';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -176,8 +176,15 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       }
     }
 
-    // Invalidate Redis calls cache so the dashboard immediately updates
-    await cacheDel('cache:calls:latest').catch(() => {});
+    // Update Redis calls cache non-destructively
+    if (updatedCall) {
+      await patchCallInCache(updatedCall._id?.toString() || updatedCall.idempotencyKey, {
+        recordingStatus: 'COMPLETED',
+        audioUrl: audioUrl,
+        s3Key: s3Key,
+      }).catch(() => {});
+    }
+    revalidateCallsCacheInBackground();
 
     if (updatedCall) {
       console.log(`Successfully attached uploaded audio recording to call ${updatedCall.idempotencyKey || updatedCall._id}`);

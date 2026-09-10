@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { UserModel } from '@/lib/models';
+import { cacheGet, cacheSet, cacheDel } from '@/lib/redis';
+import { COUNSELORS_CACHE_KEY, COUNSELORS_CACHE_TTL } from '@/lib/cache-service';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
@@ -9,9 +11,23 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
+    const cached = await cacheGet<any[]>(COUNSELORS_CACHE_KEY);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      const res = NextResponse.json(cached);
+      res.headers.set('X-Cache', 'HIT');
+      return res;
+    }
+
     await connectToDatabase();
     const counselors = await (UserModel as any).find().select('-passwordHash').sort({ createdAt: -1 }).lean().exec();
-    return NextResponse.json(counselors || []);
+    
+    if (counselors && counselors.length > 0) {
+      await cacheSet(COUNSELORS_CACHE_KEY, counselors, COUNSELORS_CACHE_TTL);
+    }
+
+    const res = NextResponse.json(counselors || []);
+    res.headers.set('X-Cache', 'MISS');
+    return res;
   } catch (err: any) {
     console.error('Error fetching counselors:', err);
     return NextResponse.json({ message: err.message || 'Error fetching counselors' }, { status: 500 });
@@ -30,6 +46,7 @@ export async function DELETE(req: Request) {
     }
 
     const result = await deleteCounselorCascade(id);
+    await cacheDel(COUNSELORS_CACHE_KEY).catch(() => {});
     return NextResponse.json(result);
   } catch (err: any) {
     console.error('Error deleting counselor:', err);
@@ -64,6 +81,8 @@ export async function PUT(req: Request) {
 
     const filter = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { email: id.toLowerCase() };
     const updated = await (UserModel as any).findOneAndUpdate(filter, { $set: updateData }, { new: true }).select('-passwordHash').exec();
+
+    await cacheDel(COUNSELORS_CACHE_KEY).catch(() => {});
 
     return NextResponse.json({ success: true, data: updated });
   } catch (err: any) {
