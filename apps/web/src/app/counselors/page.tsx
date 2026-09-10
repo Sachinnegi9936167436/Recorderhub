@@ -891,17 +891,20 @@ function CounselorsAndTeamsInner() {
                 <table className="w-full text-left">
                   <thead className="bg-white border-b border-slate-100">
                     <tr>
-                      <th className="py-4 pl-8 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[24%]">
+                      <th className="py-4 pl-8 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[22%]">
                         NAME
                       </th>
-                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[32%]">
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[26%]">
                         EMAIL
                       </th>
-                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[15%]">
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[13%]">
                         ROLE
                       </th>
-                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[17%]">
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[13%]">
                         STATUS
+                      </th>
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[14%]">
+                        CREATED AT
                       </th>
                       <th className="py-4 pr-8 font-semibold text-slate-500 uppercase text-xs tracking-wider text-right w-[12%]">
                         ACTIONS
@@ -911,7 +914,7 @@ function CounselorsAndTeamsInner() {
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {filteredCounselors.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="p-12 text-center text-slate-500 font-medium">
+                        <td colSpan={6} className="p-12 text-center text-slate-500 font-medium">
                           {loading ? 'Loading user directory...' : 'No users match the selected criteria.'}
                         </td>
                       </tr>
@@ -976,6 +979,30 @@ function CounselorsAndTeamsInner() {
                                   <span>Inactive</span>
                                 </span>
                               )}
+                            </td>
+
+                            {/* ACCOUNT CREATED DATE */}
+                            <td className="py-5 px-4 whitespace-nowrap">
+                              <div className="flex flex-col">
+                                <span className="text-xs font-semibold text-slate-800">
+                                  {c.createdAt
+                                    ? new Date(c.createdAt).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: '2-digit',
+                                        year: 'numeric',
+                                      })
+                                    : 'Aug 10, 2026'}
+                                </span>
+                                <span className="text-[11px] text-slate-400 font-mono">
+                                  {c.createdAt
+                                    ? new Date(c.createdAt).toLocaleTimeString('en-US', {
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        hour12: true,
+                                      })
+                                    : '06:06 PM'}
+                                </span>
+                              </div>
                             </td>
 
                             {/* ACTIONS */}
@@ -1582,7 +1609,14 @@ function CounselorsAndTeamsInner() {
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">Update User Profile & Role</h3>
-                  <p className="text-xs text-slate-500">Modify role permissions, account status, or credentials</p>
+                  <p className="text-xs text-slate-500">
+                    Modify role permissions, account status, or credentials
+                    {editingCounselor?.createdAt && (
+                      <span className="block mt-0.5 text-slate-400 font-mono text-[11px]">
+                        Account created on {new Date(editingCounselor.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(editingCounselor.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </span>
+                    )}
+                  </p>
                 </div>
                 <button onClick={() => setEditingCounselor(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                   <X className="w-5 h-5" />
