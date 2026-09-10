@@ -338,9 +338,83 @@ export default function RecorderHubDashboard() {
       }
     } else if (salesRepFilter === 'Teams') {
       if (teamFilter && teamFilter !== 'All Teams') {
-        const callTeam = c.team || c.teamName || c.department || '';
-        if (callTeam && callTeam.toLowerCase() !== teamFilter.toLowerCase()) {
-          return false;
+        const targetLower = teamFilter.toLowerCase().trim();
+        const callDirectTeam = (c.team || c.teamName || c.department || '').toLowerCase().trim();
+        
+        if (callDirectTeam && callDirectTeam === targetLower) {
+          // Direct match
+        } else {
+          // Check if counselor/agent belongs to this team
+          const teamObj = teamsList.find((t) => (t.name || '').toLowerCase().trim() === targetLower);
+          const memberIdentifiers = new Set<string>();
+
+          if (teamObj) {
+            if (teamObj.teamLeadEmail) memberIdentifiers.add(teamObj.teamLeadEmail.toLowerCase().trim());
+            if (teamObj.admin) {
+              const adm = teamObj.admin.toLowerCase().trim();
+              memberIdentifiers.add(adm);
+              const admPrefix = adm.split('@')[0];
+              if (admPrefix) memberIdentifiers.add(admPrefix);
+            }
+            if (Array.isArray(teamObj.admins)) {
+              teamObj.admins.forEach((a: string) => {
+                if (a) {
+                  const aLower = a.toLowerCase().trim();
+                  memberIdentifiers.add(aLower);
+                  const aPrefix = aLower.split('@')[0];
+                  if (aPrefix) memberIdentifiers.add(aPrefix);
+                }
+              });
+            }
+            if (Array.isArray(teamObj.members)) {
+              teamObj.members.forEach((m: string) => {
+                if (m) {
+                  const mLower = m.toLowerCase().trim();
+                  memberIdentifiers.add(mLower);
+                  const mPrefix = mLower.split('@')[0].split(' ')[0];
+                  if (mPrefix) memberIdentifiers.add(mPrefix);
+                }
+              });
+            }
+          }
+
+          if (Array.isArray(counselorsList)) {
+            counselorsList.forEach((counselor: any) => {
+              const cTeam = (counselor.team || counselor.teamName || counselor.department || '').toLowerCase().trim();
+              if (cTeam === targetLower) {
+                if (counselor.email) {
+                  const emailLower = counselor.email.toLowerCase().trim();
+                  memberIdentifiers.add(emailLower);
+                  const emailPrefix = emailLower.split('@')[0];
+                  if (emailPrefix) memberIdentifiers.add(emailPrefix);
+                }
+                const fullName = `${counselor.firstName || ''} ${counselor.lastName || ''}`.trim().toLowerCase();
+                if (fullName) memberIdentifiers.add(fullName);
+                if (counselor.firstName) memberIdentifiers.add(counselor.firstName.toLowerCase().trim());
+                if (counselor._id) memberIdentifiers.add(counselor._id.toString());
+                if (counselor.id) memberIdentifiers.add(counselor.id.toString());
+              }
+            });
+          }
+
+          const callEmail = (c.counselorEmail || c.email || '').toLowerCase().trim();
+          const callAgent = (c.agentName || c.counselorName || c.userName || c.user || '').toLowerCase().trim();
+          const resolved = resolveCounselorName(c).toLowerCase().trim();
+          const callUserId = (c.userId || '').toString().toLowerCase().trim();
+
+          const isDirectMember = (callEmail && memberIdentifiers.has(callEmail)) ||
+            (callUserId && memberIdentifiers.has(callUserId)) ||
+            (resolved && memberIdentifiers.has(resolved)) ||
+            (callAgent && memberIdentifiers.has(callAgent));
+
+          const idArray = Array.from(memberIdentifiers).filter((id) => id.length >= 3);
+          const isPartialMember = (callEmail && idArray.some((id) => callEmail.includes(id))) ||
+            (resolved && idArray.some((id) => resolved.includes(id) || id.includes(resolved))) ||
+            (callAgent && idArray.some((id) => callAgent.includes(id) || id.includes(callAgent)));
+
+          if (!isDirectMember && !isPartialMember) {
+            return false;
+          }
         }
       }
     }
