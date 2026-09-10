@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { getS3Client } from '@/lib/aws';
 import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
-import { connectToDatabase } from '@/lib/db';
+import { connectToDatabase, withDbRetry } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 import { cacheGet, cacheSet } from '@/lib/redis';
 
@@ -23,17 +23,18 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     let recordingId = params.id;
     let s3KeyTarget: string | null = null;
 
-    // 1. Resolve actual recordingId or s3Key from MongoDB Atlas
+    // 1. Resolve actual recordingId or s3Key from MongoDB Atlas with retry
     try {
-      await connectToDatabase();
-      const callDoc = await (CallModel as any).findOne({
-        $or: [
-          { idempotencyKey: params.id },
-          { audioUrl: { $regex: params.id } },
-          { s3Key: { $regex: params.id } },
-          { _id: params.id.length === 24 ? params.id : null }
-        ]
-      }).exec();
+      const callDoc = await withDbRetry(async () => {
+        return await (CallModel as any).findOne({
+          $or: [
+            { idempotencyKey: params.id },
+            { audioUrl: { $regex: params.id } },
+            { s3Key: { $regex: params.id } },
+            { _id: params.id.length === 24 ? params.id : null }
+          ]
+        }).lean().exec();
+      });
 
       if (callDoc) {
         if (callDoc.s3Key) {

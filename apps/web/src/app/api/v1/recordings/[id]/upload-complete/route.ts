@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/db';
+import { connectToDatabase, withDbRetry } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 import { patchCallInCache, revalidateCallsCacheInBackground } from '@/lib/cache-service';
 
@@ -41,7 +41,6 @@ function buildPhoneRegex(digits: string): RegExp {
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
-    await connectToDatabase();
     const recordingId = params.id;
     const body = await req.json().catch(() => ({}));
     const callId = body.callId;
@@ -49,69 +48,72 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
     const targetDate = parseTimestamp(recordingId) || parseTimestamp(callId);
 
-    // 1. Direct match by callId idempotencyKey or recordingId
-    let updated = await (CallModel as any).findOneAndUpdate(
-      {
-        $or: [
-          { idempotencyKey: callId },
-          { idempotencyKey: recordingId },
-          { audioUrl: { $regex: recordingId } },
-          { s3Key: { $regex: recordingId } },
-          { _id: callId && callId.length === 24 ? callId : null }
-        ]
-      },
-      {
-        $set: {
-          recordingStatus: 'COMPLETED',
-          audioUrl: audioUrl,
-        },
-      },
-      { new: true }
-    );
-
-    // 2. Fallback matching by 10-digit phone number with strict timestamp window
-    if (!updated && (callId || recordingId)) {
-      const targetStr = recordingId || callId;
-      const digitsOnly = targetStr.replace(/\D/g, '');
-      const cleanDigits = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : '';
-
-      if (cleanDigits.length === 10) {
-        const phoneRegex = buildPhoneRegex(cleanDigits);
-        const isWaRecording = (callId && callId.startsWith('WA_')) || recordingId.startsWith('WA_');
-        const query: any = {
-          phoneNumber: { $regex: phoneRegex },
+    const updated = await withDbRetry(async () => {
+      // 1. Direct match by callId idempotencyKey or recordingId
+      let res = await (CallModel as any).findOneAndUpdate(
+        {
           $or: [
-            { recordingStatus: { $in: ['PENDING_UPLOAD', 'PENDING', 'NONE'] } },
-            { audioUrl: { $exists: false } }
+            { idempotencyKey: callId },
+            { idempotencyKey: recordingId },
+            { audioUrl: { $regex: recordingId } },
+            { s3Key: { $regex: recordingId } },
+            { _id: callId && callId.length === 24 ? callId : null }
           ]
-        };
-
-        if (isWaRecording) {
-          query.channel = 'WHATSAPP';
-        } else {
-          query.channel = { $ne: 'WHATSAPP' };
-          query.idempotencyKey = { $not: /^WA_/ };
-        }
-
-        if (targetDate) {
-          query.startTime = {
-            $gte: new Date(targetDate.getTime() - 180000),
-            $lte: new Date(targetDate.getTime() + 180000)
-          };
-        }
-
-        updated = await (CallModel as any).findOneAndUpdate(
-          query,
-          {
-            $set: {
-              recordingStatus: 'COMPLETED',
-              audioUrl: audioUrl,
-            },
+        },
+        {
+          $set: {
+            recordingStatus: 'COMPLETED',
+            audioUrl: audioUrl,
           },
-          { sort: { startTime: -1, createdAt: -1 }, new: true }
-        );
+        },
+        { new: true }
+      );
+
+      // 2. Fallback matching by 10-digit phone number with strict timestamp window
+      if (!res && (callId || recordingId)) {
+        const targetStr = recordingId || callId;
+        const digitsOnly = targetStr.replace(/\D/g, '');
+        const cleanDigits = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : '';
+
+        if (cleanDigits.length === 10) {
+          const phoneRegex = buildPhoneRegex(cleanDigits);
+          const isWaRecording = (callId && callId.startsWith('WA_')) || recordingId.startsWith('WA_');
+          const query: any = {
+            phoneNumber: { $regex: phoneRegex },
+            $or: [
+              { recordingStatus: { $in: ['PENDING_UPLOAD', 'PENDING', 'NONE'] } },
+              { audioUrl: { $exists: false } }
+            ]
+          };
+
+          if (isWaRecording) {
+            query.channel = 'WHATSAPP';
+          } else {
+            query.channel = { $ne: 'WHATSAPP' };
+            query.idempotencyKey = { $not: /^WA_/ };
+          }
+
+          if (targetDate) {
+            query.startTime = {
+              $gte: new Date(targetDate.getTime() - 180000),
+              $lte: new Date(targetDate.getTime() + 180000)
+            };
+          }
+
+          res = await (CallModel as any).findOneAndUpdate(
+            query,
+            {
+              $set: {
+                recordingStatus: 'COMPLETED',
+                audioUrl: audioUrl,
+              },
+            },
+            { sort: { startTime: -1, createdAt: -1 }, new: true }
+          );
+        }
       }
-    }
+      return res;
+    });
 
     // Update Redis calls cache non-destructively so dashboard gets updated immediately
     if (updated) {

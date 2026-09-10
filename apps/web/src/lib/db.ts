@@ -38,11 +38,12 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
       bufferCommands: false,
       maxPoolSize: 10,
       minPoolSize: 0,
-      maxIdleTimeMS: 30000,
-      serverSelectionTimeoutMS: 8000,
-      socketTimeoutMS: 45000,
+      maxIdleTimeMS: 10000,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 30000,
       connectTimeoutMS: 10000,
       heartbeatFrequencyMS: 10000,
+      family: 4,
       retryWrites: true,
       retryReads: true,
     };
@@ -92,18 +93,25 @@ export async function withDbRetry<T>(operation: () => Promise<T>, maxRetries = 2
       return await operation();
     } catch (err: any) {
       attempts++;
+      const msg = (err?.message || '').toLowerCase();
       const isNetworkOrTlsError =
         err?.name === 'MongoNetworkError' ||
         err?.name === 'MongoServerSelectionError' ||
-        err?.message?.includes('SSL') ||
-        err?.message?.includes('tlsv1') ||
-        err?.message?.includes('ECONNRESET') ||
-        err?.message?.includes('ETIMEDOUT') ||
-        err?.message?.includes('ResetPool') ||
-        err?.errorLabelSet?.has?.('ResetPool');
+        err?.name === 'MongoTopologyClosedError' ||
+        msg.includes('ssl') ||
+        msg.includes('tlsv1') ||
+        msg.includes('alert') ||
+        msg.includes('econnreset') ||
+        msg.includes('etimedout') ||
+        msg.includes('epipe') ||
+        msg.includes('socket') ||
+        msg.includes('closed') ||
+        msg.includes('resetpool') ||
+        err?.errorLabelSet?.has?.('ResetPool') ||
+        err?.errorLabelSet?.has?.('RetryableWriteError');
 
       if (isNetworkOrTlsError && attempts <= maxRetries) {
-        console.warn(`[withDbRetry] Transient MongoDB TLS/Network error detected (attempt ${attempts}/${maxRetries}). Resetting connection pool and retrying...`);
+        console.warn(`[withDbRetry] Transient MongoDB TLS/Network error detected (attempt ${attempts}/${maxRetries}): ${err?.message || err}. Resetting pool and retrying...`);
         cached.conn = null;
         cached.promise = null;
         await mongoose.disconnect().catch(() => {});
