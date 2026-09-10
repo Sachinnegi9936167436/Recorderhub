@@ -64,7 +64,7 @@ export default function LoginPage() {
       {/* Decorative background glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-600/15 blur-[150px] rounded-full pointer-events-none" />
 
-      <div className="w-full max-w-4xl relative z-10 space-y-4">
+      <div className="w-full max-w-md relative z-10 space-y-4">
         {/* Error / Success Notifications */}
         {errorMessage && (
           <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-3.5 rounded-xl text-xs flex items-start space-x-2.5 animate-in fade-in">
