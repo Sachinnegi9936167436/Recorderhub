@@ -3,10 +3,14 @@ import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 import { getS3Client } from '@/lib/aws';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { cacheDel } from '@/lib/redis';
+import { cacheGet, cacheSet } from '@/lib/redis';
+import { patchCallInCache } from '@/lib/cache-service';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+const RECONCILE_LOCK_KEY = 'lock:recordings:reconcile';
+const RECONCILE_LOCK_TTL = 1800; // 30 minutes throttle
 
 function parseTimestamp(str: string): Date | null {
   if (!str) return null;
@@ -33,19 +37,53 @@ function parseTimestamp(str: string): Date | null {
   return null;
 }
 
-function buildPhoneRegex(digits: string): RegExp {
-  const clean = digits.replace(/\D/g, '').slice(-10);
-  const pattern = clean.split('').join('\\s*') + '$';
-  return new RegExp(pattern);
+export async function GET(req: Request) {
+  return POST(req);
 }
 
-export async function GET() {
-  return POST();
-}
-
-export async function POST() {
+export async function POST(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    const isForced = searchParams.get('force') === 'true';
+
+    // 1. Throttle reconciliation checks to avoid burning serverless CPU
+    if (!isForced) {
+      const isLocked = await cacheGet<boolean>(RECONCILE_LOCK_KEY);
+      if (isLocked) {
+        return NextResponse.json({
+          success: true,
+          message: 'Reconciliation throttled (ran recently). Use ?force=true to force run.',
+          reconciledCount: 0,
+        });
+      }
+    }
+
     await connectToDatabase();
+
+    // 2. First check if any calls actually need reconciliation (Fast indexed query)
+    const pendingCalls = await (CallModel as any)
+      .find({
+        $or: [
+          { recordingStatus: { $in: ['PENDING_UPLOAD', 'PENDING', 'NONE'] } },
+          { audioUrl: { $exists: false } },
+          { s3Key: { $exists: false } },
+          { audioUrl: '' }
+        ]
+      })
+      .sort({ startTime: -1 })
+      .limit(300)
+      .lean()
+      .exec();
+
+    if (!pendingCalls || pendingCalls.length === 0) {
+      await cacheSet(RECONCILE_LOCK_KEY, true, RECONCILE_LOCK_TTL);
+      return NextResponse.json({
+        success: true,
+        message: 'All calls already have audio recordings linked.',
+        reconciledCount: 0,
+      });
+    }
+
     const s3Info = getS3Client();
     if (!s3Info) {
       return NextResponse.json({ message: 'S3 client not configured' }, { status: 500 });
@@ -54,7 +92,7 @@ export async function POST() {
     const command = new ListObjectsV2Command({
       Bucket: s3Info.bucket,
       Prefix: 'recordings/',
-      MaxKeys: 1000,
+      MaxKeys: 500,
     });
 
     const s3Res = await s3Info.client.send(command);
@@ -63,6 +101,7 @@ export async function POST() {
     let reconciledCount = 0;
     const details: any[] = [];
 
+    // 3. Match S3 objects against pending calls in memory O(M * N) where M <= 500, N <= 300
     for (const obj of objects) {
       const s3Key = obj.Key;
       if (!s3Key || s3Key.endsWith('/')) continue;
@@ -71,7 +110,6 @@ export async function POST() {
       const baseName = fileName.replace(/\.[^/.]+$/, '');
       const targetDate = parseTimestamp(fileName);
 
-      // Extract 10-digit phone number from filename
       const parts = baseName.split('_');
       let cleanPhone = '';
       for (const p of parts) {
@@ -91,69 +129,61 @@ export async function POST() {
 
       if (!cleanPhone) continue;
 
-      const phoneRegex = buildPhoneRegex(cleanPhone);
       const audioUrl = `/api/v1/recordings/${baseName}/audio`;
       const isWaRecording = baseName.startsWith('WA_') || s3Key.includes('/WA_');
 
-      const query: any = {
-        phoneNumber: { $regex: phoneRegex },
-      };
+      // Find matching call from pending calls in-memory
+      const matchingCall = pendingCalls.find((c: any) => {
+        const callPhone = (c.phoneNumber || '').replace(/\D/g, '');
+        if (!callPhone.endsWith(cleanPhone)) return false;
 
-      if (isWaRecording) {
-        query.$or = [
-          { channel: 'WHATSAPP' },
-          { idempotencyKey: { $regex: /^WA_/ } }
-        ];
-      } else {
-        query.channel = { $ne: 'WHATSAPP' };
-        query.idempotencyKey = { $not: /^WA_/ };
-      }
+        const callIsWa = (c.channel || '').toUpperCase() === 'WHATSAPP' || (c.idempotencyKey || '').startsWith('WA_');
+        if (isWaRecording !== callIsWa) return false;
 
-      if (targetDate) {
-        query.startTime = {
-          $gte: new Date(targetDate.getTime() - 300000), // ±5 minutes
-          $lte: new Date(targetDate.getTime() + 300000),
-        };
-      }
+        if (targetDate && c.startTime) {
+          const callTime = new Date(c.startTime).getTime();
+          const diffMs = Math.abs(callTime - targetDate.getTime());
+          if (diffMs > 300000) return false; // ±5 minutes
+        }
 
-      const matchingCall = await (CallModel as any).findOne(query).sort({ startTime: -1 }).exec();
+        return true;
+      });
 
       if (matchingCall) {
-        const needsUpdate =
-          matchingCall.recordingStatus !== 'COMPLETED' ||
-          matchingCall.s3Key !== s3Key ||
-          !matchingCall.audioUrl;
+        await (CallModel as any).updateOne(
+          { _id: matchingCall._id },
+          {
+            $set: {
+              recordingStatus: 'COMPLETED',
+              s3Key: s3Key,
+              audioUrl: audioUrl,
+            },
+          }
+        );
 
-        if (needsUpdate) {
-          await (CallModel as any).updateOne(
-            { _id: matchingCall._id },
-            {
-              $set: {
-                recordingStatus: 'COMPLETED',
-                s3Key: s3Key,
-                audioUrl: audioUrl,
-              },
-            }
-          );
-          reconciledCount++;
-          details.push({
-            phone: matchingCall.phoneNumber,
-            callId: matchingCall.idempotencyKey || matchingCall._id,
-            s3Key,
-            audioUrl,
-          });
-        }
+        await patchCallInCache(matchingCall._id.toString(), {
+          recordingStatus: 'COMPLETED',
+          s3Key: s3Key,
+          audioUrl: audioUrl,
+        }).catch(() => {});
+
+        reconciledCount++;
+        details.push({
+          phone: matchingCall.phoneNumber,
+          callId: matchingCall.idempotencyKey || matchingCall._id,
+          s3Key,
+          audioUrl,
+        });
       }
     }
 
-    if (reconciledCount > 0) {
-      const { revalidateCallsCacheInBackground } = await import('@/lib/cache-service');
-      revalidateCallsCacheInBackground();
-    }
+    // Set throttle lock
+    await cacheSet(RECONCILE_LOCK_KEY, true, RECONCILE_LOCK_TTL);
 
     return NextResponse.json({
       success: true,
       scannedS3Objects: objects.length,
+      pendingCallsChecked: pendingCalls.length,
       reconciledCount,
       details,
     });

@@ -73,7 +73,22 @@ const TeamSchema = new Schema(
   { timestamps: true },
 );
 
+CallSchema.index({ startTime: -1, createdAt: -1 });
+CallSchema.index({ phoneNumber: 1 });
+CallSchema.index({ deviceId: 1, startTime: -1 });
+CallSchema.index({ s3Key: 1 }, { sparse: true });
+CallSchema.index({ audioUrl: 1 }, { sparse: true });
+CallSchema.index({ counselorEmail: 1, startTime: -1 });
+CallSchema.index({ recordingStatus: 1 });
+
+UserSchema.index({ email: 1 });
+UserSchema.index({ role: 1 });
+
+DeviceSchema.index({ deviceId: 1 });
+DeviceSchema.index({ lastSyncTimestamp: -1 });
+
 export const UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
 export const CallModel = mongoose.models.Call || mongoose.model('Call', CallSchema);
 export const DeviceModel = mongoose.models.Device || mongoose.model('Device', DeviceSchema);
 export const TeamModel = mongoose.models.Team || mongoose.model('Team', TeamSchema);
+

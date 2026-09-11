@@ -570,15 +570,6 @@ function SalestrailCallsInner() {
     fetchCalls();
     fetchProvisionedCounselors();
     fetchTeams();
-    // Reconcile any unlinked S3 recordings in the background
-    fetch('/api/v1/recordings/reconcile', { method: 'POST' })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.reconciledCount > 0) {
-          fetchCalls();
-        }
-      })
-      .catch(() => {});
 
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {

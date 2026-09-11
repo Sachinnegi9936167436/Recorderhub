@@ -85,29 +85,32 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       }
     }
 
-    // 2. Also save to Local Disk Storage fallback
-    const uploadsDir = getUploadsDir();
-    await fs.mkdir(uploadsDir, { recursive: true });
-    const filePath = path.join(uploadsDir, `${recordingId}.${ext}`);
-    await fs.writeFile(filePath, buffer);
-
-    if (ext !== 'm4a') {
-      const fallbackM4aPath = path.join(uploadsDir, `${recordingId}.m4a`);
-      await fs.writeFile(fallbackM4aPath, buffer).catch(() => {});
+    // 2. Save to local disk only in local development (skip on Vercel to save CPU and I/O)
+    const isVercel = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    let filePath = 's3-direct';
+    if (!isVercel && !uploadedToS3) {
+      try {
+        const uploadsDir = getUploadsDir();
+        await fs.mkdir(uploadsDir, { recursive: true });
+        filePath = path.join(uploadsDir, `${recordingId}.${ext}`);
+        await fs.writeFile(filePath, buffer);
+      } catch (fsErr) {
+        console.warn('Local disk write skipped:', fsErr);
+      }
     }
 
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
     const targetDate = parseTimestamp(recordingId);
 
-    // Attach recording to the specific target call record
+    // Attach recording to the specific target call record (Fast indexed lookup)
+    const isHex24 = recordingId.length === 24 && /^[0-9a-fA-F]{24}$/.test(recordingId);
     let updatedCall = await (CallModel as any).findOneAndUpdate(
       {
         $or: [
           { idempotencyKey: recordingId },
-          { audioUrl: { $regex: recordingId } },
-          { s3Key: { $regex: recordingId } },
-          { _id: recordingId.length === 24 ? recordingId : null }
-        ]
+          { s3Key: s3Key },
+          { _id: isHex24 ? recordingId : null }
+        ].filter((c) => c._id !== null)
       },
       {
         $set: {
@@ -176,23 +179,17 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       }
     }
 
-    // Update Redis calls cache non-destructively
+    // Update Redis calls cache non-destructively (Incremental update without full DB scan)
     if (updatedCall) {
       await patchCallInCache(updatedCall._id?.toString() || updatedCall.idempotencyKey, {
         recordingStatus: 'COMPLETED',
         audioUrl: audioUrl,
         s3Key: s3Key,
       }).catch(() => {});
-    }
-    revalidateCallsCacheInBackground();
-
-    if (updatedCall) {
       console.log(`Successfully attached uploaded audio recording to call ${updatedCall.idempotencyKey || updatedCall._id}`);
     } else {
       console.warn(`Recording upload completed for ${recordingId}, but no matching isolated call record was found.`);
     }
-
-    console.log(`Successfully saved uploaded audio file: ${filePath} (${buffer.length} bytes)`);
 
     return NextResponse.json({
       success: true,

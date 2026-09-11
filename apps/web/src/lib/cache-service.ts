@@ -15,6 +15,8 @@ export const DASHBOARD_SUMMARY_CACHE_KEY = 'cache:dashboard:summary';
 export const DASHBOARD_SUMMARY_CACHE_TTL = 86400; // 24 hours
 
 let isRebuildingCalls = false;
+let lastRebuildTimestamp = 0;
+const MIN_REBUILD_INTERVAL_MS = 120000; // Throttle full rebuilds to at most once per 2 minutes
 
 /**
  * Normalizes and formats domestic and international phone numbers, preserving their true country code:
@@ -123,12 +125,15 @@ export async function rebuildCallsCache(): Promise<any[]> {
   }
 
   isRebuildingCalls = true;
+  lastRebuildTimestamp = Date.now();
+
   try {
     const rawCalls = await withDbRetry(async () => {
       return await (CallModel as any)
         .find()
+        .select('idempotencyKey phoneNumber phoneNumberMasked direction status startTime endTime durationSeconds simSlot isPrivate disposition channel agentName counselorEmail leadName recordingStatus s3Key audioUrl notes team deviceId createdAt updatedAt')
         .sort({ startTime: -1, createdAt: -1 })
-        .limit(5000)
+        .limit(3000)
         .lean()
         .exec();
     });
@@ -140,7 +145,7 @@ export async function rebuildCallsCache(): Promise<any[]> {
 
     // Enrich agent names from registered devices
     try {
-      const registeredDevices = await (DeviceModel as any).find().lean().exec();
+      const registeredDevices = await (DeviceModel as any).find().select('deviceId agentName counselorEmail').lean().exec();
       if (registeredDevices && registeredDevices.length > 0) {
         const deviceAgentMap = new Map<string, string>();
         for (const dev of registeredDevices) {
@@ -231,9 +236,15 @@ export async function getCallsWithCache(): Promise<{ calls: any[]; cacheHit: boo
 }
 
 /**
- * Triggers an asynchronous non-blocking background revalidation of the calls cache.
+ * Triggers an asynchronous non-blocking background revalidation of the calls cache with rate-limiting.
  */
-export function revalidateCallsCacheInBackground(): void {
+export function revalidateCallsCacheInBackground(force = false): void {
+  const now = Date.now();
+  if (!force && now - lastRebuildTimestamp < MIN_REBUILD_INTERVAL_MS) {
+    // Throttled: Recent cache rebuild occurred within the throttle window
+    return;
+  }
+
   setTimeout(() => {
     rebuildCallsCache().catch((err) => {
       console.warn('Background cache revalidation error:', err);
@@ -243,21 +254,30 @@ export function revalidateCallsCacheInBackground(): void {
 
 /**
  * Updates the existing Redis cache with a new batch of calls from mobile sync (Non-destructive).
+ * Operates purely in-memory and in Redis without triggering full MongoDB database scans.
  */
 export async function updateCallsCacheWithNewBatch(newCalls: any[]): Promise<void> {
   if (!newCalls || newCalls.length === 0) return;
 
   try {
+    const formattedBatch = newCalls.map((c: any) => {
+      const formatted = formatPhoneNumber(c.phoneNumber || c.phoneNumberMasked || '');
+      return {
+        ...c,
+        phoneNumber: formatted || c.phoneNumber,
+        phoneNumberMasked: formatted || c.phoneNumberMasked,
+      };
+    });
+
     const existing = await cacheGet<any[]>(CALLS_CACHE_KEY);
     if (existing && Array.isArray(existing) && existing.length > 0) {
-      const merged = deduplicateCalls([...newCalls, ...existing]).slice(0, 5000);
+      const merged = deduplicateCalls([...formattedBatch, ...existing]).slice(0, 3000);
       await cacheSet(CALLS_CACHE_KEY, merged, CALLS_CACHE_TTL);
     } else {
-      revalidateCallsCacheInBackground();
+      revalidateCallsCacheInBackground(true);
     }
   } catch (err) {
     console.warn('Error updating calls cache with new batch:', err);
-    revalidateCallsCacheInBackground();
   }
 }
 
@@ -285,9 +305,6 @@ export async function patchCallInCache(callId: string, updates: Record<string, a
 
       if (found) {
         await cacheSet(CALLS_CACHE_KEY, updated, CALLS_CACHE_TTL);
-      } else {
-        // Invalidate cache so fresh data from MongoDB is retrieved
-        await cacheDel(CALLS_CACHE_KEY).catch(() => {});
       }
     }
   } catch (err) {

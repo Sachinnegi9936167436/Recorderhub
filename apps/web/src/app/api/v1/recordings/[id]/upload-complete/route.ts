@@ -121,10 +121,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         recordingStatus: 'COMPLETED',
         audioUrl: audioUrl,
       }).catch(() => {});
-    }
-    revalidateCallsCacheInBackground();
-
-    if (updated) {
       console.log(`Upload complete confirmed for call ${updated.idempotencyKey || updated._id}`);
     } else {
       console.warn(`Upload complete requested for recording ${recordingId}, but no matching call was found.`);

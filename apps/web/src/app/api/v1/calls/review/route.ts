@@ -34,7 +34,6 @@ export async function POST(req: Request) {
     }
     // Update Redis cache non-destructively
     await patchCallInCache(callId, updateFields).catch(() => {});
-    revalidateCallsCacheInBackground();
 
     return NextResponse.json({
       success: true,

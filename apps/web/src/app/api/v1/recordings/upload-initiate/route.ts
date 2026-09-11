@@ -181,7 +181,6 @@ export async function POST(req: Request) {
             audioUrl: audioUrl,
             s3Key: s3Key,
           }).catch(() => {});
-          revalidateCallsCacheInBackground();
         } else {
           console.warn(`Could not find matching call for audio upload: ${callId}`);
         }

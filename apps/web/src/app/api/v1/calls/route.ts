@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCallsWithCache, revalidateCallsCacheInBackground, rebuildCallsCache, formatPhoneNumber, patchCallInCache, CALLS_CACHE_KEY } from '@/lib/cache-service';
+import { getCallsWithCache, rebuildCallsCache, formatPhoneNumber, patchCallInCache, updateCallsCacheWithNewBatch, revalidateCallsCacheInBackground, CALLS_CACHE_KEY } from '@/lib/cache-service';
 import { cacheDel } from '@/lib/redis';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
@@ -99,9 +99,8 @@ export async function POST(req: Request) {
 
     const createdCall = await (CallModel as any).create(newCallData);
 
-    // Invalidate and refresh cache
-    await cacheDel(CALLS_CACHE_KEY).catch(() => {});
-    revalidateCallsCacheInBackground();
+    // Update Redis cache incrementally
+    await updateCallsCacheWithNewBatch([createdCall.toObject ? createdCall.toObject() : createdCall]);
 
     const res = NextResponse.json({
       success: true,
@@ -187,9 +186,8 @@ export async function PUT(req: Request) {
       return NextResponse.json({ message: 'Call log not found' }, { status: 404 });
     }
 
-    // Patch and rebuild cache immediately
+    // Patch cache incrementally
     await patchCallInCache(targetId, updateFields).catch(() => {});
-    revalidateCallsCacheInBackground();
 
     const res = NextResponse.json({
       success: true,

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel, DeviceModel, UserModel } from '@/lib/models';
-import { revalidateCallsCacheInBackground, formatPhoneNumber } from '@/lib/cache-service';
+import { updateCallsCacheWithNewBatch, formatPhoneNumber } from '@/lib/cache-service';
 import { getS3Client } from '@/lib/aws';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -56,6 +56,7 @@ export async function POST(req: Request) {
 
     const syncedIds: string[] = [];
     const duplicates: string[] = [];
+    const newlyCreatedDocs: any[] = [];
     const uploadUrls: Array<{
       idempotencyKey: string;
       recordingId: string;
@@ -227,8 +228,7 @@ export async function POST(req: Request) {
           });
         }
 
-        // Every call event with a distinct idempotencyKey creates an independent record
-        await (CallModel as any).create({
+        const createdDoc = {
           organizationId: evt.organizationId || '65c1f0000000000000000001',
           deviceId: evt.deviceId || 'ANDROID-DEVICE-PROD',
           idempotencyKey: cleanKey,
@@ -249,7 +249,12 @@ export async function POST(req: Request) {
           recordingStatus: uploadInfo ? 'PENDING_UPLOAD' : 'NONE',
           s3Key: uploadInfo?.s3Key,
           audioUrl: uploadInfo?.audioUrl,
-        });
+        };
+
+        const savedCall = await (CallModel as any).create(createdDoc);
+        if (savedCall) {
+          newlyCreatedDocs.push(savedCall.toObject ? savedCall.toObject() : savedCall);
+        }
 
         existingKeyMap.set(cleanKey, { idempotencyKey: cleanKey });
         syncedIds.push(cleanKey);
@@ -263,10 +268,6 @@ export async function POST(req: Request) {
     if (deviceUpdates.size > 0) {
       for (const [deviceId, info] of Array.from(deviceUpdates.entries())) {
         try {
-          await (CallModel as any).updateMany(
-            { deviceId },
-            { $set: { agentName: info.agentName, counselorEmail: info.email } }
-          );
           await (DeviceModel as any).updateOne(
             { deviceId },
             { $set: { agentName: info.agentName, counselorEmail: info.email, lastSyncTimestamp: new Date() } },
@@ -278,8 +279,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // Revalidate Redis cache in background so dashboard gets updated calls without cold-start delay
-    revalidateCallsCacheInBackground();
+    // 3. Update Redis calls cache incrementally (0ms MongoDB overhead)
+    if (newlyCreatedDocs.length > 0) {
+      await updateCallsCacheWithNewBatch(newlyCreatedDocs);
+    }
 
     console.log(`Batch sync completed: ${syncedIds.length} synced, ${duplicates.length} dups, ${uploadUrls.length} S3 presigned URLs generated.`);
 
