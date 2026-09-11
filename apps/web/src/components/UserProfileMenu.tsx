@@ -43,6 +43,8 @@ export function UserProfileMenu() {
 
   const getRoleLabel = (role: string) => {
     switch (role.toUpperCase()) {
+      case 'SUPER_ADMIN':
+        return 'Super Admin';
       case 'ADMIN':
       case 'COMPANY_ADMIN':
         return 'System Admin';
@@ -60,6 +62,8 @@ export function UserProfileMenu() {
 
   const getRoleBadgeStyle = (role: string) => {
     switch (role.toUpperCase()) {
+      case 'SUPER_ADMIN':
+        return 'bg-rose-100 text-rose-800 border-rose-300 font-extrabold';
       case 'ADMIN':
       case 'COMPANY_ADMIN':
         return 'bg-amber-50 text-amber-700 border-amber-200';

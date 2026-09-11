@@ -107,12 +107,13 @@ export function useUserRole() {
     }
   }, []);
 
-  const isAdmin = role === 'ADMIN' || role === 'COMPANY_ADMIN';
-  const isManager = role === 'MANAGER';
-  const isTeamLead = role === 'TEAM_LEAD';
-  const isCounselor = role === 'COUNSELOR' || role === 'AGENT';
+  const isSuperAdmin = role === 'SUPER_ADMIN';
+  const isAdmin = role === 'ADMIN' || role === 'COMPANY_ADMIN' || role === 'SUPER_ADMIN';
+  const isManager = role === 'MANAGER' || role === 'SUPER_ADMIN';
+  const isTeamLead = role === 'TEAM_LEAD' || role === 'SUPER_ADMIN';
+  const isCounselor = role === 'COUNSELOR' || role === 'AGENT' || role === 'SALES_AGENT' || role === 'SALES';
 
-  return { role, email, isAdmin, isManager, isTeamLead, isCounselor };
+  return { role, email, isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor };
 }
 
 export function Navigation() {

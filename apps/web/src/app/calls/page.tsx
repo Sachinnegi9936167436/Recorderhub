@@ -35,7 +35,11 @@ import {
   Bookmark,
   Check,
   Play,
-  Pause
+  Pause,
+  Plus,
+  Pencil,
+  Trash2,
+  CheckCircle2
 } from 'lucide-react';
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 
@@ -260,13 +264,14 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
 }
 
 function SalestrailCallsInner() {
-  const { role, email: userEmail, isAdmin, isManager, isTeamLead, isCounselor } = useUserRole();
+  const { role, email: userEmail, isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor } = useUserRole();
   const { currentCall, isPlayerVisible } = useAudioPlayer();
   const searchParams = useSearchParams();
   const isRecordingsOnly = searchParams.get('filter') === 'recordings';
 
   const [callsList, setCallsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [callsToast, setCallsToast] = useState<{ message: string; type?: 'success' | 'error' } | null>(null);
 
   // Filters from Salestrail UI screenshot
   const [dateRange, setDateRange] = useState('All time');
@@ -277,6 +282,197 @@ function SalestrailCallsInner() {
   const [searchQuery, setSearchQuery] = useState('');
   const [anomalyFilter, setAnomalyFilter] = useState<'all' | 'short_calls' | 'recordings' | 'sim' | 'whatsapp' | 'long_calls' | 'mismatch' | 'bookmarked'>('all');
   const [audioCacheVer, setAudioCacheVer] = useState(0);
+
+  // Super Admin: Add & Edit Call Modals State
+  const [isAddCallModalOpen, setIsAddCallModalOpen] = useState(false);
+  const [isEditCallModalOpen, setIsEditCallModalOpen] = useState(false);
+  const [callBeingEdited, setCallBeingEdited] = useState<any | null>(null);
+  const [callFormAgent, setCallFormAgent] = useState('');
+  const [callFormLead, setCallFormLead] = useState('');
+  const [callFormPhone, setCallFormPhone] = useState('');
+  const [callFormChannel, setCallFormChannel] = useState<'CELLULAR' | 'WHATSAPP'>('CELLULAR');
+  const [callFormDirection, setCallFormDirection] = useState<'OUTGOING' | 'INCOMING'>('OUTGOING');
+  const [callFormStatus, setCallFormStatus] = useState<'ANSWERED' | 'UNANSWERED' | 'MISSED' | 'REJECTED'>('ANSWERED');
+  const [callFormDurationMin, setCallFormDurationMin] = useState('0');
+  const [callFormDurationSec, setCallFormDurationSec] = useState('0');
+  const [callFormStartTime, setCallFormStartTime] = useState('');
+  const [callFormDisposition, setCallFormDisposition] = useState('');
+  const [callFormNotes, setCallFormNotes] = useState('');
+  const [callFormTeam, setCallFormTeam] = useState('');
+  const [savingCallAction, setSavingCallAction] = useState(false);
+
+  const getLocalDateTimeString = (d = new Date()) => {
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const openAddCallModal = () => {
+    const defaultAgent = counselorsList[0]?.firstName
+      ? `${counselorsList[0].firstName} ${counselorsList[0].lastName || ''}`.trim()
+      : 'Counselor Agent';
+    setCallFormAgent(defaultAgent);
+    setCallFormLead('');
+    setCallFormPhone('+91 ');
+    setCallFormChannel('CELLULAR');
+    setCallFormDirection('OUTGOING');
+    setCallFormStatus('ANSWERED');
+    setCallFormDurationMin('2');
+    setCallFormDurationSec('30');
+    setCallFormStartTime(getLocalDateTimeString());
+    setCallFormDisposition('Manual Call Record');
+    setCallFormNotes('');
+    setCallFormTeam('');
+    setIsAddCallModalOpen(true);
+  };
+
+  const handleSaveNewCall = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setSavingCallAction(true);
+      const durSec = callFormStatus === 'ANSWERED'
+        ? Number(callFormDurationMin || 0) * 60 + Number(callFormDurationSec || 0)
+        : 0;
+
+      const payload = {
+        agentName: callFormAgent.trim(),
+        leadName: callFormLead.trim() || callFormPhone.trim(),
+        phoneNumber: callFormPhone.trim(),
+        phoneNumberMasked: callFormPhone.trim(),
+        channel: callFormChannel,
+        direction: callFormDirection,
+        status: callFormStatus,
+        durationSeconds: durSec,
+        startTime: callFormStartTime ? new Date(callFormStartTime).toISOString() : new Date().toISOString(),
+        disposition: callFormDisposition.trim() || 'Manual Call Record',
+        notes: callFormNotes.trim(),
+        team: callFormTeam.trim(),
+      };
+
+      const res = await fetch('/api/v1/calls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const created = data.call || payload;
+        setCallsList((prev) => [created, ...prev]);
+        setIsAddCallModalOpen(false);
+        setCallsToast({ message: `Successfully added call log for ${payload.leadName || payload.phoneNumber}!`, type: 'success' });
+        setTimeout(() => setCallsToast(null), 4000);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.message || 'Failed to add call record');
+      }
+    } catch (err) {
+      console.error('Error creating manual call log:', err);
+      alert('Error creating manual call log');
+    } finally {
+      setSavingCallAction(false);
+    }
+  };
+
+  const openEditCallModal = (call: any) => {
+    setCallBeingEdited(call);
+    const durTotal = Number(call.durationSeconds || 0);
+    const mins = Math.floor(durTotal / 60);
+    const secs = durTotal % 60;
+    const callDate = call.startTime ? new Date(call.startTime) : new Date();
+
+    setCallFormAgent(resolveCounselorName(call));
+    setCallFormLead(call.leadName || call.name || '');
+    setCallFormPhone(call.phoneNumber || call.phoneNumberMasked || call.phone || '');
+    setCallFormChannel((call.channel || '').toUpperCase() === 'WHATSAPP' ? 'WHATSAPP' : 'CELLULAR');
+    setCallFormDirection((call.direction || '').toUpperCase() === 'INCOMING' ? 'INCOMING' : 'OUTGOING');
+    setCallFormStatus((call.status || 'ANSWERED').toUpperCase() as any);
+    setCallFormDurationMin(mins.toString());
+    setCallFormDurationSec(secs.toString());
+    setCallFormStartTime(getLocalDateTimeString(callDate));
+    setCallFormDisposition(call.disposition || 'Manual Call Record');
+    setCallFormNotes(call.notes || '');
+    setCallFormTeam(call.team || call.teamName || '');
+    setIsEditCallModalOpen(true);
+  };
+
+  const handleSaveEditCall = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!callBeingEdited) return;
+
+    try {
+      setSavingCallAction(true);
+      const callId = callBeingEdited._id || callBeingEdited.id || callBeingEdited.idempotencyKey;
+      const durSec = callFormStatus === 'ANSWERED'
+        ? Number(callFormDurationMin || 0) * 60 + Number(callFormDurationSec || 0)
+        : 0;
+
+      const payload: any = {
+        id: callId,
+        agentName: callFormAgent.trim(),
+        leadName: callFormLead.trim(),
+        phoneNumber: callFormPhone.trim(),
+        channel: callFormChannel,
+        direction: callFormDirection,
+        status: callFormStatus,
+        durationSeconds: durSec,
+        startTime: callFormStartTime ? new Date(callFormStartTime).toISOString() : undefined,
+        disposition: callFormDisposition.trim(),
+        notes: callFormNotes.trim(),
+        team: callFormTeam.trim(),
+      };
+
+      const res = await fetch(`/api/v1/calls?id=${encodeURIComponent(callId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        setCallsList((prev) =>
+          prev.map((c) =>
+            (c._id === callId || c.id === callId || c.idempotencyKey === callId)
+              ? { ...c, ...payload }
+              : c
+          )
+        );
+        setIsEditCallModalOpen(false);
+        setCallBeingEdited(null);
+        setCallsToast({ message: `Successfully updated call record and phone number!`, type: 'success' });
+        setTimeout(() => setCallsToast(null), 4000);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.message || 'Failed to update call log');
+      }
+    } catch (err) {
+      console.error('Error updating call log:', err);
+      alert('Error updating call log');
+    } finally {
+      setSavingCallAction(false);
+    }
+  };
+
+  const handleDeleteCall = async (call: any) => {
+    const callId = call._id || call.id || call.idempotencyKey;
+    const phone = call.phoneNumber || call.phoneNumberMasked || call.phone || 'Contact';
+    const agent = resolveCounselorName(call);
+
+    if (!confirm(`Are you sure you want to permanently delete this call log (${phone} • ${agent})?\n\nThis will remove the record and any associated S3 audio file.`)) {
+      return;
+    }
+
+    // Optimistic UI removal
+    setCallsList((prev) => prev.filter((c) => c._id !== callId && c.id !== callId && c.idempotencyKey !== callId));
+    setCallsToast({ message: `Deleted call log (${phone})`, type: 'success' });
+    setTimeout(() => setCallsToast(null), 4000);
+
+    try {
+      await fetch(`/api/v1/calls?id=${encodeURIComponent(callId)}`, {
+        method: 'DELETE',
+      });
+    } catch (err) {
+      console.error('Error deleting call log:', err);
+    }
+  };
 
   const [reviewingCall, setReviewingCall] = useState<any | null>(null);
   const [reviewRating, setReviewRating] = useState<number>(0);
@@ -1114,6 +1310,23 @@ function SalestrailCallsInner() {
 
       {/* Main Content Area */}
       <main className={`flex-1 overflow-y-auto p-8 space-y-6 ${isPlayerVisible ? 'pb-36' : ''}`}>
+        {/* Top Notification Toast */}
+        {callsToast && (
+          <div className={`p-4 rounded-xl flex items-center justify-between shadow-sm animate-in fade-in duration-200 border ${
+            callsToast.type === 'error'
+              ? 'bg-rose-50 border-rose-200 text-rose-700'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+          }`}>
+            <div className="flex items-center space-x-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <span className="text-sm font-semibold">{callsToast.message}</span>
+            </div>
+            <button onClick={() => setCallsToast(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Header Right Bar: Profile Menu */}
         <div className="flex items-center justify-end">
           <UserProfileMenu />
@@ -1167,7 +1380,7 @@ function SalestrailCallsInner() {
                         setCustomStartDate('');
                         setCustomEndDate('');
                       }}
-                      className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 transition-colors"
+                      className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
                       title="Clear custom dates"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -1225,10 +1438,21 @@ function SalestrailCallsInner() {
             </div>
           </div>
 
-          <div className="flex-1 flex justify-end pt-5 space-x-3">
+          <div className="flex-1 flex items-center justify-end pt-5 space-x-3">
+            {(isSuperAdmin || isAdmin) && (
+              <button
+                onClick={openAddCallModal}
+                className="flex items-center space-x-2 bg-[#242938] hover:bg-[#1a1e29] text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-md transition-all cursor-pointer"
+                title="Super Admin: Manually Add Call Record"
+              >
+                <Plus className="w-4 h-4 text-white" />
+                <span>+ Add Call Log</span>
+              </button>
+            )}
+
             <button
               onClick={exportCSV}
-              className="flex items-center space-x-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl text-xs shadow-sm transition-all"
+              className="flex items-center space-x-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl text-xs shadow-sm transition-all cursor-pointer"
             >
               <Download className="w-4 h-4 text-slate-500" />
               <span>Export CSV</span>
@@ -1358,13 +1582,18 @@ function SalestrailCallsInner() {
                   {renderSortHeader('direction', 'Direction')}
                   {renderSortHeader('status', 'Status')}
                   {renderSortHeader('duration', 'Duration')}
-                  {renderSortHeader('audio', 'Audio Recording', 'pr-6')}
+                  {renderSortHeader('audio', 'Audio Recording', isSuperAdmin || isAdmin ? '' : 'pr-6')}
+                  {(isSuperAdmin || isAdmin) && (
+                    <th className="p-4 pr-6 text-center font-bold whitespace-nowrap">
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {paginatedCalls.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="p-12 text-center text-slate-500 font-medium">
+                    <td colSpan={isSuperAdmin || isAdmin ? 10 : 9} className="p-12 text-center text-slate-500 font-medium">
                       {loading ? (
                         <div className="flex items-center justify-center space-x-2">
                           <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
@@ -1482,9 +1711,31 @@ function SalestrailCallsInner() {
                         </td>
 
                         {/* Audio Recording */}
-                        <td className="p-4 pr-6 text-center whitespace-nowrap">
+                        <td className={`p-4 text-center whitespace-nowrap ${isSuperAdmin || isAdmin ? '' : 'pr-6'}`}>
                           <AudioCell call={call} idx={idx} canListen={canUserAccessCall(call).canListen} />
                         </td>
+
+                        {/* Super Admin / Admin Actions */}
+                        {(isSuperAdmin || isAdmin) && (
+                          <td className="p-4 pr-6 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center space-x-1.5">
+                              <button
+                                onClick={() => openEditCallModal(call)}
+                                title="Edit Call Details & Phone Number"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 border border-transparent hover:border-slate-200 transition-all cursor-pointer"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCall(call)}
+                                title="Delete Call Record & Audio"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-all cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })
@@ -1697,6 +1948,415 @@ function SalestrailCallsInner() {
                   {savingReview ? 'Saving...' : 'Save Review'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Super Admin: Add Call Log Modal */}
+        {isAddCallModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Add Call Log</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Super Admin Console • Manually Insert Call Record
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddCallModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveNewCall} className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Counselor / Agent */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Counselor / Agent</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Shrishti K"
+                      value={callFormAgent}
+                      onChange={(e) => setCallFormAgent(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                  </div>
+
+                  {/* Customer / Lead Name */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Customer / Lead Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Dr. Rajesh Kumar"
+                      value={callFormLead}
+                      onChange={(e) => setCallFormLead(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                  </div>
+                </div>
+
+                {/* Phone Number */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="+91 99361 67436"
+                    value={callFormPhone}
+                    onChange={(e) => setCallFormPhone(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Channel / Type */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Channel</label>
+                    <select
+                      value={callFormChannel}
+                      onChange={(e) => setCallFormChannel(e.target.value as any)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                    >
+                      <option value="CELLULAR">SIM (Cellular)</option>
+                      <option value="WHATSAPP">WhatsApp</option>
+                    </select>
+                  </div>
+
+                  {/* Direction */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Direction</label>
+                    <select
+                      value={callFormDirection}
+                      onChange={(e) => setCallFormDirection(e.target.value as any)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                    >
+                      <option value="OUTGOING">Outbound</option>
+                      <option value="INCOMING">Inbound</option>
+                    </select>
+                  </div>
+
+                  {/* Status */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Status</label>
+                    <select
+                      value={callFormStatus}
+                      onChange={(e) => setCallFormStatus(e.target.value as any)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                    >
+                      <option value="ANSWERED">Answered</option>
+                      <option value="UNANSWERED">Unanswered</option>
+                      <option value="MISSED">Missed</option>
+                      <option value="REJECTED">Rejected</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Duration */}
+                {callFormStatus === 'ANSWERED' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Call Duration</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          value={callFormDurationMin}
+                          onChange={(e) => setCallFormDurationMin(e.target.value)}
+                          className="w-full bg-transparent text-xs font-semibold text-slate-900 outline-none"
+                        />
+                        <span className="text-xs text-slate-500 font-medium">Minutes</span>
+                      </div>
+                      <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={callFormDurationSec}
+                          onChange={(e) => setCallFormDurationSec(e.target.value)}
+                          className="w-full bg-transparent text-xs font-semibold text-slate-900 outline-none"
+                        />
+                        <span className="text-xs text-slate-500 font-medium">Seconds</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Date & Time */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Call Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    value={callFormStartTime}
+                    onChange={(e) => setCallFormStartTime(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                  />
+                </div>
+
+                {/* Disposition & Notes */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Disposition / Course</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. NCLEX-RN Inquiry"
+                      value={callFormDisposition}
+                      onChange={(e) => setCallFormDisposition(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Team / Department</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Delhi Team"
+                      value={callFormTeam}
+                      onChange={(e) => setCallFormTeam(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Call Notes (Optional)</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Details about discussion or outcome..."
+                    value={callFormNotes}
+                    onChange={(e) => setCallFormNotes(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCallModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingCallAction}
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-black transition-all shadow-sm cursor-pointer disabled:opacity-50 flex items-center space-x-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{savingCallAction ? 'Creating Call...' : 'Create Call Log'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Super Admin: Edit Call Log Modal (Edit Phone Number, Lead, Agent, Duration, Status) */}
+        {isEditCallModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Edit Call Log & Phone Number</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Super Admin Console • Modify Call Record & Assigned Number
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsEditCallModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditCall} className="space-y-4 text-xs">
+                {/* Phone Number (Primary field to edit) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Phone Number <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="+91 99361 67436"
+                    value={callFormPhone}
+                    onChange={(e) => setCallFormPhone(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">Super Admin can edit/correct any phone number directly.</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Counselor / Agent */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Counselor / Agent</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Shrishti K"
+                      value={callFormAgent}
+                      onChange={(e) => setCallFormAgent(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                  </div>
+
+                  {/* Customer / Lead Name */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Customer / Lead Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Dr. Rajesh Kumar"
+                      value={callFormLead}
+                      onChange={(e) => setCallFormLead(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Channel / Type */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Channel</label>
+                    <select
+                      value={callFormChannel}
+                      onChange={(e) => setCallFormChannel(e.target.value as any)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                    >
+                      <option value="CELLULAR">SIM (Cellular)</option>
+                      <option value="WHATSAPP">WhatsApp</option>
+                    </select>
+                  </div>
+
+                  {/* Direction */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Direction</label>
+                    <select
+                      value={callFormDirection}
+                      onChange={(e) => setCallFormDirection(e.target.value as any)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                    >
+                      <option value="OUTGOING">Outbound</option>
+                      <option value="INCOMING">Inbound</option>
+                    </select>
+                  </div>
+
+                  {/* Status */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Status</label>
+                    <select
+                      value={callFormStatus}
+                      onChange={(e) => setCallFormStatus(e.target.value as any)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                    >
+                      <option value="ANSWERED">Answered</option>
+                      <option value="UNANSWERED">Unanswered</option>
+                      <option value="MISSED">Missed</option>
+                      <option value="REJECTED">Rejected</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Duration */}
+                {callFormStatus === 'ANSWERED' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Call Duration</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          value={callFormDurationMin}
+                          onChange={(e) => setCallFormDurationMin(e.target.value)}
+                          className="w-full bg-transparent text-xs font-semibold text-slate-900 outline-none"
+                        />
+                        <span className="text-xs text-slate-500 font-medium">Minutes</span>
+                      </div>
+                      <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={callFormDurationSec}
+                          onChange={(e) => setCallFormDurationSec(e.target.value)}
+                          className="w-full bg-transparent text-xs font-semibold text-slate-900 outline-none"
+                        />
+                        <span className="text-xs text-slate-500 font-medium">Seconds</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Date & Time */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Call Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    value={callFormStartTime}
+                    onChange={(e) => setCallFormStartTime(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20 cursor-pointer"
+                  />
+                </div>
+
+                {/* Disposition & Notes */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Disposition / Course</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. NCLEX-RN Inquiry"
+                      value={callFormDisposition}
+                      onChange={(e) => setCallFormDisposition(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Team / Department</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Delhi Team"
+                      value={callFormTeam}
+                      onChange={(e) => setCallFormTeam(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Call Notes</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Details about discussion or outcome..."
+                    value={callFormNotes}
+                    onChange={(e) => setCallFormNotes(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditCallModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingCallAction}
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-black transition-all shadow-sm cursor-pointer disabled:opacity-50 flex items-center space-x-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{savingCallAction ? 'Saving...' : 'Save Changes'}</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

@@ -13,13 +13,25 @@ export async function GET() {
   try {
     const cached = await cacheGet<any[]>(COUNSELORS_CACHE_KEY);
     if (cached && Array.isArray(cached) && cached.length > 0) {
-      const res = NextResponse.json(cached);
+      // Ensure super admins are never in the returned cached payload
+      const sanitized = cached.filter(
+        (c) => c.role !== 'SUPER_ADMIN' && c.email !== 'superadmin@academically.com'
+      );
+      const res = NextResponse.json(sanitized);
       res.headers.set('X-Cache', 'HIT');
       return res;
     }
 
     await connectToDatabase();
-    const counselors = await (UserModel as any).find().select('-passwordHash').sort({ createdAt: -1 }).lean().exec();
+    const counselors = await (UserModel as any)
+      .find({
+        role: { $ne: 'SUPER_ADMIN' },
+        email: { $ne: 'superadmin@academically.com' },
+      })
+      .select('-passwordHash')
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
     
     if (counselors && counselors.length > 0) {
       await cacheSet(COUNSELORS_CACHE_KEY, counselors, COUNSELORS_CACHE_TTL);
@@ -43,6 +55,11 @@ export async function DELETE(req: Request) {
 
     if (!id || id === 'undefined') {
       return NextResponse.json({ message: 'Invalid counselor ID provided' }, { status: 400 });
+    }
+
+    // Protect super admin account from deletion
+    if (id.toLowerCase() === 'superadmin@academically.com') {
+      return NextResponse.json({ message: 'Super Admin account cannot be deleted' }, { status: 403 });
     }
 
     const result = await deleteCounselorCascade(id);

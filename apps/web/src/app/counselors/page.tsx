@@ -573,6 +573,11 @@ function CounselorsAndTeamsInner() {
   );
 
   const filteredCounselors = counselors.filter((c) => {
+    // Super Admin is never displayed in user management list
+    if ((c.role || '').toUpperCase() === 'SUPER_ADMIN' || (c.email || '').toLowerCase() === 'superadmin@academically.com') {
+      return false;
+    }
+
     const fullName = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.name || '';
     const query = userSearchQuery.toLowerCase();
     const matchesSearch =

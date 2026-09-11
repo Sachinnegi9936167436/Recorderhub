@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const DEFAULT_ACCOUNTS: Record<string, { firstName: string; lastName: string; role: string; pass: string }> = {
+  'superadmin@academically.com': { firstName: 'Super', lastName: 'Admin', role: 'SUPER_ADMIN', pass: 'Academically@01' },
   'admin@academically.com': { firstName: 'System', lastName: 'Admin', role: 'ADMIN', pass: 'Academically@01' },
   'manager@academically.com': { firstName: 'Sales', lastName: 'Manager', role: 'MANAGER', pass: 'Academically@01' },
   'sachinnegi@academically.com': { firstName: 'Sachin', lastName: 'Negi', role: 'TEAM_LEAD', pass: 'Academically@01' },

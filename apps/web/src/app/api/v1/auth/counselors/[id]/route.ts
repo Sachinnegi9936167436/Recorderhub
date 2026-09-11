@@ -47,6 +47,9 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     if (!id || id === 'undefined') {
       return NextResponse.json({ message: 'Invalid counselor ID provided' }, { status: 400 });
     }
+    if (id.toLowerCase() === 'superadmin@academically.com') {
+      return NextResponse.json({ message: 'Super Admin account cannot be deleted' }, { status: 403 });
+    }
     const result = await deleteCounselorCascade(id);
     return NextResponse.json(result);
   } catch (err: any) {
