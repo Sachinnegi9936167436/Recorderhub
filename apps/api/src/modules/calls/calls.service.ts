@@ -26,32 +26,16 @@ export class CallsService {
         const phoneHash = crypto.createHash('sha256').update(normalized).digest('hex');
         const masked = maskPhoneNumber(normalized);
 
-        const evtStartTime = new Date(event.startTime);
-        const minTime = new Date(evtStartTime.getTime() - 120000);
-        const maxTime = new Date(evtStartTime.getTime() + 120000);
-
-        const isAnswered = (event.status || CallStatus.ANSWERED).toUpperCase() === 'ANSWERED';
-        const effectiveDuration = isAnswered ? (event.durationSeconds || 0) : 0;
-
-        const isWhatsApp = (event.channel || '').toUpperCase() === 'WHATSAPP' || (event.disposition || '').toLowerCase().includes('whatsapp') || (event.idempotencyKey || '').startsWith('WA_');
-
-        // Deduplicate within 120s window for same 10-digit number & channel (CELLULAR only)
-        if (!isWhatsApp && rawDigits.length === 10) {
-          const match = await this.callModel.findOne({
-            organizationId: new Types.ObjectId(organizationId),
-            startTime: { $gte: minTime, $lte: maxTime },
-            channel: event.channel || CallChannel.CELLULAR,
-          }).exec();
-
-          if (match) {
-            const newDuration = isAnswered ? Math.max(match.durationSeconds || 0, effectiveDuration) : 0;
-            await this.callModel.updateOne(
-              { _id: match._id },
-              { $set: { durationSeconds: newDuration, status: isAnswered ? (match.status || CallStatus.ANSWERED) : CallStatus.UNANSWERED } },
-            ).exec();
-            duplicates.push(event.idempotencyKey);
-            continue;
-          }
+        // Deduplicate strictly by idempotencyKey
+        const existing = await this.callModel.findOne({ idempotencyKey: event.idempotencyKey }).exec();
+        if (existing) {
+          const newDuration = isAnswered ? Math.max(existing.durationSeconds || 0, effectiveDuration) : 0;
+          await this.callModel.updateOne(
+            { _id: existing._id },
+            { $set: { durationSeconds: newDuration, status: isAnswered ? (existing.status || CallStatus.ANSWERED) : CallStatus.UNANSWERED } },
+          ).exec();
+          duplicates.push(event.idempotencyKey);
+          continue;
         }
 
         const newCall = new this.callModel({

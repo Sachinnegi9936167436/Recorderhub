@@ -90,19 +90,18 @@ object CallLogScanner {
                         else -> "INCOMING"
                     }
 
-                    val cleanDigits = rawNumber.replace("\\D".toRegex(), "").takeLast(10)
-                    val formattedPhone = if (cleanDigits.length == 10) "+91 ${cleanDigits.chunked(5).joinToString(" ")}" else (if (cachedName.isNotBlank()) cachedName else rawNumber)
+                    val cleanDigits = rawNumber.replace("\\D".toRegex(), "")
+                    val formattedPhone = PhoneUtils.formatInternationalNumber(rawNumber, cachedName)
                     val idempotencyKey = if (isWhatsApp) "WA_LOG-$dateMs-$cleanDigits" else "SYS-LOG-$dateMs-$cleanDigits"
                     val endTimeMs = dateMs + (durationSec * 1000L)
 
-                    // Skip duplicate import if a call for the same number/time window already exists in Room DB (synced or pending)
+                    // Skip duplicate import if this exact call already exists in Room DB (by unique idempotencyKey or exact timestamp)
                     val isDuplicate = allDbEventsInitial.any { existing ->
-                        val existingDigits = existing.phoneNumber.replace("\\D".toRegex(), "").takeLast(10)
-                        existingDigits == cleanDigits && Math.abs(existing.startTime - dateMs) < 120000
+                        existing.idempotencyKey == idempotencyKey || (existing.startTime == dateMs && existing.phoneNumber == formattedPhone)
                     }
 
                     if (isDuplicate) {
-                        Log.d(TAG, "Skipping system call log import for $cleanDigits as matching event already exists.")
+                        Log.d(TAG, "Skipping system call log import for $cleanDigits as exact matching event already exists.")
                         continue
                     }
 

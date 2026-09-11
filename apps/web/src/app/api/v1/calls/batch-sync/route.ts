@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel, DeviceModel, UserModel } from '@/lib/models';
-import { revalidateCallsCacheInBackground } from '@/lib/cache-service';
+import { revalidateCallsCacheInBackground, formatPhoneNumber } from '@/lib/cache-service';
 import { getS3Client } from '@/lib/aws';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -201,12 +201,8 @@ export async function POST(req: Request) {
 
       try {
         const rawPhone = evt.phoneNumber || '';
-        const digitsOnly = rawPhone.replace(/\D/g, '');
-        const cleanDigits = digitsOnly.slice(-10);
-        const formattedPhone = cleanDigits.length === 10 ? `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}` : rawPhone;
-
-        const minTime = new Date(evtStartTime.getTime() - 120000);
-        const maxTime = new Date(evtStartTime.getTime() + 120000);
+        const cleanDigits = rawPhone.replace(/\D/g, '');
+        const formattedPhone = formatPhoneNumber(rawPhone) || rawPhone;
 
         const isWhatsApp = 
           (evt.channel || '').toUpperCase() === 'WHATSAPP' ||
@@ -231,43 +227,7 @@ export async function POST(req: Request) {
           });
         }
 
-        // Check 2: Deduplicate within 120-second time window for same clean 10-digit number & channel (CELLULAR only - WhatsApp calls always create distinct records)
-        let matchByTimeWindow = null;
-        if (!isWhatsApp && cleanDigits.length === 10) {
-          const regexPattern = new RegExp(cleanDigits.split('').join('\\s*') + '$');
-          matchByTimeWindow = await (CallModel as any).findOne({
-            phoneNumber: { $regex: regexPattern },
-            startTime: { $gte: minTime, $lte: maxTime },
-            channel: channelType,
-          });
-        }
-
-        if (matchByTimeWindow) {
-          const newDuration = isAnswered ? Math.max(matchByTimeWindow.durationSeconds || 0, effectiveDuration) : 0;
-          const updateFields: any = {
-            idempotencyKey: evt.idempotencyKey || matchByTimeWindow.idempotencyKey,
-            status: isAnswered ? (matchByTimeWindow.status || 'ANSWERED') : 'UNANSWERED',
-            durationSeconds: newDuration,
-            phoneNumber: formattedPhone,
-            phoneNumberMasked: formattedPhone,
-            leadName: evt.leadName || matchByTimeWindow.leadName || formattedPhone,
-            agentName: resolvedAgentName,
-            counselorEmail: email,
-          };
-          if (uploadInfo) {
-            updateFields.recordingStatus = 'PENDING_UPLOAD';
-            updateFields.s3Key = uploadInfo.s3Key;
-            updateFields.audioUrl = uploadInfo.audioUrl;
-          }
-
-          await (CallModel as any).updateOne(
-            { _id: matchByTimeWindow._id },
-            { $set: updateFields }
-          );
-          duplicates.push(evt.idempotencyKey);
-          continue;
-        }
-
+        // Every call event with a distinct idempotencyKey creates an independent record
         await (CallModel as any).create({
           organizationId: evt.organizationId || '65c1f0000000000000000001',
           deviceId: evt.deviceId || 'ANDROID-DEVICE-PROD',

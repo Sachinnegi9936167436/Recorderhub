@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getCallsWithCache, revalidateCallsCacheInBackground, rebuildCallsCache, formatPhoneNumber, patchCallInCache } from '@/lib/cache-service';
+import { getCallsWithCache, revalidateCallsCacheInBackground, rebuildCallsCache, formatPhoneNumber, patchCallInCache, CALLS_CACHE_KEY } from '@/lib/cache-service';
+import { cacheDel } from '@/lib/redis';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 import { getS3Client } from '@/lib/aws';
@@ -98,7 +99,8 @@ export async function POST(req: Request) {
 
     const createdCall = await (CallModel as any).create(newCallData);
 
-    // Refresh cache in background
+    // Invalidate and refresh cache
+    await cacheDel(CALLS_CACHE_KEY).catch(() => {});
     revalidateCallsCacheInBackground();
 
     const res = NextResponse.json({
@@ -169,9 +171,11 @@ export async function PUT(req: Request) {
       updateFields.team = body.team || body.teamName;
     }
 
-    const filter = mongoose.Types.ObjectId.isValid(targetId)
-      ? { _id: targetId }
-      : { $or: [{ idempotencyKey: targetId }, { _id: targetId }] };
+    // Robust filter matching for ObjectId or idempotencyKey string
+    const isHex24 = typeof targetId === 'string' && /^[0-9a-fA-F]{24}$/.test(targetId);
+    const filter = isHex24
+      ? { $or: [{ _id: new mongoose.Types.ObjectId(targetId) }, { idempotencyKey: targetId }] }
+      : { idempotencyKey: targetId };
 
     const updatedCall = await (CallModel as any).findOneAndUpdate(
       filter,
@@ -183,7 +187,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ message: 'Call log not found' }, { status: 404 });
     }
 
-    // Patch cache
+    // Patch and rebuild cache immediately
     await patchCallInCache(targetId, updateFields).catch(() => {});
     revalidateCallsCacheInBackground();
 
@@ -214,9 +218,11 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ message: 'Call ID or idempotencyKey required for deletion' }, { status: 400 });
     }
 
-    const filter = mongoose.Types.ObjectId.isValid(targetId)
-      ? { _id: targetId }
-      : { $or: [{ idempotencyKey: targetId }, { _id: targetId }] };
+    // Robust filter matching for ObjectId or idempotencyKey string
+    const isHex24 = typeof targetId === 'string' && /^[0-9a-fA-F]{24}$/.test(targetId);
+    const filter = isHex24
+      ? { $or: [{ _id: new mongoose.Types.ObjectId(targetId) }, { idempotencyKey: targetId }] }
+      : { idempotencyKey: targetId };
 
     const callToDelete = await (CallModel as any).findOne(filter).lean().exec();
 
@@ -244,7 +250,8 @@ export async function DELETE(req: Request) {
     // Delete from MongoDB
     await (CallModel as any).deleteOne(filter).exec();
 
-    // Rebuild/refresh Redis cache
+    // Invalidate Redis cache immediately
+    await cacheDel(CALLS_CACHE_KEY).catch(() => {});
     revalidateCallsCacheInBackground();
 
     const res = NextResponse.json({

@@ -71,11 +71,15 @@ fun SettingsScreen(
     val isAccessibilityOn = remember {
         mutableStateOf(com.academically.recordhub.service.RecordHubAccessibilityService.isAccessibilityServiceEnabled(context))
     }
+    val isOverlayOn = remember {
+        mutableStateOf(com.academically.recordhub.service.CallRecordingShieldManager.hasOverlayPermission(context))
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 isAccessibilityOn.value = com.academically.recordhub.service.RecordHubAccessibilityService.isAccessibilityServiceEnabled(context)
+                isOverlayOn.value = com.academically.recordhub.service.CallRecordingShieldManager.hasOverlayPermission(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -315,6 +319,21 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = TextPrimary
+                    )
+
+                    SettingStatusRow(
+                        title = "In-Call Anti-Tamper Shield",
+                        subtitle = if (isOverlayOn.value) "Enforced (Touch Shield + Auto-Re-Record Active)" else if (isAccessibilityOn.value) "Accessibility Auto-Re-Record Active" else "Tap to grant Appear on Top permission",
+                        isActive = isOverlayOn.value || isAccessibilityOn.value,
+                        onClick = {
+                            try {
+                                val intent = com.academically.recordhub.service.CallRecordingShieldManager.getOverlayPermissionIntent(context)
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Cannot open overlay settings", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     )
 
                     SettingStatusRow(

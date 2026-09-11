@@ -266,9 +266,8 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "ANDROID_WHATSAPP_DEVICE"
         val deviceId = "ANDROID-${Build.MODEL.replace(" ", "_")}-$androidId"
 
-        // Clean phone digits if contactName contains a raw phone number
-        val digitsOnly = contactName.replace("\\D".toRegex(), "")
-        val cleanPhone = if (digitsOnly.length >= 10) "+91 ${digitsOnly.takeLast(10).chunked(5).joinToString(" ")}" else contactName
+        // Format phone number preserving country code (+92, +91, +1, etc.) or contact name
+        val cleanPhone = com.academically.recordhub.utils.PhoneUtils.formatInternationalNumber(contactName, contactName)
 
         val randomSuffix = (1000..9999).random()
         val idempotencyKey = "WA_${System.currentTimeMillis()}_${cleanPhone.hashCode()}_$randomSuffix"

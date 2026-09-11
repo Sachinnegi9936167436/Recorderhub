@@ -430,8 +430,8 @@ function SalestrailCallsInner() {
       if (res.ok) {
         setCallsList((prev) =>
           prev.map((c) =>
-            (c._id === callId || c.id === callId || c.idempotencyKey === callId)
-              ? { ...c, ...payload }
+            (c._id === callId || c.id === callId || c.idempotencyKey === callId || String(c._id) === String(callId))
+              ? { ...c, ...payload, phoneNumberMasked: payload.phoneNumber }
               : c
           )
         );
@@ -439,6 +439,7 @@ function SalestrailCallsInner() {
         setCallBeingEdited(null);
         setCallsToast({ message: `Successfully updated call record and phone number!`, type: 'success' });
         setTimeout(() => setCallsToast(null), 4000);
+        fetchCalls();
       } else {
         const errData = await res.json().catch(() => ({}));
         alert(errData.message || 'Failed to update call log');
@@ -461,7 +462,7 @@ function SalestrailCallsInner() {
     }
 
     // Optimistic UI removal
-    setCallsList((prev) => prev.filter((c) => c._id !== callId && c.id !== callId && c.idempotencyKey !== callId));
+    setCallsList((prev) => prev.filter((c) => c._id !== callId && c.id !== callId && c.idempotencyKey !== callId && String(c._id) !== String(callId)));
     setCallsToast({ message: `Deleted call log (${phone})`, type: 'success' });
     setTimeout(() => setCallsToast(null), 4000);
 
@@ -469,6 +470,7 @@ function SalestrailCallsInner() {
       await fetch(`/api/v1/calls?id=${encodeURIComponent(callId)}`, {
         method: 'DELETE',
       });
+      fetchCalls();
     } catch (err) {
       console.error('Error deleting call log:', err);
     }

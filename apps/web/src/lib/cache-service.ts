@@ -17,50 +17,94 @@ export const DASHBOARD_SUMMARY_CACHE_TTL = 86400; // 24 hours
 let isRebuildingCalls = false;
 
 /**
- * Normalizes phone numbers into "+91 XXXXX XXXXX"
+ * Normalizes and formats domestic and international phone numbers, preserving their true country code:
+ * - Pakistan (+92): "+92 313 2323522"
+ * - India (+91): "+91 98765 43210"
+ * - USA/Canada (+1): "+1 212 555 1234"
+ * - UK (+44): "+44 7911 123456"
+ * - UAE (+971): "+971 50 1234567"
+ * - Saudi (+966): "+966 50 1234567"
  */
 export function formatPhoneNumber(rawPhone: string): string {
   if (!rawPhone) return '';
-  const digitsOnly = rawPhone.replace(/\D/g, '');
-  if (digitsOnly.length >= 10) {
-    const clean10 = digitsOnly.slice(-10);
-    return `+91 ${clean10.slice(0, 5)} ${clean10.slice(5)}`;
+  const trimmed = rawPhone.trim();
+
+  // If it's a contact name with words and no '+', return it
+  if (/[a-zA-Z]/.test(trimmed) && !trimmed.startsWith('+')) {
+    return trimmed;
+  }
+
+  // 1. Explicit '+' country code prefix
+  if (trimmed.startsWith('+')) {
+    const digits = trimmed.replace(/\D/g, '');
+    if (digits.startsWith('92') && digits.length === 12) {
+      return `+92 ${digits.slice(2, 5)} ${digits.slice(5)}`;
+    }
+    if (digits.startsWith('91') && digits.length === 12) {
+      return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
+    }
+    if (digits.startsWith('1') && digits.length === 11) {
+      return `+1 ${digits.slice(1, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
+    }
+    if (digits.startsWith('44') && digits.length >= 12) {
+      return `+44 ${digits.slice(2, 6)} ${digits.slice(6)}`;
+    }
+    if (digits.startsWith('971') && digits.length >= 11) {
+      return `+971 ${digits.slice(3, 5)} ${digits.slice(5)}`;
+    }
+    if (digits.startsWith('966') && digits.length >= 11) {
+      return `+966 ${digits.slice(3, 5)} ${digits.slice(5)}`;
+    }
+    if (digits.startsWith('61') && digits.length >= 11) {
+      return `+61 ${digits.slice(2, 5)} ${digits.slice(5)}`;
+    }
+    return `+${digits}`;
+  }
+
+  const digitsOnly = trimmed.replace(/\D/g, '');
+
+  // 2. Unprefixed numbers with recognized international prefixes
+  if (digitsOnly.startsWith('92') && digitsOnly.length === 12) {
+    return `+92 ${digitsOnly.slice(2, 5)} ${digitsOnly.slice(5)}`;
+  }
+  if (digitsOnly.startsWith('91') && digitsOnly.length === 12) {
+    return `+91 ${digitsOnly.slice(2, 7)} ${digitsOnly.slice(7)}`;
+  }
+  if (digitsOnly.startsWith('1') && digitsOnly.length === 11) {
+    return `+1 ${digitsOnly.slice(1, 4)} ${digitsOnly.slice(4, 7)} ${digitsOnly.slice(7)}`;
+  }
+  if (digitsOnly.startsWith('0') && digitsOnly.length === 11) {
+    const c10 = digitsOnly.slice(1);
+    return `+91 ${c10.slice(0, 5)} ${c10.slice(5)}`;
+  }
+  if (digitsOnly.length === 10) {
+    return `+91 ${digitsOnly.slice(0, 5)} ${digitsOnly.slice(5)}`;
+  }
+  if (digitsOnly.length > 10) {
+    return `+${digitsOnly}`;
   }
   return rawPhone;
 }
 
 /**
- * Fast O(N) deduplication for call records sharing the same phone & channel within 2 minutes.
+ * Fast O(N) deduplication for call records by unique database _id or idempotencyKey.
+ * Preserves all distinct back-to-back calls without time-window collapsing.
  */
 export function deduplicateCalls(calls: any[]): any[] {
   if (!calls || calls.length === 0) return [];
 
+  const seen = new Set<string>();
   const deduplicated: any[] = [];
-  const clusterMap = new Map<string, any>();
 
   for (const call of calls) {
-    const digits = (call.phoneNumber || call.phoneNumberMasked || '').replace(/\D/g, '').slice(-10);
-    const channel = (call.channel || '').toUpperCase();
-    const callTime = new Date(call.startTime || call.createdAt || Date.now()).getTime();
-
-    // 2-minute time window bucket
-    const timeBucket = Math.floor(callTime / 120000);
-    const key = digits && digits.length >= 10 ? `${digits}_${channel}_${timeBucket}` : `call_${call._id || call.idempotencyKey}`;
-
-    if (clusterMap.has(key)) {
-      const existing = clusterMap.get(key);
-      const existingDur = existing.durationSeconds || 0;
-      const currentDur = call.durationSeconds || 0;
-
-      if (currentDur > existingDur) {
-        clusterMap.set(key, call);
-      }
-    } else {
-      clusterMap.set(key, call);
+    const key = (call._id ? call._id.toString() : '') || call.idempotencyKey || `call_${Date.now()}_${Math.random()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduplicated.push(call);
     }
   }
 
-  return Array.from(clusterMap.values()).sort((a, b) => {
+  return deduplicated.sort((a, b) => {
     const timeA = new Date(a.startTime || a.createdAt || 0).getTime();
     const timeB = new Date(b.startTime || b.createdAt || 0).getTime();
     return timeB - timeA;
@@ -228,7 +272,11 @@ export async function patchCallInCache(callId: string, updates: Record<string, a
     if (existing && Array.isArray(existing) && existing.length > 0) {
       let found = false;
       const updated = existing.map((c) => {
-        if (c._id === callId || c.id === callId || c.idempotencyKey === callId) {
+        const isMatch =
+          (c._id && String(c._id) === String(callId)) ||
+          (c.id && String(c.id) === String(callId)) ||
+          (c.idempotencyKey && String(c.idempotencyKey) === String(callId));
+        if (isMatch) {
           found = true;
           return { ...c, ...updates };
         }
@@ -237,6 +285,9 @@ export async function patchCallInCache(callId: string, updates: Record<string, a
 
       if (found) {
         await cacheSet(CALLS_CACHE_KEY, updated, CALLS_CACHE_TTL);
+      } else {
+        // Invalidate cache so fresh data from MongoDB is retrieved
+        await cacheDel(CALLS_CACHE_KEY).catch(() => {});
       }
     }
   } catch (err) {
