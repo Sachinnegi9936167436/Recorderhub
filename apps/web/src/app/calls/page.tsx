@@ -771,10 +771,10 @@ function SalestrailCallsInner() {
       );
       return isMatch;
     });
-  }, [activeTeams, userEmail, isAdmin, isManager]);
+  }, [activeTeams, userEmail, isAdmin, isSuperAdmin, isManager]);
 
   const myTeamMemberIdentifiers = useMemo(() => {
-    if (isAdmin || isManager) return [];
+    if (isSuperAdmin || isAdmin || isManager) return [];
     const memberSet = new Set<string>();
     const myEmailLower = (userEmail || '').toLowerCase().trim();
     const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
@@ -797,11 +797,11 @@ function SalestrailCallsInner() {
     });
 
     return Array.from(memberSet);
-  }, [myManagedTeams, userEmail, isAdmin, isManager]);
+  }, [myManagedTeams, userEmail, isAdmin, isSuperAdmin, isManager]);
 
   const canUserAccessCall = (call: any) => {
-    // 1. System Admin: Can view and listen to ALL call recordings across all teams
-    if (isAdmin) return { canView: true, canListen: true };
+    // 1. Super Admin & System Admin: Can view and listen to ALL call recordings across all teams
+    if (isSuperAdmin || isAdmin) return { canView: true, canListen: true };
 
     // 2. Manager: Can view call logs and call log time of EVERY counsellor
     if (isManager) return { canView: true, canListen: true };
@@ -1439,7 +1439,7 @@ function SalestrailCallsInner() {
           </div>
 
           <div className="flex-1 flex items-center justify-end pt-5 space-x-3">
-            {(isSuperAdmin || isAdmin) && (
+            {isSuperAdmin && (
               <button
                 onClick={openAddCallModal}
                 className="flex items-center space-x-2 bg-[#242938] hover:bg-[#1a1e29] text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-md transition-all cursor-pointer"
@@ -1582,8 +1582,8 @@ function SalestrailCallsInner() {
                   {renderSortHeader('direction', 'Direction')}
                   {renderSortHeader('status', 'Status')}
                   {renderSortHeader('duration', 'Duration')}
-                  {renderSortHeader('audio', 'Audio Recording', isSuperAdmin || isAdmin ? '' : 'pr-6')}
-                  {(isSuperAdmin || isAdmin) && (
+                  {renderSortHeader('audio', 'Audio Recording', isSuperAdmin ? '' : 'pr-6')}
+                  {isSuperAdmin && (
                     <th className="p-4 pr-6 text-center font-bold whitespace-nowrap">
                       Actions
                     </th>
@@ -1593,7 +1593,7 @@ function SalestrailCallsInner() {
               <tbody className="divide-y divide-slate-100 font-medium">
                 {paginatedCalls.length === 0 ? (
                   <tr>
-                    <td colSpan={isSuperAdmin || isAdmin ? 10 : 9} className="p-12 text-center text-slate-500 font-medium">
+                    <td colSpan={isSuperAdmin ? 10 : 9} className="p-12 text-center text-slate-500 font-medium">
                       {loading ? (
                         <div className="flex items-center justify-center space-x-2">
                           <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
@@ -1711,24 +1711,24 @@ function SalestrailCallsInner() {
                         </td>
 
                         {/* Audio Recording */}
-                        <td className={`p-4 text-center whitespace-nowrap ${isSuperAdmin || isAdmin ? '' : 'pr-6'}`}>
+                        <td className={`p-4 text-center whitespace-nowrap ${isSuperAdmin ? '' : 'pr-6'}`}>
                           <AudioCell call={call} idx={idx} canListen={canUserAccessCall(call).canListen} />
                         </td>
 
-                        {/* Super Admin / Admin Actions */}
-                        {(isSuperAdmin || isAdmin) && (
+                        {/* Super Admin Actions */}
+                        {isSuperAdmin && (
                           <td className="p-4 pr-6 text-center whitespace-nowrap">
                             <div className="flex items-center justify-center space-x-1.5">
                               <button
                                 onClick={() => openEditCallModal(call)}
-                                title="Edit Call Details & Phone Number"
+                                title="Super Admin: Edit Call Details & Phone Number"
                                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 border border-transparent hover:border-slate-200 transition-all cursor-pointer"
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={() => handleDeleteCall(call)}
-                                title="Delete Call Record & Audio"
+                                title="Super Admin: Delete Call Record & Audio"
                                 className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-all cursor-pointer"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />

@@ -31,7 +31,8 @@ import {
 import Link from 'next/link';
 
 function CounselorsAndTeamsInner() {
-  const { role: userRole, email: userEmail, isAdmin, isManager, isCounselor } = useUserRole();
+  const { role: userRole, email: userEmail, isSuperAdmin, isAdmin, isManager, isCounselor } = useUserRole();
+  const hasAdminAccess = isAdmin || isSuperAdmin;
   const searchParams = useSearchParams();
   const currentView = searchParams.get('view') || 'teams';
 
@@ -659,7 +660,7 @@ function CounselorsAndTeamsInner() {
 
             {/* Primary Action Button: + Add team */}
             <div>
-              {isAdmin ? (
+              {hasAdminAccess ? (
                 <button
                   onClick={openCreateTeamModal}
                   className="inline-flex items-center space-x-3 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-sm px-6 py-3 rounded-xl transition-all shadow-md cursor-pointer"
@@ -772,7 +773,7 @@ function CounselorsAndTeamsInner() {
                           <td className="p-5 text-center text-slate-800 font-medium">{t.admin}</td>
                           <td className="p-5 text-center font-semibold text-slate-900">{t.installedRatio}</td>
                           <td className="p-5 pr-12 text-center">
-                            {isAdmin ? (
+                            {hasAdminAccess ? (
                               <button
                                 onClick={(e) => handleDeleteTeam(t.id, t.name, e)}
                                 className="inline-flex items-center space-x-1 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm"
@@ -793,7 +794,7 @@ function CounselorsAndTeamsInner() {
               </div>
             </div>
           </div>
-        ) : !isAdmin ? (
+        ) : !hasAdminAccess ? (
           /* RESTRICTED ACCESS: Non-Admin trying to access User Management */
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-5 max-w-lg mx-auto my-12 shadow-sm">
             <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100 shadow-sm">
@@ -1012,7 +1013,7 @@ function CounselorsAndTeamsInner() {
 
                             {/* ACTIONS */}
                             <td className="py-5 pr-8 text-right whitespace-nowrap">
-                              {isAdmin ? (
+                              {hasAdminAccess ? (
                                 <div className="flex items-center justify-end space-x-5">
                                   <button
                                     onClick={() => openEditModal(c)}
@@ -1118,7 +1119,7 @@ function CounselorsAndTeamsInner() {
                             </div>
                             <span>{member}</span>
                           </div>
-                          {isAdmin && (
+                          {hasAdminAccess && (
                             <button 
                               onClick={() => handleRemoveMemberFromTeam(member)}
                               className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50 cursor-pointer"
@@ -1143,7 +1144,7 @@ function CounselorsAndTeamsInner() {
                       <Info className="w-4 h-4 text-slate-400" />
                     </div>
 
-                    {isAdmin && !isAddingAdminInDrawer && (
+                    {hasAdminAccess && !isAddingAdminInDrawer && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1208,7 +1209,7 @@ function CounselorsAndTeamsInner() {
                                   Primary Lead
                                 </span>
                               ) : (
-                                isAdmin && (
+                                hasAdminAccess && (
                                   <button
                                     type="button"
                                     onClick={() => handleSetPrimaryAdmin(admin)}
@@ -1219,7 +1220,7 @@ function CounselorsAndTeamsInner() {
                                 )
                               )}
                             </div>
-                            {isAdmin && (
+                            {hasAdminAccess && (
                               <button 
                                 onClick={() => handleRemoveAdminFromTeam(admin)}
                                 className="text-rose-400 hover:text-rose-600 font-bold p-1 rounded-full hover:bg-rose-50 cursor-pointer"
@@ -1242,7 +1243,7 @@ function CounselorsAndTeamsInner() {
 
               {/* Bottom Action Button: Add users */}
               <div className="pt-6">
-                {isAdmin ? (
+                {hasAdminAccess ? (
                   <button
                     onClick={handleOpenAddCounselorsModal}
                     className="w-full bg-[#ff5c75] hover:bg-[#ef4c65] text-white font-bold text-sm py-3.5 rounded-xl shadow-md transition-all text-center cursor-pointer"
@@ -1318,7 +1319,7 @@ function CounselorsAndTeamsInner() {
                     {getAvailableCounselorObjects().length === 0 ? (
                       <div className="p-3 text-center space-y-1">
                         <p className="text-xs text-slate-500 font-medium">No registered counselors found.</p>
-                        {isAdmin ? (
+                        {hasAdminAccess ? (
                           <p className="text-[11px] text-slate-400">Go to User Management tab to provision Counselor IDs first.</p>
                         ) : (
                           <p className="text-[11px] text-slate-400">Please contact your System Admin to provision Counselor IDs.</p>

@@ -21,7 +21,7 @@ function NavigationInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentView = searchParams.get('view') || 'teams';
-  const { role, email: userEmail, isAdmin, isCounselor } = useUserRole();
+  const { role, email: userEmail, isAdmin, isSuperAdmin, isCounselor } = useUserRole();
 
   const navItems = [
     { name: 'Analytics', href: '/dashboard', icon: BarChart3, hasSub: true },
@@ -30,7 +30,7 @@ function NavigationInner() {
     ...(!isCounselor ? [
       { name: 'Team Management', href: '/counselors?view=teams', viewKey: 'teams', icon: Users },
     ] : []),
-    ...(isAdmin ? [
+    ...(isAdmin || isSuperAdmin ? [
       { name: 'User Management', href: '/counselors?view=users', viewKey: 'users', icon: UserCheck },
       { name: 'Settings', href: '/settings', icon: Settings },
     ] : []),
@@ -108,9 +108,9 @@ export function useUserRole() {
   }, []);
 
   const isSuperAdmin = role === 'SUPER_ADMIN';
-  const isAdmin = role === 'ADMIN' || role === 'COMPANY_ADMIN' || role === 'SUPER_ADMIN';
-  const isManager = role === 'MANAGER' || role === 'SUPER_ADMIN';
-  const isTeamLead = role === 'TEAM_LEAD' || role === 'SUPER_ADMIN';
+  const isAdmin = role === 'ADMIN' || role === 'COMPANY_ADMIN';
+  const isManager = role === 'MANAGER';
+  const isTeamLead = role === 'TEAM_LEAD';
   const isCounselor = role === 'COUNSELOR' || role === 'AGENT' || role === 'SALES_AGENT' || role === 'SALES';
 
   return { role, email, isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor };

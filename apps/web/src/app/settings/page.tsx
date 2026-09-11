@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Settings, ShieldCheck, Database, Award, Save, RefreshCw, Shield, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function SettingsPage() {
-  const { role: userRole, isAdmin } = useUserRole();
+  const { role: userRole, isAdmin, isSuperAdmin } = useUserRole();
   const [crmUrl, setCrmUrl] = useState('https://api.pharmlly.com/v1');
   const [retentionDays, setRetentionDays] = useState(180);
   const [saving, setSaving] = useState(false);
@@ -49,7 +49,7 @@ export default function SettingsPage() {
     }
   };
 
-  if (!isAdmin) {
+  if (!isAdmin && !isSuperAdmin) {
     return (
       <div className="flex min-h-screen bg-[#f8fafc] text-slate-900 font-sans">
         <Navigation />
