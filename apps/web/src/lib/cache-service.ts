@@ -13,6 +13,7 @@ export const TEAMS_CACHE_TTL = 3600; // 1 hour
 
 export const DASHBOARD_SUMMARY_CACHE_KEY = 'cache:dashboard:summary';
 export const DASHBOARD_SUMMARY_CACHE_TTL = 86400; // 24 hours
+export const MAX_CACHED_CALLS = 100000; // Allow full active history without 3k truncation
 
 let isRebuildingCalls = false;
 let lastRebuildTimestamp = 0;
@@ -133,7 +134,7 @@ export async function rebuildCallsCache(): Promise<any[]> {
         .find()
         .select('idempotencyKey phoneNumber phoneNumberMasked direction status startTime endTime durationSeconds simSlot isPrivate disposition channel agentName counselorEmail leadName recordingStatus s3Key audioUrl notes team deviceId createdAt updatedAt')
         .sort({ startTime: -1, createdAt: -1 })
-        .limit(3000)
+        .limit(MAX_CACHED_CALLS)
         .lean()
         .exec();
     });
@@ -271,7 +272,7 @@ export async function updateCallsCacheWithNewBatch(newCalls: any[]): Promise<voi
 
     const existing = await cacheGet<any[]>(CALLS_CACHE_KEY);
     if (existing && Array.isArray(existing) && existing.length > 0) {
-      const merged = deduplicateCalls([...formattedBatch, ...existing]).slice(0, 3000);
+      const merged = deduplicateCalls([...formattedBatch, ...existing]).slice(0, MAX_CACHED_CALLS);
       await cacheSet(CALLS_CACHE_KEY, merged, CALLS_CACHE_TTL);
     } else {
       revalidateCallsCacheInBackground(true);
