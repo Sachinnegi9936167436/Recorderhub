@@ -143,6 +143,8 @@ export async function POST(req: Request) {
           const phoneRegex = buildPhoneRegex(cleanPhone);
           const query: any = {
             phoneNumber: { $regex: phoneRegex },
+            status: 'ANSWERED',
+            durationSeconds: { $gt: 0 },
             $or: [
               { recordingStatus: { $in: ['PENDING', 'PENDING_UPLOAD', 'NONE'] } },
               { audioUrl: { $exists: false } }

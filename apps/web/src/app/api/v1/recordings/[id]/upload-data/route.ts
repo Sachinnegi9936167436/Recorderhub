@@ -149,6 +149,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         const phoneRegex = buildPhoneRegex(extractedPhone);
         const query: any = {
           phoneNumber: { $regex: phoneRegex },
+          status: 'ANSWERED',
+          durationSeconds: { $gt: 0 },
           $or: [
             { recordingStatus: { $in: ['PENDING_UPLOAD', 'PENDING', 'NONE'] } },
             { audioUrl: { $exists: false } }

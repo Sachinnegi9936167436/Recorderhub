@@ -63,6 +63,8 @@ export async function POST(req: Request) {
     // 2. First check if any calls actually need reconciliation (Fast indexed query)
     const pendingCalls = await (CallModel as any)
       .find({
+        status: 'ANSWERED',
+        durationSeconds: { $gt: 0 },
         $or: [
           { recordingStatus: { $in: ['PENDING_UPLOAD', 'PENDING', 'NONE'] } },
           { audioUrl: { $exists: false } },

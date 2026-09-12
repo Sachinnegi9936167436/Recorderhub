@@ -56,30 +56,29 @@ function getCallAudioDuration(call: any): number | null {
 }
 
 function isCallDurationMismatch(call: any): boolean {
+  const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+  const callDur = isAns ? Number(call.durationSeconds || 0) : 0;
+  // Unanswered / 0s calls do not have talk time and should never be marked as duration mismatches
+  if (!isAns || callDur <= 0) return false;
+
   // Ignore calls where recording does NOT exist (only compare calls that actually have recordings)
   const hasRecording = (call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD') && call.recordingStatus !== 'NONE';
   if (!hasRecording) return false;
 
-  const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-  const callDur = isAns ? Number(call.durationSeconds || 0) : 0;
   const recDur = getCallAudioDuration(call);
 
-  if (recDur !== null) {
-    // 1. Unanswered/0s call with recording >= 5s -> Mismatch
-    if (callDur === 0 && recDur >= 5) return true;
-    if (callDur > 0 && recDur === 0) return true;
-
-    // 2. Severe stub/partial file: Call is >= 30s but recording is < 15s -> Mismatch
+  if (recDur !== null && recDur > 0) {
+    // 1. Severe stub/partial file: Call is >= 30s but recording is < 15s -> Mismatch
     if (callDur >= 30 && recDur < 15) return true;
 
     const diff = Math.abs(callDur - recDur);
 
-    // 3. For short calls (< 30s), a difference >= 10s is a mismatch
+    // 2. For short calls (< 30s), a difference >= 10s is a mismatch
     if (callDur < 30) {
       return diff >= 10;
     }
 
-    // 4. For longer calls (>= 30s):
+    // 3. For longer calls (>= 30s):
     // Standard VBR MP3 header estimations by browsers can vary by 5-10% (e.g. 8m 46s vs 9m 13s is a 95% match).
     // A true recording mismatch occurs when audio covers < 80% of call talk time AND difference >= 30s.
     const coverageRatio = recDur / callDur;
