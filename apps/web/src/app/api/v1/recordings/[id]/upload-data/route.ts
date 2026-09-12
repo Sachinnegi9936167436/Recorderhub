@@ -104,14 +104,23 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
     // Attach recording to the specific target call record (Fast indexed lookup)
     const isHex24 = recordingId.length === 24 && /^[0-9a-fA-F]{24}$/.test(recordingId);
+    const isWaRecording = recordingId.startsWith('WA_');
+    const directQuery: any = {
+      $or: [
+        { idempotencyKey: recordingId },
+        { s3Key: s3Key },
+        { _id: isHex24 ? recordingId : null }
+      ].filter((c) => c._id !== null)
+    };
+
+    if (!isWaRecording) {
+      directQuery.channel = { $ne: 'WHATSAPP' };
+      directQuery.disposition = { $not: /whatsapp/i };
+      directQuery.idempotencyKey = { $not: /^WA_/i };
+    }
+
     let updatedCall = await (CallModel as any).findOneAndUpdate(
-      {
-        $or: [
-          { idempotencyKey: recordingId },
-          { s3Key: s3Key },
-          { _id: isHex24 ? recordingId : null }
-        ].filter((c) => c._id !== null)
-      },
+      directQuery,
       {
         $set: {
           recordingStatus: 'COMPLETED',
@@ -138,7 +147,6 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
       if (extractedPhone.length === 10) {
         const phoneRegex = buildPhoneRegex(extractedPhone);
-        const isWaRecording = recordingId.startsWith('WA_');
         const query: any = {
           phoneNumber: { $regex: phoneRegex },
           $or: [
@@ -151,7 +159,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
           query.channel = 'WHATSAPP';
         } else {
           query.channel = { $ne: 'WHATSAPP' };
-          query.idempotencyKey = { $not: /^WA_/ };
+          query.disposition = { $not: /whatsapp/i };
+          query.idempotencyKey = { $not: /^WA_/i };
         }
 
         if (extractedDevice) {

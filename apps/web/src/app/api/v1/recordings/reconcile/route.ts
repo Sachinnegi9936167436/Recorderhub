@@ -137,7 +137,9 @@ export async function POST(req: Request) {
         const callPhone = (c.phoneNumber || '').replace(/\D/g, '');
         if (!callPhone.endsWith(cleanPhone)) return false;
 
-        const callIsWa = (c.channel || '').toUpperCase() === 'WHATSAPP' || (c.idempotencyKey || '').startsWith('WA_');
+        const callIsWa = (c.channel || '').toUpperCase() === 'WHATSAPP' || 
+                         (c.disposition || '').toLowerCase().includes('whatsapp') || 
+                         (c.idempotencyKey || '').startsWith('WA_');
         if (isWaRecording !== callIsWa) return false;
 
         if (targetDate && c.startTime) {

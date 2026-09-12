@@ -389,25 +389,6 @@ object SimCallRecordingScanner {
             } catch (_: Exception) {}
         }
 
-        // --- Source 4: App WhatsApp Voip Recording Directory ---
-        try {
-            val waDir = File(context.filesDir, "whatsapp_recordings")
-            if (waDir.exists() && waDir.isDirectory) {
-                val waFiles = waDir.listFiles() ?: emptyArray()
-                for (file in waFiles) {
-                    if (file.isFile && isCallRecordingCandidate(file.name) && file.length() > 0) {
-                        if (!claimedPaths.contains(file.absolutePath) && !claimedPaths.contains(file.name)) {
-                            val fileDur = getAudioDuration(file)
-                            val score = evaluateScore(file.name, file.lastModified(), fileDur, file.length())
-                            if (score > 0) {
-                                candidates.add(CandidateMatch(file = file, fileName = file.name, score = score, source = "WhatsApp_Internal"))
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-
         // Sort candidates by highest score and pick the best match
         val bestCandidate = candidates.maxByOrNull { it.score }
         if (bestCandidate != null) {

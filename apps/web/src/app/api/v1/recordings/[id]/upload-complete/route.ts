@@ -48,18 +48,28 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const audioUrl = `/api/v1/recordings/${recordingId}/audio`;
     const targetDate = parseTimestamp(recordingId) || parseTimestamp(callId);
 
+    const isWaRecording = (callId && callId.startsWith('WA_')) || (recordingId && recordingId.startsWith('WA_'));
+
     const updated = await withDbRetry(async () => {
       // 1. Direct match by callId idempotencyKey or recordingId
+      const directQuery: any = {
+        $or: [
+          { idempotencyKey: callId },
+          { idempotencyKey: recordingId },
+          { audioUrl: { $regex: recordingId } },
+          { s3Key: { $regex: recordingId } },
+          { _id: callId && callId.length === 24 ? callId : null }
+        ].filter((c) => c._id !== null || c.idempotencyKey || c.audioUrl || c.s3Key)
+      };
+
+      if (!isWaRecording) {
+        directQuery.channel = { $ne: 'WHATSAPP' };
+        directQuery.disposition = { $not: /whatsapp/i };
+        directQuery.idempotencyKey = { $not: /^WA_/i };
+      }
+
       let res = await (CallModel as any).findOneAndUpdate(
-        {
-          $or: [
-            { idempotencyKey: callId },
-            { idempotencyKey: recordingId },
-            { audioUrl: { $regex: recordingId } },
-            { s3Key: { $regex: recordingId } },
-            { _id: callId && callId.length === 24 ? callId : null }
-          ]
-        },
+        directQuery,
         {
           $set: {
             recordingStatus: 'COMPLETED',
@@ -77,7 +87,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
         if (cleanDigits.length === 10) {
           const phoneRegex = buildPhoneRegex(cleanDigits);
-          const isWaRecording = (callId && callId.startsWith('WA_')) || recordingId.startsWith('WA_');
           const query: any = {
             phoneNumber: { $regex: phoneRegex },
             $or: [
@@ -90,7 +99,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
             query.channel = 'WHATSAPP';
           } else {
             query.channel = { $ne: 'WHATSAPP' };
-            query.idempotencyKey = { $not: /^WA_/ };
+            query.disposition = { $not: /whatsapp/i };
+            query.idempotencyKey = { $not: /^WA_/i };
           }
 
           if (targetDate) {

@@ -55,7 +55,12 @@ class CallSyncWorker(
             it.syncStatus == "PENDING" || (it.recordingStatus == "PENDING_UPLOAD" && !it.recordingPath.isNullOrEmpty() && File(it.recordingPath).exists())
         }
         val pendingAudioUploads = pendingEvents.filter { 
-            !it.recordingPath.isNullOrEmpty() && File(it.recordingPath).exists() && it.recordingStatus != "SYNCED" 
+            val isWa = it.disposition.contains("WhatsApp", ignoreCase = true) || it.idempotencyKey.startsWith("WA_")
+            if (isWa && !com.academically.recordhub.service.WhatsAppCallNotificationListener.ENABLE_WHATSAPP_AUDIO_RECORDING) {
+                false
+            } else {
+                !it.recordingPath.isNullOrEmpty() && File(it.recordingPath).exists() && it.recordingStatus != "SYNCED"
+            }
         }
 
         AppLogManager.log("SYNC", "CallSyncWorker", "Found ${pendingCallSyncs.size} call logs and ${pendingAudioUploads.size} audio recordings pending sync.")
@@ -125,8 +130,13 @@ class CallSyncWorker(
                         val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
                             timeZone = TimeZone.getTimeZone("UTC")
                         }
-                        val hasRec = !evt.recordingPath.isNullOrEmpty() && File(evt.recordingPath).exists() && evt.recordingStatus != "SYNCED"
-                        val recFile = if (hasRec) File(evt.recordingPath!!) else null
+                        val isWaEvent = evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")
+                        val hasRec = if (isWaEvent && !com.academically.recordhub.service.WhatsAppCallNotificationListener.ENABLE_WHATSAPP_AUDIO_RECORDING) {
+                            false
+                        } else {
+                            !evt.recordingPath.isNullOrEmpty() && File(evt.recordingPath).exists() && evt.recordingStatus != "SYNCED"
+                        }
+                        val recFile = if (hasRec && !evt.recordingPath.isNullOrEmpty()) File(evt.recordingPath!!) else null
                         val ext = recFile?.extension?.lowercase()
                         val mime = when (ext) {
                             "mp3" -> "audio/mpeg"

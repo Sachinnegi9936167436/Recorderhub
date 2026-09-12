@@ -113,13 +113,22 @@ export async function POST(req: Request) {
     // Immediately link audioUrl and s3Key strictly to the specific Call document in MongoDB Atlas
     if (callId) {
       try {
+        const isWaRecording = (callId && callId.startsWith('WA_')) || (recordingId && recordingId.startsWith('WA_'));
+        const directQuery: any = {
+          $or: [
+            { idempotencyKey: callId },
+            { _id: callId.length === 24 ? callId : null }
+          ].filter((c) => c._id !== null || c.idempotencyKey)
+        };
+
+        if (!isWaRecording) {
+          directQuery.channel = { $ne: 'WHATSAPP' };
+          directQuery.disposition = { $not: /whatsapp/i };
+          directQuery.idempotencyKey = { $not: /^WA_/i };
+        }
+
         let updatedCall = await (CallModel as any).findOneAndUpdate(
-          {
-            $or: [
-              { idempotencyKey: callId },
-              { _id: callId.length === 24 ? callId : null }
-            ]
-          },
+          directQuery,
           {
             $set: {
               recordingStatus: 'PENDING_UPLOAD',
@@ -132,7 +141,6 @@ export async function POST(req: Request) {
 
         if (!updatedCall && cleanPhone.length === 10) {
           const phoneRegex = buildPhoneRegex(cleanPhone);
-          const isWaRecording = (callId && callId.startsWith('WA_')) || recordingId.startsWith('WA_');
           const query: any = {
             phoneNumber: { $regex: phoneRegex },
             $or: [
@@ -145,7 +153,8 @@ export async function POST(req: Request) {
             query.channel = 'WHATSAPP';
           } else {
             query.channel = { $ne: 'WHATSAPP' };
-            query.idempotencyKey = { $not: /^WA_/ };
+            query.disposition = { $not: /whatsapp/i };
+            query.idempotencyKey = { $not: /^WA_/i };
           }
 
           if (deviceId) {

@@ -112,7 +112,7 @@ object CallLogScanner {
                     val callStatus = if (isMissedOrUnanswered) "UNANSWERED" else "ANSWERED"
                     val effectiveDurationSec = if (isMissedOrUnanswered) 0 else durationSec
 
-                    val audioFile = if (isMissedOrUnanswered) null else SimCallRecordingScanner.findAudioForCall(
+                    val audioFile = if (isMissedOrUnanswered || isWhatsApp) null else SimCallRecordingScanner.findAudioForCall(
                         context, 
                         rawNumber, 
                         dateMs, 
@@ -151,10 +151,15 @@ object CallLogScanner {
                 }
             }
 
-            // Secondary pass: Attach audio recordings strictly to recent calls in Room DB missing recording paths
+            // Secondary pass: Attach audio recordings strictly to recent SIM/Cellular calls in Room DB missing recording paths
             val allDbEvents = db.callEventDao().getAllEvents()
 
             for (evt in allDbEvents) {
+                val isWa = evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")
+                if (isWa) {
+                    continue // WhatsApp calls must NEVER be matched by SimCallRecordingScanner
+                }
+
                 val isUnlinked = evt.recordingPath.isNullOrEmpty() || evt.recordingStatus == "NONE"
                 if (isUnlinked && evt.durationSeconds > 0 && evt.startTime >= effectiveCutoffMs) {
                     val matchedFile = SimCallRecordingScanner.findAudioForCall(

@@ -179,10 +179,14 @@ export async function POST(req: Request) {
       };
 
       // Check 1: Exact idempotencyKey already in DB
+      const isWaExisting = (evt.channel || '').toUpperCase() === 'WHATSAPP' ||
+                           (evt.disposition || '').toLowerCase().includes('whatsapp') || 
+                           (evt.idempotencyKey || '').startsWith('WA_');
+
       if (existingKeyMap.has(evt.idempotencyKey)) {
         duplicates.push(evt.idempotencyKey);
-        // If the mobile app requested an upload URL for this existing call, generate it
-        if (evt.hasRecording) {
+        // If the mobile app requested an upload URL for this existing call, generate it only if not a non-recording WhatsApp call
+        if (evt.hasRecording && (!isWaExisting || (evt.idempotencyKey || '').startsWith('WA_'))) {
           const existingDoc = existingKeyMap.get(evt.idempotencyKey);
           const uploadInfo = await generatePresignedUploadInfo(evt.idempotencyKey, evt.deviceId || 'ANDROID-DEVICE-PROD', evt.mimeType);
           await (CallModel as any).updateOne(
@@ -217,7 +221,7 @@ export async function POST(req: Request) {
         const effectiveDuration = isAnswered ? (evt.durationSeconds || 0) : 0;
 
         let uploadInfo = null;
-        if (evt.hasRecording) {
+        if (evt.hasRecording && (!isWhatsApp || cleanKey.startsWith('WA_'))) {
           uploadInfo = await generatePresignedUploadInfo(cleanKey, evt.deviceId || 'ANDROID-DEVICE-PROD', evt.mimeType);
           uploadUrls.push({
             idempotencyKey: cleanKey,
