@@ -35,10 +35,7 @@ import { AppController } from './app.controller';
       isGlobal: true,
       envFilePath: ['../../.env', '.env'],
     }),
-    MongooseModule.forRoot(
-      process.env.MONGODB_URI ||
-        'mongodb+srv://recordhub_admin:developer123@recordhubdb.dxwpdx6.mongodb.net/recordhub?retryWrites=true&w=majority',
-    ),
+    MongooseModule.forRoot(process.env.MONGODB_URI || ''),
     MongooseModule.forFeature([
       { name: Organization.name, schema: OrganizationSchema },
       { name: User.name, schema: UserSchema },
@@ -49,7 +46,7 @@ import { AppController } from './app.controller';
     ]),
     PassportModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'super_secret_recordhub_jwt_key_2026_change_in_production',
+      secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '1d' },
     }),
   ],

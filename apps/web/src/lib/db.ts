@@ -7,10 +7,10 @@ try {
   // Ignore in environments where setServers is restricted
 }
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://recordhub_admin:developer123@recordhubdb.dxwpdx6.mongodb.net/recordhub';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
-  throw new Error('Please define the MONGODB_URI environment variable');
+  throw new Error('Please define the MONGODB_URI environment variable in .env');
 }
 
 /**

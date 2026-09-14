@@ -1,10 +1,12 @@
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 
+require('dotenv').config();
 const mongoose = require('mongoose');
 
 async function run() {
-  const uri = 'mongodb+srv://recordhub_admin:developer123@recordhubdb.dxwpdx6.mongodb.net/recordhub?retryWrites=true&w=majority';
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI not found in environment');
   
   console.log('Connecting to MongoDB...');
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 30000 });

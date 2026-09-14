@@ -11,7 +11,11 @@ if (fs.existsSync(envLocalPath)) {
   require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 }
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://recordhub_admin:developer123@recordhubdb.dxwpdx6.mongodb.net/recordhub';
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  console.error('Missing MONGODB_URI in environment variables');
+  process.exit(1);
+}
 
 async function safeCreateIndex(coll, keys, options = {}) {
   try {
