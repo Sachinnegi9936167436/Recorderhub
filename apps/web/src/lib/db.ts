@@ -22,8 +22,40 @@ if (!cached) {
   cached = (global as any).mongoose = { conn: null, promise: null };
 }
 
+function getMongoUri(): string {
+  if (process.env.MONGODB_URI) return process.env.MONGODB_URI;
+
+  // Fallback: try reading .env from root or current dir if Next.js missed it
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const candidatePaths = [
+      path.resolve(process.cwd(), '.env'),
+      path.resolve(process.cwd(), '.env.local'),
+      path.resolve(process.cwd(), 'apps/web/.env'),
+      path.resolve(process.cwd(), 'apps/web/.env.local'),
+      path.resolve(process.cwd(), '../.env'),
+      path.resolve(process.cwd(), '../../.env'),
+    ];
+
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        const content = fs.readFileSync(p, 'utf8');
+        const match = content.match(/^MONGODB_URI=(.+)$/m);
+        if (match && match[1]) {
+          const uri = match[1].trim().replace(/^['"]|['"]$/g, '');
+          process.env.MONGODB_URI = uri;
+          return uri;
+        }
+      }
+    }
+  } catch {}
+
+  return '';
+}
+
 export async function connectToDatabase(): Promise<typeof mongoose> {
-  const MONGODB_URI = process.env.MONGODB_URI;
+  const MONGODB_URI = getMongoUri();
   if (!MONGODB_URI) {
     throw new Error('Please define the MONGODB_URI environment variable in .env');
   }
