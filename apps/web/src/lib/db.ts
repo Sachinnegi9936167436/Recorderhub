@@ -7,12 +7,6 @@ try {
   // Ignore in environments where setServers is restricted
 }
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  throw new Error('Please define the MONGODB_URI environment variable in .env');
-}
-
 /**
  * Global is used here to maintain a cached connection across hot reloads
  * in development and serverless invocations in production (Vercel).
@@ -29,6 +23,11 @@ if (!cached) {
 }
 
 export async function connectToDatabase(): Promise<typeof mongoose> {
+  const MONGODB_URI = process.env.MONGODB_URI;
+  if (!MONGODB_URI) {
+    throw new Error('Please define the MONGODB_URI environment variable in .env');
+  }
+
   // If already connected and connection is healthy (readyState 1 = connected)
   if (cached.conn && mongoose.connection.readyState === 1) {
     return cached.conn;
