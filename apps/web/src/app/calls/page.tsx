@@ -263,7 +263,7 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
 }
 
 function SalestrailCallsInner() {
-  const { role, email: userEmail, isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor } = useUserRole();
+  const { role, email: userEmail, isSuperAdmin, isAdmin, isManager, isTeamLead: rawIsTeamLead, isCounselor: rawIsCounselor } = useUserRole();
   const { currentCall, isPlayerVisible } = useAudioPlayer();
   const searchParams = useSearchParams();
   const isRecordingsOnly = searchParams.get('filter') === 'recordings';
@@ -781,6 +781,9 @@ function SalestrailCallsInner() {
     });
   }, [activeTeams, userEmail, isAdmin, isSuperAdmin, isManager, counselorsList]);
 
+  const isTeamLead = rawIsTeamLead || myManagedTeams.length > 0;
+  const isCounselor = rawIsCounselor && myManagedTeams.length === 0 && !isAdmin && !isSuperAdmin && !isManager;
+
   const myTeamMemberIdentifiers = useMemo(() => {
     if (isSuperAdmin || isAdmin || isManager) return [];
     const memberSet = new Set<string>();
@@ -857,17 +860,7 @@ function SalestrailCallsInner() {
     const myEmailLower = (userEmail || '').toLowerCase();
     const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
 
-    // 3. Sales User / Counselor: Can ONLY view & listen to their OWN calls
-    if (isCounselor) {
-      const isMyOwnCall =
-        (callEmail && callEmail === myEmailLower) ||
-        (myNamePrefix && resolvedCounselor.includes(myNamePrefix)) ||
-        (myNamePrefix && myNamePrefix.includes('shris') && resolvedCounselor.includes('shristi'));
-
-      return { canView: isMyOwnCall, canListen: isMyOwnCall };
-    }
-
-    // 4. Team Lead: Can view & listen ONLY to calls of counselors in their team(s)
+    // 3. Team Lead: Can view & listen to calls of counselors in their team(s) + own calls
     if (isTeamLead) {
       const isMyOwnCall =
         (callEmail && callEmail === myEmailLower) ||
@@ -887,11 +880,22 @@ function SalestrailCallsInner() {
           resolvedCounselor.includes(identifier) ||
           (callEmail && callEmail.includes(identifier)) ||
           (call.agentName && call.agentName.toLowerCase().includes(identifier)) ||
-          (call.counselorName && call.counselorName.toLowerCase().includes(identifier))
+          (call.counselorName && call.counselorName.toLowerCase().includes(identifier)) ||
+          (call.leadName && call.leadName.toLowerCase().includes(identifier))
         );
       });
 
       return { canView: isMemberInMyTeam, canListen: isMemberInMyTeam };
+    }
+
+    // 4. Sales User / Counselor: Can ONLY view & listen to their OWN calls
+    if (isCounselor) {
+      const isMyOwnCall =
+        (callEmail && callEmail === myEmailLower) ||
+        (myNamePrefix && resolvedCounselor.includes(myNamePrefix)) ||
+        (myNamePrefix && myNamePrefix.includes('shris') && resolvedCounselor.includes('shristi'));
+
+      return { canView: isMyOwnCall, canListen: isMyOwnCall };
     }
 
     return { canView: true, canListen: true };

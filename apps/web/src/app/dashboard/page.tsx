@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export default function RecorderHubDashboard() {
-  const { role: userRole, email: userEmail, isAdmin, isManager, isTeamLead, isCounselor } = useUserRole();
+  const { role: userRole, email: userEmail, isAdmin, isManager, isTeamLead: rawIsTeamLead, isCounselor: rawIsCounselor } = useUserRole();
   const [calls, setCalls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('All time');
@@ -173,6 +173,9 @@ export default function RecorderHubDashboard() {
     });
   }, [activeTeams, userEmail, isAdmin, isManager, counselorsList]);
 
+  const isTeamLead = rawIsTeamLead || myManagedTeams.length > 0;
+  const isCounselor = rawIsCounselor && myManagedTeams.length === 0 && !isAdmin && !isManager;
+
   const myTeamMemberIdentifiers = useMemo(() => {
     if (isAdmin || isManager) return [];
     const memberSet = new Set<string>();
@@ -254,14 +257,6 @@ export default function RecorderHubDashboard() {
     const myEmailLower = (userEmail || '').toLowerCase();
     const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
 
-    if (isCounselor) {
-      return (
-        (callEmail && callEmail === myEmailLower) ||
-        (myNamePrefix && resolvedCounselor.includes(myNamePrefix)) ||
-        (myNamePrefix && myNamePrefix.includes('shris') && resolvedCounselor.includes('shristi'))
-      );
-    }
-
     if (isTeamLead) {
       const isMyOwn = (callEmail && callEmail === myEmailLower) || (myNamePrefix && resolvedCounselor.includes(myNamePrefix));
       if (isMyOwn) return true;
@@ -278,9 +273,18 @@ export default function RecorderHubDashboard() {
           resolvedCounselor.includes(identifier) ||
           (callEmail && callEmail.includes(identifier)) ||
           (call.agentName && call.agentName.toLowerCase().includes(identifier)) ||
-          (call.counselorName && call.counselorName.toLowerCase().includes(identifier))
+          (call.counselorName && call.counselorName.toLowerCase().includes(identifier)) ||
+          (call.leadName && call.leadName.toLowerCase().includes(identifier))
         );
       });
+    }
+
+    if (isCounselor) {
+      return (
+        (callEmail && callEmail === myEmailLower) ||
+        (myNamePrefix && resolvedCounselor.includes(myNamePrefix)) ||
+        (myNamePrefix && myNamePrefix.includes('shris') && resolvedCounselor.includes('shristi'))
+      );
     }
 
     return true;

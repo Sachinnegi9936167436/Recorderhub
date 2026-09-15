@@ -104,6 +104,22 @@ export function useUserRole() {
       const storedEmail = localStorage.getItem('userEmail') || 'admin@academically.com';
       setRole(storedRole);
       setEmail(storedEmail);
+
+      // Refresh role from server in background to ensure up-to-date permissions
+      if (storedEmail) {
+        fetch('/api/v1/auth/counselors', { cache: 'no-store' })
+          .then((res) => res.json())
+          .then((users) => {
+            if (Array.isArray(users)) {
+              const current = users.find((u: any) => (u.email || '').toLowerCase() === storedEmail.toLowerCase());
+              if (current && current.role && current.role !== storedRole) {
+                setRole(current.role);
+                localStorage.setItem('userRole', current.role);
+              }
+            }
+          })
+          .catch(() => {});
+      }
     }
   }, []);
 

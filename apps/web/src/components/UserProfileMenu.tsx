@@ -3,23 +3,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, LogOut, Building2, Shield, Check, Copy } from 'lucide-react';
+import { useUserRole } from './Navigation';
 
 export function UserProfileMenu() {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [userRole, setUserRole] = useState('ADMIN');
-  const [userEmail, setUserEmail] = useState('admin@academically.com');
+  const { role: userRole, email: userEmail } = useUserRole();
   const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedRole = localStorage.getItem('userRole') || 'ADMIN';
-      const storedEmail = localStorage.getItem('userEmail') || 'admin@academically.com';
-      setUserRole(storedRole);
-      setUserEmail(storedEmail);
-    }
-  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
