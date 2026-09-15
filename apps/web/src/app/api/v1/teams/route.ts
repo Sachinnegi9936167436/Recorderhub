@@ -107,13 +107,41 @@ export async function POST(req: Request) {
     const installedRatio = body.installedRatio || `${members.length} / ${members.length}`;
 
     // Find if user admin exists
-    const adminUser = await (UserModel as any).findOne({
-      $or: [
-        { email: admin.toLowerCase() },
-        { firstName: new RegExp(`^${admin}$`, 'i') },
-        { email: /rajdeep/i }
-      ]
-    }).lean().exec();
+    const adminTrimmed = admin.trim();
+    const adminParts = adminTrimmed.split(/\s+/).filter(Boolean);
+    const firstNamePart = adminParts[0] || adminTrimmed;
+    const lastNamePart = adminParts.slice(1).join(' ');
+
+    let adminUser = null;
+    if (body.teamLeadEmail) {
+      adminUser = await (UserModel as any).findOne({ email: body.teamLeadEmail.toLowerCase().trim() }).lean().exec();
+    }
+    if (!adminUser && body.teamLeadId && mongoose.Types.ObjectId.isValid(body.teamLeadId)) {
+      adminUser = await (UserModel as any).findById(body.teamLeadId).lean().exec();
+    }
+    if (!adminUser) {
+      adminUser = await (UserModel as any).findOne({
+        $or: [
+          { email: adminTrimmed.toLowerCase() },
+          { email: new RegExp(`^${adminTrimmed.replace(/\s+/g, '')}@`, 'i') },
+          {
+            $and: [
+              { firstName: new RegExp(`^${firstNamePart}`, 'i') },
+              ...(lastNamePart ? [{ lastName: new RegExp(`^${lastNamePart}`, 'i') }] : [])
+            ]
+          },
+          { firstName: new RegExp(`^${adminTrimmed}`, 'i') }
+        ]
+      }).lean().exec();
+    }
+
+    const teamLeadEmail = body.teamLeadEmail || adminUser?.email || (admin.includes('@') ? admin : undefined);
+    const teamLeadId = body.teamLeadId || (adminUser?._id ? adminUser._id.toString() : undefined);
+
+    // Promote assigned user to TEAM_LEAD if they are currently COUNSELOR/AGENT
+    if (adminUser && (adminUser.role === 'COUNSELOR' || adminUser.role === 'AGENT' || adminUser.role === 'SALES')) {
+      await (UserModel as any).updateOne({ _id: adminUser._id }, { $set: { role: 'TEAM_LEAD' } });
+    }
 
     const newTeam = await (TeamModel as any).findOneAndUpdate(
       { name: new RegExp(`^${teamName}$`, 'i') },
@@ -124,8 +152,8 @@ export async function POST(req: Request) {
           admins,
           members,
           installedRatio,
-          teamLeadEmail: adminUser?.email || (admin.includes('@') ? admin : undefined),
-          teamLeadId: adminUser?._id ? adminUser._id.toString() : undefined,
+          teamLeadEmail,
+          teamLeadId,
         },
       },
       { upsert: true, new: true }
@@ -141,6 +169,8 @@ export async function POST(req: Request) {
         name: newTeam.name,
         admin: newTeam.admin,
         admins: newTeam.admins,
+        teamLeadEmail: newTeam.teamLeadEmail,
+        teamLeadId: newTeam.teamLeadId,
         members: newTeam.members,
         installedRatio: newTeam.installedRatio,
       }
@@ -168,7 +198,48 @@ export async function PUT(req: Request) {
 
     const updateData: any = {};
     if (name) updateData.name = name.trim();
-    if (admin) updateData.admin = admin.trim();
+    if (admin) {
+      updateData.admin = admin.trim();
+      const adminTrimmed = admin.trim();
+      const adminParts = adminTrimmed.split(/\s+/).filter(Boolean);
+      const firstNamePart = adminParts[0] || adminTrimmed;
+      const lastNamePart = adminParts.slice(1).join(' ');
+
+      let adminUser = null;
+      if (body.teamLeadEmail) {
+        adminUser = await (UserModel as any).findOne({ email: body.teamLeadEmail.toLowerCase().trim() }).lean().exec();
+      }
+      if (!adminUser && body.teamLeadId && mongoose.Types.ObjectId.isValid(body.teamLeadId)) {
+        adminUser = await (UserModel as any).findById(body.teamLeadId).lean().exec();
+      }
+      if (!adminUser) {
+        adminUser = await (UserModel as any).findOne({
+          $or: [
+            { email: adminTrimmed.toLowerCase() },
+            { email: new RegExp(`^${adminTrimmed.replace(/\s+/g, '')}@`, 'i') },
+            {
+              $and: [
+                { firstName: new RegExp(`^${firstNamePart}`, 'i') },
+                ...(lastNamePart ? [{ lastName: new RegExp(`^${lastNamePart}`, 'i') }] : [])
+              ]
+            },
+            { firstName: new RegExp(`^${adminTrimmed}`, 'i') }
+          ]
+        }).lean().exec();
+      }
+
+      if (adminUser) {
+        updateData.teamLeadEmail = adminUser.email;
+        updateData.teamLeadId = adminUser._id.toString();
+        if (adminUser.role === 'COUNSELOR' || adminUser.role === 'AGENT' || adminUser.role === 'SALES') {
+          await (UserModel as any).updateOne({ _id: adminUser._id }, { $set: { role: 'TEAM_LEAD' } });
+        }
+      } else if (adminTrimmed.includes('@')) {
+        updateData.teamLeadEmail = adminTrimmed.toLowerCase();
+      }
+    }
+    if (body.teamLeadEmail) updateData.teamLeadEmail = body.teamLeadEmail.toLowerCase().trim();
+    if (body.teamLeadId) updateData.teamLeadId = body.teamLeadId;
     if (Array.isArray(admins)) updateData.admins = admins;
     if (Array.isArray(members)) {
       updateData.members = members;
@@ -195,6 +266,8 @@ export async function PUT(req: Request) {
         name: updated.name,
         admin: updated.admin,
         admins: updated.admins,
+        teamLeadEmail: updated.teamLeadEmail,
+        teamLeadId: updated.teamLeadId,
         members: updated.members,
         installedRatio: updated.installedRatio,
       }

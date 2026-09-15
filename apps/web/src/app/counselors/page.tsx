@@ -196,10 +196,25 @@ function CounselorsAndTeamsInner() {
     if (!newTeamName.trim()) return;
     const adminSelected = newTeamAdmin.trim() || teamLeadsOptions[0] || 'Rajdeep';
     const members = newTeamSelectedMembers;
+
+    // Resolve counselor user object for team lead
+    const matchedCounselor = counselors.find((c) => {
+      const full = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
+      const first = (c.firstName || '').trim().toLowerCase();
+      const target = adminSelected.toLowerCase();
+      return (
+        (c.email && c.email.toLowerCase() === target) ||
+        (full && (full === target || target.includes(full) || full.includes(target))) ||
+        (first && (first === target || target.includes(first)))
+      );
+    });
+
     const newTeamPayload = {
       name: newTeamName.trim(),
       admin: adminSelected,
       admins: [adminSelected],
+      teamLeadEmail: matchedCounselor?.email || (adminSelected.includes('@') ? adminSelected : undefined),
+      teamLeadId: matchedCounselor?._id ? (typeof matchedCounselor._id === 'string' ? matchedCounselor._id : matchedCounselor._id.toString()) : undefined,
       members: members,
       installedRatio: `${members.length} / ${members.length}`,
     };
@@ -212,6 +227,7 @@ function CounselorsAndTeamsInner() {
       });
       if (res.ok) {
         await fetchTeams();
+        await fetchCounselors();
         setToastMessage(`Successfully created team "${newTeamPayload.name}" with admin "${adminSelected}"!`);
       }
     } catch (err) {
@@ -233,10 +249,25 @@ function CounselorsAndTeamsInner() {
     if (!selectedTeam || !adminName) return;
     const currentAdmins = selectedTeam.admins || (selectedTeam.admin ? [selectedTeam.admin] : []);
     const updatedAdmins = Array.from(new Set([...currentAdmins, adminName]));
+    const primaryAdmin = updatedAdmins[0] || adminName;
+
+    const matchedCounselor = counselors.find((c) => {
+      const full = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
+      const first = (c.firstName || '').trim().toLowerCase();
+      const target = primaryAdmin.toLowerCase();
+      return (
+        (c.email && c.email.toLowerCase() === target) ||
+        (full && (full === target || target.includes(full) || full.includes(target))) ||
+        (first && (first === target || target.includes(first)))
+      );
+    });
+
     const updatedTeam = {
       ...selectedTeam,
-      admin: updatedAdmins[0] || adminName,
-      admins: updatedAdmins
+      admin: primaryAdmin,
+      admins: updatedAdmins,
+      teamLeadEmail: matchedCounselor?.email || (primaryAdmin.includes('@') ? primaryAdmin : selectedTeam.teamLeadEmail),
+      teamLeadId: matchedCounselor?._id ? (typeof matchedCounselor._id === 'string' ? matchedCounselor._id : matchedCounselor._id.toString()) : selectedTeam.teamLeadId,
     };
     setSelectedTeam(updatedTeam);
 
@@ -249,9 +280,12 @@ function CounselorsAndTeamsInner() {
           name: selectedTeam.name,
           admin: updatedTeam.admin,
           admins: updatedTeam.admins,
+          teamLeadEmail: updatedTeam.teamLeadEmail,
+          teamLeadId: updatedTeam.teamLeadId,
         }),
       });
       await fetchTeams();
+      await fetchCounselors();
     } catch (err) {
       console.error('Error adding admin to team:', err);
     }
@@ -266,10 +300,24 @@ function CounselorsAndTeamsInner() {
     if (!selectedTeam) return;
     const currentAdmins = selectedTeam.admins || (selectedTeam.admin ? [selectedTeam.admin] : []);
     const reordered = [adminName, ...currentAdmins.filter((a: string) => a !== adminName)];
+
+    const matchedCounselor = counselors.find((c) => {
+      const full = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
+      const first = (c.firstName || '').trim().toLowerCase();
+      const target = adminName.toLowerCase();
+      return (
+        (c.email && c.email.toLowerCase() === target) ||
+        (full && (full === target || target.includes(full) || full.includes(target))) ||
+        (first && (first === target || target.includes(first)))
+      );
+    });
+
     const updatedTeam = {
       ...selectedTeam,
       admin: adminName,
-      admins: reordered
+      admins: reordered,
+      teamLeadEmail: matchedCounselor?.email || (adminName.includes('@') ? adminName : selectedTeam.teamLeadEmail),
+      teamLeadId: matchedCounselor?._id ? (typeof matchedCounselor._id === 'string' ? matchedCounselor._id : matchedCounselor._id.toString()) : selectedTeam.teamLeadId,
     };
     setSelectedTeam(updatedTeam);
 
@@ -282,9 +330,12 @@ function CounselorsAndTeamsInner() {
           name: selectedTeam.name,
           admin: adminName,
           admins: reordered,
+          teamLeadEmail: updatedTeam.teamLeadEmail,
+          teamLeadId: updatedTeam.teamLeadId,
         }),
       });
       await fetchTeams();
+      await fetchCounselors();
     } catch (err) {
       console.error('Error setting primary admin:', err);
     }

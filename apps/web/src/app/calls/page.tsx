@@ -736,34 +736,50 @@ function SalestrailCallsInner() {
   const activeTeams = teamsList;
 
   const myManagedTeams = useMemo(() => {
-    if (isAdmin || isManager) return activeTeams;
+    if (isSuperAdmin || isAdmin || isManager) return activeTeams;
     const myEmailLower = (userEmail || '').toLowerCase().trim();
     const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+
+    // Find current user profile from counselorsList if available
+    const myUserObj = (counselorsList || []).find((c) => (c.email || '').toLowerCase().trim() === myEmailLower);
+    const myFullName = myUserObj ? `${myUserObj.firstName || ''} ${myUserObj.lastName || ''}`.toLowerCase().trim() : '';
+    const myFirstName = myUserObj?.firstName ? myUserObj.firstName.toLowerCase().trim() : '';
+    const myUserId = myUserObj?._id ? (typeof myUserObj._id === 'string' ? myUserObj._id : myUserObj._id.toString()) : '';
+
     return activeTeams.filter((team) => {
       const adminStr = (team.admin || '').toLowerCase().trim();
       const teamLeadEmailStr = (team.teamLeadEmail || '').toLowerCase().trim();
+      const teamLeadIdStr = (team.teamLeadId || '').toString().trim();
       const adminsArr = Array.isArray(team.admins) ? team.admins.map((a: string) => (a || '').toLowerCase().trim()) : [];
 
-      const isMatch = (
-        (teamLeadEmailStr && (teamLeadEmailStr === myEmailLower || myEmailLower.includes(teamLeadEmailStr))) ||
-        (adminStr && (
-          adminStr === myEmailLower ||
-          adminStr === myNamePrefix ||
-          adminStr.includes(myNamePrefix) ||
-          myNamePrefix.includes(adminStr) ||
-          (myNamePrefix.includes('rajdeep') && adminStr.includes('rajdeep'))
-        )) ||
-        adminsArr.some((a: string) => 
-          a === myEmailLower || 
-          a === myNamePrefix || 
-          a.includes(myNamePrefix) || 
-          myNamePrefix.includes(a) ||
-          (myNamePrefix.includes('rajdeep') && a.includes('rajdeep'))
-        )
-      );
-      return isMatch;
+      // 1. Direct ID match
+      if (myUserId && teamLeadIdStr && teamLeadIdStr === myUserId) return true;
+
+      // 2. Direct Email match
+      if (myEmailLower && teamLeadEmailStr && (teamLeadEmailStr === myEmailLower || myEmailLower.includes(teamLeadEmailStr))) return true;
+
+      // 3. Admin name / alias matcher
+      const isLeadMatch = (target: string) => {
+        if (!target) return false;
+        if (myEmailLower && (target === myEmailLower || target.includes(myEmailLower) || myEmailLower.includes(target))) return true;
+        if (myFullName && (target === myFullName || target.includes(myFullName) || myFullName.includes(target))) return true;
+        if (myFirstName && (target === myFirstName || target.includes(myFirstName) || myFirstName.includes(target))) return true;
+        if (myNamePrefix && (target === myNamePrefix || target.includes(myNamePrefix) || myNamePrefix.includes(target))) return true;
+
+        // Check word parts (e.g. "Zaid" in "Zaid Khan" vs "zaidk", "Surya" in "Surya" vs "suryas")
+        const targetWords = target.split(/\s+/).filter((w) => w.length >= 3);
+        if (targetWords.some((w) => myNamePrefix.includes(w) || (myFirstName && myFirstName.includes(w)) || (myFullName && myFullName.includes(w)))) {
+          return true;
+        }
+        return false;
+      };
+
+      if (isLeadMatch(adminStr)) return true;
+      if (adminsArr.some((a) => isLeadMatch(a))) return true;
+
+      return false;
     });
-  }, [activeTeams, userEmail, isAdmin, isSuperAdmin, isManager]);
+  }, [activeTeams, userEmail, isAdmin, isSuperAdmin, isManager, counselorsList]);
 
   const myTeamMemberIdentifiers = useMemo(() => {
     if (isSuperAdmin || isAdmin || isManager) return [];
@@ -773,7 +789,14 @@ function SalestrailCallsInner() {
 
     if (myEmailLower) memberSet.add(myEmailLower);
     if (myNamePrefix) memberSet.add(myNamePrefix);
-    if (myNamePrefix.includes('rajdeep')) memberSet.add('rajdeep');
+
+    const myUserObj = (counselorsList || []).find((c) => (c.email || '').toLowerCase().trim() === myEmailLower);
+    if (myUserObj) {
+      const full = `${myUserObj.firstName || ''} ${myUserObj.lastName || ''}`.toLowerCase().trim();
+      if (full) memberSet.add(full);
+      if (myUserObj.firstName) memberSet.add(myUserObj.firstName.toLowerCase().trim());
+      if (myUserObj.lastName) memberSet.add(myUserObj.lastName.toLowerCase().trim());
+    }
 
     myManagedTeams.forEach((team) => {
       if (Array.isArray(team.members)) {
@@ -781,15 +804,46 @@ function SalestrailCallsInner() {
           if (m) {
             const mClean = m.toLowerCase().trim();
             memberSet.add(mClean);
-            const mPrefix = mClean.split('@')[0].split(' ')[0];
-            if (mPrefix) memberSet.add(mPrefix);
+
+            mClean.split(/\s+/).forEach((w) => {
+              if (w.length >= 3) memberSet.add(w);
+            });
+
+            // Cross-reference with counselorsList (all users in DB)
+            const matchingCounselors = (counselorsList || []).filter((c) => {
+              const cEmail = (c.email || '').toLowerCase().trim();
+              const cFull = `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase().trim();
+              const cFirst = (c.firstName || '').toLowerCase().trim();
+              const cPrefix = cEmail.split('@')[0];
+              return (
+                cEmail.includes(mClean) ||
+                cFull.includes(mClean) ||
+                mClean.includes(cFirst) ||
+                cFirst === mClean ||
+                cPrefix.includes(mClean) ||
+                mClean.includes(cPrefix)
+              );
+            });
+
+            matchingCounselors.forEach((mc) => {
+              const mcEmail = (mc.email || '').toLowerCase().trim();
+              if (mcEmail) {
+                memberSet.add(mcEmail);
+                memberSet.add(mcEmail.split('@')[0]);
+              }
+              const mcFull = `${mc.firstName || ''} ${mc.lastName || ''}`.toLowerCase().trim();
+              if (mcFull) memberSet.add(mcFull);
+              if (mc.firstName) memberSet.add(mc.firstName.toLowerCase().trim());
+              if (mc.lastName) memberSet.add(mc.lastName.toLowerCase().trim());
+              if (mc._id) memberSet.add(mc._id.toString());
+            });
           }
         });
       }
     });
 
     return Array.from(memberSet);
-  }, [myManagedTeams, userEmail, isAdmin, isSuperAdmin, isManager]);
+  }, [myManagedTeams, userEmail, isAdmin, isSuperAdmin, isManager, counselorsList]);
 
   const canUserAccessCall = (call: any) => {
     // 1. Super Admin & System Admin: Can view and listen to ALL call recordings across all teams
@@ -821,8 +875,20 @@ function SalestrailCallsInner() {
 
       if (isMyOwnCall) return { canView: true, canListen: true };
 
+      // Check if call's direct team matches any managed team
+      const callTeamName = (call.team || call.teamName || call.department || '').toLowerCase().trim();
+      if (callTeamName && myManagedTeams.some((t) => (t.name || '').toLowerCase().trim() === callTeamName)) {
+        return { canView: true, canListen: true };
+      }
+
       const isMemberInMyTeam = myTeamMemberIdentifiers.some((identifier) => {
-        return resolvedCounselor.includes(identifier) || (callEmail && callEmail.includes(identifier));
+        if (!identifier || identifier.length < 2) return false;
+        return (
+          resolvedCounselor.includes(identifier) ||
+          (callEmail && callEmail.includes(identifier)) ||
+          (call.agentName && call.agentName.toLowerCase().includes(identifier)) ||
+          (call.counselorName && call.counselorName.toLowerCase().includes(identifier))
+        );
       });
 
       return { canView: isMemberInMyTeam, canListen: isMemberInMyTeam };
@@ -1003,6 +1069,32 @@ function SalestrailCallsInner() {
                     memberIdentifiers.add(mLower);
                     const mPrefix = mLower.split('@')[0].split(' ')[0];
                     if (mPrefix) memberIdentifiers.add(mPrefix);
+
+                    // Cross-reference with counselorsList
+                    if (Array.isArray(counselorsList)) {
+                      counselorsList.forEach((c) => {
+                        const cEmail = (c.email || '').toLowerCase().trim();
+                        const cFull = `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase().trim();
+                        const cFirst = (c.firstName || '').toLowerCase().trim();
+                        const cPref = cEmail.split('@')[0];
+                        if (
+                          cEmail.includes(mLower) ||
+                          cFull.includes(mLower) ||
+                          mLower.includes(cFirst) ||
+                          cFirst === mLower ||
+                          cPref.includes(mLower) ||
+                          mLower.includes(cPref)
+                        ) {
+                          if (cEmail) {
+                            memberIdentifiers.add(cEmail);
+                            memberIdentifiers.add(cPref);
+                          }
+                          if (cFull) memberIdentifiers.add(cFull);
+                          if (c.firstName) memberIdentifiers.add(c.firstName.toLowerCase().trim());
+                          if (c._id) memberIdentifiers.add(c._id.toString());
+                        }
+                      });
+                    }
                   }
                 });
               }
