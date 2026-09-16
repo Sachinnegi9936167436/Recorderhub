@@ -261,9 +261,9 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text("Automatic S3 Upload", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
-                            Text("Upload call audio instantly after call completes", fontSize = 11.5.sp, color = TextSecondary)
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Automatic S3 Upload", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = TextPrimary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Text("Upload call audio instantly after call completes", fontSize = 11.sp, color = TextSecondary, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                         Switch(
                             checked = autoSyncEnabled,
@@ -281,9 +281,9 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text("Upload Network Policy", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
-                            Text("Syncs recordings over both Mobile Data & Wi-Fi", fontSize = 11.5.sp, color = TextSecondary)
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Upload Network Policy", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = TextPrimary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Text("Syncs recordings over both Mobile Data & Wi-Fi", fontSize = 11.sp, color = TextSecondary, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                         Surface(
                             shape = RoundedCornerShape(6.dp),
@@ -294,7 +294,8 @@ fun SettingsScreen(
                                 color = GreenActive,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                maxLines = 1
                             )
                         }
                     }
@@ -481,9 +482,9 @@ private fun SettingStatusRow(title: String, subtitle: String, isActive: Boolean,
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = TextPrimary)
-            Text(subtitle, fontSize = 11.5.sp, color = TextSecondary)
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = TextPrimary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(subtitle, fontSize = 11.5.sp, color = TextSecondary, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
         Surface(
             shape = RoundedCornerShape(12.dp),
@@ -494,7 +495,8 @@ private fun SettingStatusRow(title: String, subtitle: String, isActive: Boolean,
                 color = if (isActive) GreenActive else Color(0xFFD97706),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                maxLines = 1
             )
         }
     }

@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.academically.recordhub.data.local.CallEventEntity
@@ -179,16 +180,18 @@ fun AnalyticsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(HeaderBarBg)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = formattedRangeString,
-                    fontSize = 12.5.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
-                    modifier = Modifier.weight(1f)
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp)
                 )
 
                 Surface(
@@ -198,21 +201,22 @@ fun AnalyticsScreen(
                     modifier = Modifier.clickable { showBottomSheet = true }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = selectedRange,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = TextPrimary
+                            fontSize = 12.5.sp,
+                            color = TextPrimary,
+                            maxLines = 1
                         )
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = "Select Range",
                             tint = TextPrimary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -267,24 +271,31 @@ fun AnalyticsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceAround
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceAround,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Total Talk Time", fontSize = 12.sp, color = TextSecondary)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(durationFormatted, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextPrimary)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Total Talk Time", fontSize = 11.5.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(durationFormatted, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             Divider(
                                 modifier = Modifier
-                                    .height(40.dp)
+                                    .height(36.dp)
                                     .width(1.dp),
                                 color = CardBorderColor
                             )
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Avg Call Duration", fontSize = 12.sp, color = TextSecondary)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("${avgDurationSecs}s", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextPrimary)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Avg Call Duration", fontSize = 11.5.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text("${avgDurationSecs}s", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
@@ -298,10 +309,10 @@ fun AnalyticsScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
+                                .padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Text("SIM Breakdown", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                            Text("SIM Breakdown", fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = TextPrimary)
 
                             val sim1Count = rangeCalls.count { it.simSlot == 0 }
                             val sim2Count = rangeCalls.count { it.simSlot == 1 }
@@ -379,11 +390,24 @@ private fun AnalyticsCard(title: String, value: String, color: Color, modifier: 
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Text(text = title, fontSize = 12.sp, color = TextSecondary)
-            Text(text = value, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = color)
+            Text(
+                text = title, 
+                fontSize = 11.5.sp, 
+                color = TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = value, 
+                fontSize = 19.sp, 
+                fontWeight = FontWeight.Bold, 
+                color = color,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -396,8 +420,8 @@ private fun ChannelProgressRow(label: String, count: Int, total: Int, color: Col
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(label, fontSize = 12.5.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
-            Text("$count (${(fraction * 100).toInt()}%)", fontSize = 12.sp, color = TextSecondary)
+            Text(label, fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$count (${(fraction * 100).toInt()}%)", fontSize = 11.5.sp, color = TextSecondary, maxLines = 1)
         }
         LinearProgressIndicator(
             progress = { fraction },

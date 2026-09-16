@@ -280,9 +280,14 @@ fun RecordingUploadScreen(
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 80.dp)
             ) {
-                items(recordingsWithFiles, key = { it.idempotencyKey }) { item ->
+                items(
+                    items = recordingsWithFiles, 
+                    key = { it.idempotencyKey.ifBlank { "${it.id}_${it.startTime}" } },
+                    contentType = { "recording_item" }
+                ) { item ->
                     val file = File(item.recordingPath!!)
                     val isPlaying = playingFilePath == item.recordingPath
                     val isSynced = item.recordingStatus == "SYNCED"
@@ -308,12 +313,12 @@ fun RecordingUploadScreen(
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).padding(end = 8.dp)
                             ) {
                                 // Play / Pause Button
                                 Box(
                                     modifier = Modifier
-                                        .size(42.dp)
+                                        .size(40.dp)
                                         .clip(CircleShape)
                                         .background(if (isPlaying) BrandTeal400 else Navy800)
                                         .clickable { togglePlay(item.recordingPath) },
@@ -323,17 +328,23 @@ fun RecordingUploadScreen(
                                         imageVector = if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
                                         contentDescription = "Play/Stop",
                                         tint = if (isPlaying) Navy950 else BrandTeal400,
-                                        modifier = Modifier.size(22.dp)
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
 
-                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
                                     Text(
                                         text = item.phoneNumber,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White,
-                                        fontSize = 13.5.sp,
-                                        fontFamily = FontFamily.Monospace
+                                        fontSize = 13.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        softWrap = false
                                     )
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -348,13 +359,17 @@ fun RecordingUploadScreen(
                                                 color = BrandTeal400,
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                maxLines = 1
                                             )
                                         }
                                         Text(
                                             text = "${item.durationSeconds}s • ${sizeKb} KB",
                                             color = Slate400,
-                                            fontSize = 11.sp
+                                            fontSize = 10.5.sp,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            softWrap = false
                                         )
                                     }
                                 }

@@ -140,7 +140,11 @@ fun ContactsScreen(callEvents: List<CallEventEntity>) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
-                items(contactsList, key = { it.phoneNumber }) { contact ->
+                items(
+                    items = contactsList, 
+                    key = { it.phoneNumber },
+                    contentType = { "contact_entry" }
+                ) { contact ->
                     Card(
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = CardBg),
@@ -156,11 +160,12 @@ fun ContactsScreen(callEvents: List<CallEventEntity>) {
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f).padding(end = 8.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(42.dp)
+                                        .size(38.dp)
                                         .clip(CircleShape)
                                         .background(Color(0xFFE0F2FE)),
                                     contentAlignment = Alignment.Center
@@ -168,14 +173,29 @@ fun ContactsScreen(callEvents: List<CallEventEntity>) {
                                     Text(
                                         text = contact.initials,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp,
+                                        fontSize = 15.sp,
                                         color = BluePrimary
                                     )
                                 }
 
-                                Column {
-                                    Text(text = contact.name, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = TextPrimary)
-                                    Text(text = contact.phoneNumber, fontSize = 12.5.sp, color = TextSecondary)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = contact.name, 
+                                        fontWeight = FontWeight.Bold, 
+                                        fontSize = 14.sp, 
+                                        color = TextPrimary,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        softWrap = false
+                                    )
+                                    Text(
+                                        text = contact.phoneNumber, 
+                                        fontSize = 12.sp, 
+                                        color = TextSecondary,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        softWrap = false
+                                    )
                                 }
                             }
 

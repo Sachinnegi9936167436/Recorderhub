@@ -292,17 +292,23 @@ fun TrackedCallsScreen(
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
                     groupedCalls.forEach { (dateHeader, callsForDate) ->
-                        item {
+                        item(contentType = "date_header") {
                             Text(
                                 text = dateHeader,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
+                                fontSize = 15.sp,
                                 color = TextPrimary,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
-                        items(callsForDate, key = { it.id }) { call ->
+                        items(
+                            items = callsForDate, 
+                            key = { it.idempotencyKey.ifBlank { "${it.id}_${it.startTime}" } },
+                            contentType = { "call_item" }
+                        ) { call ->
                             CallHistoryItemCard(
                                 call = call,
                                 onCopyNumber = {
@@ -409,9 +415,25 @@ private fun CallHistoryItemCard(
     val isIncoming = call.direction.equals("INCOMING", ignoreCase = true)
     val isMissed = call.status.equals("MISSED", ignoreCase = true) || call.status.equals("REJECTED", ignoreCase = true)
 
-    val timeFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
-    val callTime = timeFormat.format(Date(call.startTime))
+    val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+    val callTime = remember(call.startTime) { timeFormat.format(Date(call.startTime)) }
     val durationText = "${call.durationSeconds}s"
+
+    val isWhatsApp = call.disposition.contains("WhatsApp", ignoreCase = true) || call.idempotencyKey.startsWith("WA_")
+    val displayName = remember(call.disposition, call.phoneNumber) {
+        if (call.disposition.isNotBlank() &&
+            !call.disposition.equals("New Lead Inquiry", ignoreCase = true) &&
+            !call.disposition.equals("Imported Phone Call", ignoreCase = true) &&
+            !call.disposition.equals("WhatsApp Call", ignoreCase = true) &&
+            !call.disposition.equals("Manual Call Record", ignoreCase = true)
+        ) {
+            call.disposition
+        } else if (call.phoneNumber.isNotBlank()) {
+            call.phoneNumber
+        } else {
+            "Contact"
+        }
+    }
 
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -424,12 +446,12 @@ private fun CallHistoryItemCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 14.dp, start = 14.dp, end = 14.dp, bottom = 10.dp),
+                    .padding(top = 12.dp, start = 12.dp, end = 12.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
                         .background(
                             when {
@@ -448,60 +470,94 @@ private fun CallHistoryItemCard(
                         },
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 6.dp)
+                ) {
                     Text(
-                        text = "Unknown",
+                        text = displayName,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         color = TextPrimary,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        softWrap = false
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = call.phoneNumber,
-                        fontSize = 13.sp,
-                        color = TextSecondary
+                        fontSize = 12.5.sp,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        softWrap = false
                     )
                 }
 
                 Column(
                     horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .border(1.dp, Color(0xFF94A3B8), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = if (call.simSlot == 0) "1" else "2",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
+                    if (isWhatsApp) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFDCFCE7)
+                        ) {
+                            Text(
+                                text = "WA",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF166534),
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .border(1.dp, Color(0xFF94A3B8), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = if (call.simSlot == 0) "SIM 1" else "SIM 2",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     }
 
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = callTime,
-                            fontSize = 11.5.sp,
-                            color = TextSecondary
+                            fontSize = 11.sp,
+                            color = TextSecondary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        Text(
+                            text = "•",
+                            fontSize = 9.sp,
+                            color = Color(0xFFCBD5E1)
                         )
                         Text(
                             text = durationText,
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            color = TextSecondary
+                            color = TextSecondary,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -510,21 +566,21 @@ private fun CallHistoryItemCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
+                    .padding(horizontal = 10.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onCopyNumber, modifier = Modifier.size(36.dp)) {
-                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
+                IconButton(onClick = onCopyNumber, modifier = Modifier.size(34.dp)) {
+                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF64748B), modifier = Modifier.size(17.dp))
                 }
-                IconButton(onClick = onSendSms, modifier = Modifier.size(36.dp)) {
-                    Icon(imageVector = Icons.Default.ChatBubbleOutline, contentDescription = "SMS", tint = Color(0xFF0284C7), modifier = Modifier.size(19.dp))
+                IconButton(onClick = onSendSms, modifier = Modifier.size(34.dp)) {
+                    Icon(imageVector = Icons.Default.ChatBubbleOutline, contentDescription = "SMS", tint = Color(0xFF0284C7), modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = onOpenWhatsApp, modifier = Modifier.size(36.dp)) {
-                    Icon(imageVector = Icons.Default.Chat, contentDescription = "WhatsApp", tint = WhatsAppColor, modifier = Modifier.size(19.dp))
+                IconButton(onClick = onOpenWhatsApp, modifier = Modifier.size(34.dp)) {
+                    Icon(imageVector = Icons.Default.Chat, contentDescription = "WhatsApp", tint = WhatsAppColor, modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = onCall, modifier = Modifier.size(36.dp)) {
-                    Icon(imageVector = Icons.Default.Call, contentDescription = "Call", tint = Color(0xFF2563EB), modifier = Modifier.size(19.dp))
+                IconButton(onClick = onCall, modifier = Modifier.size(34.dp)) {
+                    Icon(imageVector = Icons.Default.Call, contentDescription = "Call", tint = Color(0xFF2563EB), modifier = Modifier.size(18.dp))
                 }
             }
 
@@ -533,7 +589,7 @@ private fun CallHistoryItemCard(
                     .fillMaxWidth()
                     .background(NoteBarBg)
                     .clickable { onAddNote() }
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -543,14 +599,15 @@ private fun CallHistoryItemCard(
                         imageVector = Icons.Default.Description,
                         contentDescription = "Note",
                         tint = Color(0xFF94A3B8),
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Text(
                         text = if (call.disposition.isNotBlank() && call.disposition != "New Lead Inquiry") call.disposition else "Tap to add note & tag",
-                        fontSize = 12.sp,
+                        fontSize = 11.5.sp,
                         color = if (call.disposition.isBlank() || call.disposition == "New Lead Inquiry") Color(0xFF94A3B8) else TextPrimary,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        softWrap = false
                     )
                 }
             }

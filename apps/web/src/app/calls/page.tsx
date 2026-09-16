@@ -785,7 +785,7 @@ function SalestrailCallsInner() {
     });
   }, [activeTeams, userEmail, isAdmin, isSuperAdmin, isManager, counselorsList]);
 
-  const isTeamLead = rawIsTeamLead || myManagedTeams.length > 0;
+  const isTeamLead = !isSuperAdmin && !isAdmin && !isManager && (rawIsTeamLead || myManagedTeams.length > 0);
   const isCounselor = rawIsCounselor && myManagedTeams.length === 0 && !isAdmin && !isSuperAdmin && !isManager;
 
   const myTeamMemberIdentifiers = useMemo(() => {
@@ -906,16 +906,54 @@ function SalestrailCallsInner() {
   };
 
   // Get unique list of counselor names for dropdown
-  const uniqueCounselors = Array.from(
-    new Set(
-      callsList
-        .map((c) => resolveCounselorName(c))
-        .concat(counselorsList.map((c) => (c.firstName ? `${c.firstName} ${c.lastName || ''}`.trim() : c.email?.split('@')[0])))
-        .filter(Boolean)
-    )
-  );
+  const uniqueCounselors = useMemo(() => {
+    const names = new Set<string>();
+
+    // 1. From counselorsList (all provisioned users)
+    (counselorsList || []).forEach((c) => {
+      const full = `${c.firstName || ''} ${c.lastName || ''}`.trim();
+      if (full) {
+        names.add(full);
+      } else if (c.name) {
+        names.add(c.name.trim());
+      } else if (c.email) {
+        const prefix = c.email.split('@')[0];
+        names.add(prefix.replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()));
+      }
+    });
+
+    // 2. From actual callsList
+    (callsList || []).forEach((call) => {
+      const resolved = resolveCounselorName(call);
+      if (
+        resolved &&
+        resolved !== 'Counselor Agent' &&
+        resolved !== 'Counselor' &&
+        !resolved.startsWith('ANDROID-')
+      ) {
+        names.add(resolved);
+      }
+    });
+
+    return Array.from(names).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [counselorsList, callsList]);
 
   const displayedTeams = useMemo(() => {
+    if (isSuperAdmin || isAdmin || isManager) {
+      const userCreatedTeams = teamsList.map((t) => t.name).filter(Boolean);
+      const callTeams = callsList.map((c) => c.team || c.teamName || c.department).filter(Boolean);
+      const counselorTeams = counselorsList.map((u) => u.team || u.teamName || u.department).filter(Boolean);
+      const uniqueRealTeams = Array.from(new Set([...userCreatedTeams, ...callTeams, ...counselorTeams]));
+
+      return uniqueRealTeams.filter(
+        (name) =>
+          name !== 'Global Sales' &&
+          name !== 'NCLEX Counselors' &&
+          name !== 'DHA Counselors' &&
+          name !== 'Sales Team'
+      );
+    }
+
     if (isTeamLead && myManagedTeams.length > 0) {
       return myManagedTeams.map((t) => t.name).filter(Boolean);
     }
@@ -935,15 +973,80 @@ function SalestrailCallsInner() {
         name !== 'DHA Counselors' &&
         name !== 'Sales Team'
     );
-  }, [isTeamLead, isCounselor, myManagedTeams, teamsList, callsList, counselorsList]);
+  }, [isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor, myManagedTeams, teamsList, callsList, counselorsList]);
 
   const displayedCounselors = useMemo(() => {
-    if (isTeamLead) {
-      return uniqueCounselors.filter((c) => {
-        const cLower = c.toLowerCase();
-        return myTeamMemberIdentifiers.some((id) => cLower.includes(id));
-      });
+    // 1. Super Admin / Admin / Manager see all counselors in the system
+    if (isSuperAdmin || isAdmin || isManager) {
+      return uniqueCounselors;
     }
+
+    // 2. Team Lead: see counselors in their managed teams + self
+    if (isTeamLead) {
+      const allowedNames = new Set<string>();
+
+      // Self
+      const myEmailLower = (userEmail || '').toLowerCase().trim();
+      const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+      if (myEmailLower) allowedNames.add(myEmailLower);
+      if (myNamePrefix) allowedNames.add(myNamePrefix);
+
+      const myUserObj = (counselorsList || []).find((c) => (c.email || '').toLowerCase().trim() === myEmailLower);
+      if (myUserObj) {
+        const full = `${myUserObj.firstName || ''} ${myUserObj.lastName || ''}`.trim();
+        if (full) allowedNames.add(full);
+      }
+
+      // Add all members in managed teams
+      myManagedTeams.forEach((team) => {
+        const teamNameLower = (team.name || '').toLowerCase().trim();
+
+        // Check counselorsList where user's team matches this team
+        (counselorsList || []).forEach((c) => {
+          const cTeam = (c.team || c.teamName || c.department || '').toLowerCase().trim();
+          const cEmail = (c.email || '').toLowerCase().trim();
+          const cId = c._id ? String(c._id) : '';
+          const cFull = `${c.firstName || ''} ${c.lastName || ''}`.trim();
+
+          const isInTeamMembers = Array.isArray(team.members) && team.members.some((m: string) => {
+            if (!m) return false;
+            const mClean = m.toLowerCase().trim();
+            return (
+              mClean === cEmail ||
+              mClean === cId ||
+              (cFull && mClean === cFull.toLowerCase()) ||
+              (c.firstName && mClean === c.firstName.toLowerCase()) ||
+              mClean === cEmail.split('@')[0]
+            );
+          });
+
+          if (isInTeamMembers || (teamNameLower && cTeam === teamNameLower)) {
+            if (cFull) allowedNames.add(cFull);
+            if (c.name) allowedNames.add(c.name.trim());
+            if (c.email) allowedNames.add(c.email.split('@')[0]);
+          }
+        });
+
+        if (Array.isArray(team.members)) {
+          team.members.forEach((m: string) => {
+            if (m && m.trim()) allowedNames.add(m.trim());
+          });
+        }
+      });
+
+      const filtered = uniqueCounselors.filter((c) => {
+        const cLower = c.toLowerCase().trim();
+        if (allowedNames.has(c)) return true;
+        if (Array.from(allowedNames).some((a) => a.toLowerCase().trim() === cLower || cLower.includes(a.toLowerCase().trim()) || a.toLowerCase().trim().includes(cLower))) {
+          return true;
+        }
+        return myTeamMemberIdentifiers.some((id) => id && (cLower.includes(id) || id.includes(cLower)));
+      });
+
+      return filtered.length > 0 ? filtered : uniqueCounselors;
+    }
+
+    // 3. Counselor / Sales Agent: see only themselves
     if (isCounselor) {
       const myEmailLower = (userEmail || '').toLowerCase();
       const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
@@ -957,8 +1060,9 @@ function SalestrailCallsInner() {
       });
       return matched.length > 0 ? matched : [userEmail ? userEmail.split('@')[0] : 'My Calls'];
     }
+
     return uniqueCounselors;
-  }, [isTeamLead, isCounselor, uniqueCounselors, myTeamMemberIdentifiers, userEmail]);
+  }, [isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor, uniqueCounselors, myManagedTeams, myTeamMemberIdentifiers, counselorsList, userEmail]);
 
   // 1. Base Filter (Permissions, Message exclusion, Recordings query, Search Query, Date Range, Sales Rep / Team)
   const baseFilteredCalls = useMemo(() => {
@@ -1036,7 +1140,19 @@ function SalestrailCallsInner() {
       // 3. Select Sales Rep / Team Filter
       if (repCategory === 'Individual') {
         if (subFilter !== 'All Counselors') {
-          if (user.toLowerCase() !== subFilter.toLowerCase()) {
+          const targetLower = subFilter.toLowerCase().trim();
+          const userLower = user.toLowerCase().trim();
+          const callEmail = (call.counselorEmail || call.email || '').toLowerCase().trim();
+          const agentName = (call.agentName || call.counselorName || '').toLowerCase().trim();
+
+          const matchesIndividual =
+            userLower === targetLower ||
+            userLower.includes(targetLower) ||
+            targetLower.includes(userLower) ||
+            (callEmail && (callEmail === targetLower || callEmail.includes(targetLower) || targetLower.includes(callEmail))) ||
+            (agentName && (agentName === targetLower || agentName.includes(targetLower) || targetLower.includes(agentName)));
+
+          if (!matchesIndividual) {
             return false;
           }
         }
