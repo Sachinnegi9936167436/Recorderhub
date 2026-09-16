@@ -18,6 +18,10 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  ArrowUpRight,
+  ArrowDownLeft,
+  PhoneOutgoing,
+  PhoneIncoming,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -175,13 +179,13 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
     }
   }, [isThisCallActive, activePlayerDuration, audioSrc]);
 
-  const rawPhone = call.phoneNumber || call.phone || '';
-  const cleanDigits = rawPhone.replace(/\D/g, '').slice(-10) || 'Contact';
-  const contactName = (call.leadName || call.name || cleanDigits).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const rawPhone = (call.phoneNumber || call.phoneNumberMasked || call.phone || '').trim();
+  const safePhoneForFile = (rawPhone.replace(/[^a-zA-Z0-9_-]/g, '_') || 'Contact');
+  const contactName = (call.leadName || call.name || safePhoneForFile).replace(/[^a-zA-Z0-9_-]/g, '_');
   const recordDate = call.startTime ? new Date(call.startTime) : new Date();
   const dateFormatted = recordDate.toISOString().slice(0, 10);
   const timeFormatted = recordDate.toTimeString().slice(0, 8).replace(/:/g, '-');
-  const downloadFileName = `Recording_${contactName}_${cleanDigits}_${dateFormatted}_${timeFormatted}.m4a`;
+  const downloadFileName = `Recording_${contactName}_${safePhoneForFile}_${dateFormatted}_${timeFormatted}.m4a`;
 
   const timeDisplayStr = recordDate.toLocaleTimeString('en-US', {
     hour: '2-digit',
@@ -1153,21 +1157,38 @@ function SalestrailCallsInner() {
   const callStats = useMemo(() => {
     let totalDurSec = 0;
     let answeredCount = 0;
-    let shortCount = 0;
-    let longCount = 0;
     let reviewedCount = 0;
     let withRecCount = 0;
     let waCount = 0;
     let simCount = 0;
     let mismatchCount = 0;
 
+    let outboundCount = 0;
+    let outboundDurSec = 0;
+    let inboundCount = 0;
+    let inboundDurSec = 0;
+
     baseFilteredCalls.forEach((c) => {
       const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
       const dur = isAns ? Number(c.durationSeconds || 0) : 0;
       if (isAns) answeredCount++;
       totalDurSec += dur;
-      if (isAns && dur > 0 && dur < 15) shortCount++;
-      if (isAns && dur >= 300) longCount++;
+
+      const dir = (c.direction || '').toUpperCase();
+      const isOutbound = dir === 'OUTGOING' || dir === 'OUTBOUND';
+      const isInbound = dir === 'INCOMING' || dir === 'INBOUND';
+
+      if (isOutbound) {
+        outboundCount++;
+        outboundDurSec += dur;
+      } else if (isInbound) {
+        inboundCount++;
+        inboundDurSec += dur;
+      } else {
+        outboundCount++;
+        outboundDurSec += dur;
+      }
+
       const hasRec = (c.audioUrl || c.s3Key || c.recordingStatus === 'COMPLETED' || c.recordingStatus === 'PENDING_UPLOAD') && c.recordingStatus !== 'NONE';
       if (hasRec) {
         withRecCount++;
@@ -1181,16 +1202,26 @@ function SalestrailCallsInner() {
       if (isWA) waCount++; else simCount++;
     });
 
-    const hours = Math.floor(totalDurSec / 3600);
-    const mins = Math.floor((totalDurSec % 3600) / 60);
+    const formatDuration = (totalSec: number) => {
+      const hours = Math.floor(totalSec / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = totalSec % 60;
+      if (hours > 0) return `${hours}h ${mins}m`;
+      if (mins > 0) return `${mins}m ${secs}s`;
+      return `${secs}s`;
+    };
 
     return {
       totalCount: baseFilteredCalls.length,
       totalDurSec,
-      totalTalkTimeStr: hours > 0 ? `${hours}h ${mins}m` : `${mins}m ${totalDurSec % 60}s`,
+      totalTalkTimeStr: formatDuration(totalDurSec),
+      outboundCount,
+      outboundDurSec,
+      outboundTalkTimeStr: formatDuration(outboundDurSec),
+      inboundCount,
+      inboundDurSec,
+      inboundTalkTimeStr: formatDuration(inboundDurSec),
       answeredCount,
-      shortCount,
-      longCount,
       reviewedCount,
       withRecCount,
       waCount,
@@ -1202,18 +1233,7 @@ function SalestrailCallsInner() {
   // 3. Final filtered calls with Anomaly / Category Tab selection applied
   const filteredCalls = useMemo(() => {
     return baseFilteredCalls.filter((call) => {
-      if (anomalyFilter === 'short_calls') {
-        const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-        const dur = isAns ? Number(call.durationSeconds || 0) : 0;
-        if (!isAns || dur <= 0 || dur >= 15) return false;
-      } else if (anomalyFilter === 'recordings') {
-        const hasRec = (call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD') && call.recordingStatus !== 'NONE';
-        if (!hasRec) return false;
-      } else if (anomalyFilter === 'long_calls') {
-        const isAns = (call.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-        const dur = isAns ? Number(call.durationSeconds || 0) : 0;
-        if (!isAns || dur < 300) return false;
-      } else if (anomalyFilter === 'whatsapp') {
+      if (anomalyFilter === 'whatsapp') {
         const isWA = (call.channel || '').toUpperCase() === 'WHATSAPP' || (call.disposition || '').toLowerCase().includes('whatsapp') || (call.idempotencyKey || '').startsWith('WA_');
         if (!isWA) return false;
       } else if (anomalyFilter === 'sim') {
@@ -1581,28 +1601,6 @@ function SalestrailCallsInner() {
             </button>
 
             <button
-              onClick={() => setAnomalyFilter('short_calls')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'short_calls'
-                ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                }`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Short Calls &lt;15s ({callStats.shortCount})</span>
-            </button>
-
-            <button
-              onClick={() => setAnomalyFilter('recordings')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'recordings'
-                ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
-                : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
-                }`}
-            >
-              <Mic className="w-3.5 h-3.5" />
-              <span>SIM Recordings ({callStats.withRecCount})</span>
-            </button>
-
-            <button
               onClick={() => setAnomalyFilter('sim')}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'sim'
                 ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
@@ -1625,17 +1623,6 @@ function SalestrailCallsInner() {
             </button>
 
             <button
-              onClick={() => setAnomalyFilter('long_calls')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'long_calls'
-                ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
-                }`}
-            >
-              <Flame className="w-3.5 h-3.5" />
-              <span>Long Calls &gt;5m ({callStats.longCount})</span>
-            </button>
-
-            <button
               onClick={() => setAnomalyFilter('mismatch')}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'mismatch'
                 ? 'bg-red-600 text-white border-red-600 shadow-xs'
@@ -1648,10 +1635,32 @@ function SalestrailCallsInner() {
             </button>
           </div>
 
-          <div className="flex items-center space-x-3 text-xs font-semibold text-slate-600 px-2">
-            <span className="flex items-center space-x-1.5 bg-slate-50 px-3 py-1 rounded-xl border border-slate-200">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+            {/* Total Talk Time */}
+            <span className="flex items-center space-x-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200" title="Total talk duration across all answered calls in selection">
               <Clock className="w-3.5 h-3.5 text-slate-600" />
-              <span>Total Talk Time: <strong className="text-slate-900">{callStats.totalTalkTimeStr}</strong></span>
+              <span>
+                Total Talk: <strong className="text-slate-900">{callStats.totalTalkTimeStr}</strong>{' '}
+                <span className="text-slate-500 font-medium">({callStats.totalCount} calls)</span>
+              </span>
+            </span>
+
+            {/* Outbound Talk Time & Count */}
+            <span className="flex items-center space-x-1.5 bg-sky-50 px-3 py-1.5 rounded-xl border border-sky-200 text-sky-900" title="Total talk duration and call count for Outbound calls">
+              <PhoneOutgoing className="w-3.5 h-3.5 text-sky-600" />
+              <span>
+                Outbound: <strong className="text-sky-950">{callStats.outboundTalkTimeStr}</strong>{' '}
+                <span className="text-sky-700 font-medium">({callStats.outboundCount} calls)</span>
+              </span>
+            </span>
+
+            {/* Inbound Talk Time & Count */}
+            <span className="flex items-center space-x-1.5 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 text-emerald-900" title="Total talk duration and call count for Inbound calls">
+              <PhoneIncoming className="w-3.5 h-3.5 text-emerald-600" />
+              <span>
+                Inbound: <strong className="text-emerald-950">{callStats.inboundTalkTimeStr}</strong>{' '}
+                <span className="text-emerald-700 font-medium">({callStats.inboundCount} calls)</span>
+              </span>
             </span>
           </div>
         </div>
@@ -1694,10 +1703,38 @@ function SalestrailCallsInner() {
                   </tr>
                 ) : (
                   paginatedCalls.map((call, idx) => {
-                    const rawPhoneInput = call.phoneNumber || call.phoneNumberMasked || call.phone || '';
-                    const digitsOnly = rawPhoneInput.replace(/\D/g, '');
-                    const cleanPhone = digitsOnly.length >= 10 ? `+91 ${digitsOnly.slice(-10, -5)} ${digitsOnly.slice(-5)}` : (rawPhoneInput || '+91 99361 67436');
-                    const contactName = call.leadName || call.name || cleanPhone;
+                    const isWhatsApp =
+                      (call.channel || '').toUpperCase() === 'WHATSAPP' ||
+                      (call.disposition || '').toLowerCase().includes('whatsapp') ||
+                      (call.idempotencyKey || '').startsWith('WA_');
+
+                    const rawPhoneInput = (call.phoneNumber || call.phoneNumberMasked || call.phone || '').trim();
+                    const rawLeadName = (call.leadName || call.name || '').trim();
+
+                    let cleanPhone = rawPhoneInput;
+                    if (isWhatsApp) {
+                      // WhatsApp Calls: Do NOT automatically add +91. Print the exact phone number captured.
+                      cleanPhone = rawPhoneInput || rawLeadName || 'WhatsApp Contact';
+                    } else {
+                      // SIM Calls: preserve international prefix if present, or format 10-digit Indian numbers
+                      if (rawPhoneInput.startsWith('+')) {
+                        cleanPhone = rawPhoneInput;
+                      } else {
+                        const digitsOnly = rawPhoneInput.replace(/\D/g, '');
+                        if (digitsOnly.length === 10) {
+                          cleanPhone = `+91 ${digitsOnly.slice(0, 5)} ${digitsOnly.slice(5)}`;
+                        } else if (digitsOnly.startsWith('0') && digitsOnly.length === 11) {
+                          const c10 = digitsOnly.slice(1);
+                          cleanPhone = `+91 ${c10.slice(0, 5)} ${c10.slice(5)}`;
+                        } else if (digitsOnly.length > 10) {
+                          cleanPhone = `+${digitsOnly}`;
+                        } else {
+                          cleanPhone = rawPhoneInput || 'Contact';
+                        }
+                      }
+                    }
+
+                    const contactName = rawLeadName || cleanPhone;
                     const startTimeStr = call.startTime ? new Date(call.startTime).toLocaleString('en-US', {
                       month: '2-digit',
                       day: '2-digit',
@@ -1717,10 +1754,6 @@ function SalestrailCallsInner() {
                       : '0s';
 
                     const isOutbound = (call.direction || 'OUTGOING').toUpperCase() === 'OUTGOING' || (call.direction || '').toUpperCase() === 'OUTBOUND';
-                    const isWhatsApp =
-                      (call.channel || '').toUpperCase() === 'WHATSAPP' ||
-                      (call.disposition || '').toLowerCase().includes('whatsapp') ||
-                      (call.idempotencyKey || '').startsWith('WA_');
 
                     const isMismatchRow = isCallDurationMismatch(call);
 

@@ -63,10 +63,10 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
 
     const rawPhone = (body.phoneNumber || body.phone || body.phoneNumberMasked || '').trim();
-    const formattedPhone = formatPhoneNumber(rawPhone) || rawPhone || '+91 99361 67436';
+    const channel = (body.channel || 'CELLULAR').toUpperCase();
+    const formattedPhone = channel === 'WHATSAPP' ? rawPhone : (formatPhoneNumber(rawPhone) || rawPhone || '+91 99361 67436');
     const agentName = (body.agentName || body.counselorName || 'Counselor Agent').trim();
     const leadName = (body.leadName || body.name || formattedPhone).trim();
-    const channel = (body.channel || 'CELLULAR').toUpperCase();
     const direction = (body.direction || 'OUTGOING').toUpperCase();
     const status = (body.status || 'ANSWERED').toUpperCase();
     const durationSeconds = status === 'ANSWERED' ? Math.max(0, Number(body.durationSeconds || 0)) : 0;

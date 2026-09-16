@@ -8,12 +8,17 @@ import {
   ChevronDown, 
   User, 
   MessageSquare, 
-  RefreshCw,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  Calendar,
-  X
+  RefreshCw, 
+  ArrowUpDown, 
+  ArrowUp, 
+  ArrowDown, 
+  ArrowUpRight,
+  ArrowDownLeft,
+  PhoneOutgoing,
+  PhoneIncoming,
+  Clock,
+  Calendar, 
+  X 
 } from 'lucide-react';
 
 export default function RecorderHubDashboard() {
@@ -527,12 +532,35 @@ export default function RecorderHubDashboard() {
     const isAns = (c?.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
     return sum + (isAns ? (c?.durationSeconds || 0) : 0);
   }, 0);
-  const avgSeconds = answeredCount > 0 ? Math.round(totalSeconds / answeredCount) : (validCalls.length > 0 ? Math.round(totalSeconds / validCalls.length) : 0);
 
+  const outboundSeconds = validCalls.reduce((sum, c) => {
+    const isAns = (c?.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+    const isOut = (c?.direction || '').toUpperCase() === 'OUTGOING' || (c?.direction || '').toUpperCase() === 'OUTBOUND';
+    return sum + (isAns && isOut ? (c?.durationSeconds || 0) : 0);
+  }, 0);
+
+  const inboundSeconds = validCalls.reduce((sum, c) => {
+    const isAns = (c?.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+    const isIn = (c?.direction || '').toUpperCase() === 'INCOMING' || (c?.direction || '').toUpperCase() === 'INBOUND';
+    return sum + (isAns && isIn ? (c?.durationSeconds || 0) : 0);
+  }, 0);
+
+  const formatSecToHoursMins = (totalSec: number) => {
+    const hours = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    if (mins > 0) return `${mins}m ${secs}s`;
+    return `${secs}s`;
+  };
+
+  const avgSeconds = answeredCount > 0 ? Math.round(totalSeconds / answeredCount) : (validCalls.length > 0 ? Math.round(totalSeconds / validCalls.length) : 0);
   const avgDurationStr = `${Math.floor(avgSeconds / 60)}m ${avgSeconds % 60}s`;
   const totalTalkHours = Math.floor(totalSeconds / 3600);
   const totalTalkMins = Math.floor((totalSeconds % 3600) / 60);
   const totalTalkStr = `${totalTalkHours}h ${totalTalkMins}m`;
+  const outboundTalkStr = formatSecToHoursMins(outboundSeconds);
+  const inboundTalkStr = formatSecToHoursMins(inboundSeconds);
 
   // Hourly Call Breakdown (Most active hour by calls)
   const hourlyDistribution = React.useMemo(() => {
@@ -985,7 +1013,17 @@ export default function RecorderHubDashboard() {
                     <span className="block text-4xl font-black text-slate-900 tracking-tight leading-none">
                       {totalTalkStr}
                     </span>
-                    <span className="block text-sm font-semibold text-slate-700 mt-2">Total talk duration</span>
+                    <span className="block text-sm font-semibold text-slate-700 mt-2">Total talk duration ({totalCallsCount} calls)</span>
+                    <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold">
+                      <div className="flex items-center space-x-1.5 text-sky-700 bg-sky-50 px-2 py-1 rounded-lg border border-sky-100">
+                        <PhoneOutgoing className="w-3.5 h-3.5" />
+                        <span>Out: <strong className="text-sky-900">{outboundTalkStr}</strong> ({outboundCount})</span>
+                      </div>
+                      <div className="flex items-center space-x-1.5 text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
+                        <PhoneIncoming className="w-3.5 h-3.5" />
+                        <span>In: <strong className="text-emerald-900">{inboundTalkStr}</strong> ({inboundCount})</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

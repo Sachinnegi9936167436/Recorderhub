@@ -65,9 +65,9 @@ export function GlobalAudioPlayer() {
     return null;
   }
 
-  const rawPhone = currentCall.phoneNumber || currentCall.phone || '';
-  const cleanDigits = rawPhone.replace(/\D/g, '').slice(-10) || 'Contact';
-  const contactName = currentCall.leadName || currentCall.name || cleanDigits;
+  const rawPhone = (currentCall.phoneNumber || currentCall.phoneNumberMasked || currentCall.phone || '').trim();
+  const displayPhone = rawPhone || 'Contact';
+  const contactName = currentCall.leadName || currentCall.name || displayPhone;
   const counselorName = currentCall.agentName || currentCall.counselorName || currentCall.counselorEmail || currentCall.userEmail || 'Counselor';
   const isWhatsApp =
     (currentCall.channel || '').toUpperCase() === 'WHATSAPP' ||
@@ -78,7 +78,8 @@ export function GlobalAudioPlayer() {
   const dateFormatted = recordDate.toISOString().slice(0, 10);
   const timeFormatted = recordDate.toTimeString().slice(0, 8).replace(/:/g, '-');
   const safeContactForFile = contactName.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const downloadFileName = `Recording_${safeContactForFile}_${cleanDigits}_${dateFormatted}_${timeFormatted}.m4a`;
+  const safePhoneForFile = displayPhone.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const downloadFileName = `Recording_${safeContactForFile}_${safePhoneForFile}_${dateFormatted}_${timeFormatted}.m4a`;
 
   const effectiveDuration = duration || currentCall.durationSeconds || 0;
   const progressPercent = effectiveDuration > 0 ? Math.min(100, (currentTime / effectiveDuration) * 100) : 0;
@@ -258,7 +259,7 @@ export function GlobalAudioPlayer() {
               </div>
 
               <div className="flex items-center space-x-2 text-xs text-slate-400 truncate">
-                <span className="font-mono text-slate-300">{cleanDigits}</span>
+                <span className="font-mono text-slate-300">{displayPhone}</span>
                 <span>•</span>
                 <span className="truncate text-slate-400" title={`Counselor: ${counselorName}`}>
                   {counselorName}

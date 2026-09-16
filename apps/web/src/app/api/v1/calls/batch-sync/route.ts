@@ -205,15 +205,15 @@ export async function POST(req: Request) {
       }
 
       try {
-        const rawPhone = evt.phoneNumber || '';
+        const rawPhone = (evt.phoneNumber || '').trim();
         const cleanDigits = rawPhone.replace(/\D/g, '');
-        const formattedPhone = formatPhoneNumber(rawPhone) || rawPhone;
 
         const isWhatsApp = 
           (evt.channel || '').toUpperCase() === 'WHATSAPP' ||
           (evt.disposition || '').toLowerCase().includes('whatsapp') || 
           (evt.idempotencyKey || '').startsWith('WA_');
 
+        const formattedPhone = isWhatsApp ? rawPhone : (formatPhoneNumber(rawPhone) || rawPhone);
         const channelType = isWhatsApp ? 'WHATSAPP' : (evt.channel || 'CELLULAR');
         const cleanKey = evt.idempotencyKey || `SYNC_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
