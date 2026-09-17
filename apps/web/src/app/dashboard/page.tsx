@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Navigation, useUserRole } from '@/components/Navigation';
 import { UserProfileMenu } from '@/components/UserProfileMenu';
+import * as XLSX from 'xlsx';
 import { 
   Download, 
   ChevronDown, 
@@ -18,7 +19,8 @@ import {
   PhoneIncoming,
   Clock,
   Calendar, 
-  X 
+  X,
+  FileSpreadsheet
 } from 'lucide-react';
 
 export default function RecorderHubDashboard() {
@@ -33,7 +35,7 @@ export default function RecorderHubDashboard() {
   const [counselorsList, setCounselorsList] = useState<any[]>([]);
   const [teamsList, setTeamsList] = useState<any[]>([]);
 
-  type DashSortField = 'name' | 'total' | 'answered' | 'unanswered' | 'duration' | 'uniqueCalls' | 'uniqueAnswered' | 'createdAt';
+  type DashSortField = 'name' | 'total' | 'answered' | 'unanswered' | 'duration' | 'uniqueCalls' | 'uniqueAnswered';
   const [dashSortField, setDashSortField] = useState<DashSortField>('total');
   const [dashSortOrder, setDashSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -713,6 +715,24 @@ export default function RecorderHubDashboard() {
     return [...hourlyDistribution].sort((a, b) => b.count - a.count)[0];
   }, [hourlyDistribution]);
 
+  const formatReportDuration = (totalSec: number): string => {
+    if (!totalSec || totalSec <= 0) return '0s';
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}h:${m}m:${s}s`;
+    return `${m}m:${s}s`;
+  };
+
+  const normalizePhoneNumber = (rawPhone: string): string => {
+    if (!rawPhone) return '';
+    const digits = rawPhone.replace(/\D/g, '');
+    if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+    if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+    if (digits.length === 11 && digits.startsWith('1')) return digits.slice(1);
+    return digits || rawPhone.trim().toLowerCase();
+  };
+
   // Group calls by Counselor / Agent Name
   const userActivityMap: Record<string, {
     name: string;
@@ -724,25 +744,62 @@ export default function RecorderHubDashboard() {
     uniqueAnsweredPhones: Set<string>;
   }> = {};
 
-  validCalls.forEach((c) => {
-    if (!c) return;
-    const email = c.counselorEmail || c.email;
-    const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
-    const rawAgentName = (c.agentName && c.agentName !== 'Sachin Negi' && c.agentName !== 'Counselor' && c.agentName !== 'Counselor Agent') ? c.agentName : null;
-    const cleanDev = c.deviceId ? c.deviceId.replace(/^ANDROID-/, '').split('-')[0] : '';
-    const name = rawAgentName || c.counselorName || derivedName || (cleanDev ? `Counselor (${cleanDev})` : 'Counselor Agent');
-    if (!userActivityMap[name]) {
-      userActivityMap[name] = {
-        name,
+  // 1. Initialize for all eligible displayed counselors so 0-call counselors are included in the report
+  (displayedCounselors || []).forEach((cName) => {
+    if (cName && cName !== 'All Counselors' && cName !== 'My Calls') {
+      userActivityMap[cName] = {
+        name: cName,
         total: 0,
         answered: 0,
         unanswered: 0,
         totalSeconds: 0,
-        uniquePhones: new Set(),
-        uniqueAnsweredPhones: new Set(),
+        uniquePhones: new Set<string>(),
+        uniqueAnsweredPhones: new Set<string>(),
       };
     }
-    const entry = userActivityMap[name];
+  });
+
+  // 2. Map every filtered call to the appropriate counselor record
+  validCalls.forEach((c) => {
+    if (!c) return;
+    const email = c.counselorEmail || c.email;
+    const callEmailLower = email ? email.toLowerCase().trim() : '';
+
+    const matchedCounselor = counselorsList.find((usr) => {
+      if (callEmailLower && usr.email && usr.email.toLowerCase().trim() === callEmailLower) return true;
+      if (c.userId && usr._id && String(usr._id) === String(c.userId)) return true;
+      return false;
+    });
+
+    const canonicalName = matchedCounselor
+      ? `${matchedCounselor.firstName || ''} ${matchedCounselor.lastName || ''}`.trim() || matchedCounselor.name
+      : null;
+
+    const resolvedName = canonicalName || resolveCounselorName(c);
+
+    let targetKey = resolvedName;
+    if (!userActivityMap[targetKey]) {
+      const foundKey = Object.keys(userActivityMap).find(
+        (k) =>
+          k.toLowerCase().trim() === resolvedName.toLowerCase().trim() ||
+          (callEmailLower && k.toLowerCase().includes(callEmailLower.split('@')[0]))
+      );
+      if (foundKey) {
+        targetKey = foundKey;
+      } else {
+        userActivityMap[targetKey] = {
+          name: targetKey,
+          total: 0,
+          answered: 0,
+          unanswered: 0,
+          totalSeconds: 0,
+          uniquePhones: new Set<string>(),
+          uniqueAnsweredPhones: new Set<string>(),
+        };
+      }
+    }
+
+    const entry = userActivityMap[targetKey];
     entry.total += 1;
     const isAnswered = (c.status || '').toUpperCase() === 'ANSWERED';
     if (isAnswered) {
@@ -751,55 +808,27 @@ export default function RecorderHubDashboard() {
     } else {
       entry.unanswered += 1;
     }
-    const phone = c.phoneNumber || c.phoneNumberMasked || '';
-    if (phone) {
-      entry.uniquePhones.add(phone);
+
+    const rawPhone = c.phoneNumber || c.phoneNumberMasked || c.leadId || '';
+    const normPhone = normalizePhoneNumber(rawPhone);
+    if (normPhone) {
+      entry.uniquePhones.add(normPhone);
       if (isAnswered) {
-        entry.uniqueAnsweredPhones.add(phone);
+        entry.uniqueAnsweredPhones.add(normPhone);
       }
     }
   });
 
   const rawActivityRows = Object.values(userActivityMap).map((u) => {
-    const h = Math.floor(u.totalSeconds / 3600);
-    const m = Math.floor((u.totalSeconds % 3600) / 60);
-    const s = u.totalSeconds % 60;
-
-    const matchedCounselor = counselorsList.find((c) => {
-      const fullName = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
-      const emailPrefix = c.email ? c.email.split('@')[0].toLowerCase() : '';
-      const cleanUName = u.name.toLowerCase();
-      return (
-        fullName === cleanUName ||
-        (c.firstName && c.firstName.toLowerCase() === cleanUName) ||
-        (emailPrefix && cleanUName.includes(emailPrefix))
-      );
-    });
-
-    const createdTime = matchedCounselor?.createdAt || null;
-    const createdAtStr = createdTime
-      ? new Date(createdTime).toLocaleString('en-US', {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true,
-        })
-      : '08/10/2026, 06:06:38 PM';
-
     return {
       name: u.name,
       total: u.total,
       answered: u.answered,
       unanswered: u.unanswered,
       totalSeconds: u.totalSeconds,
-      durationStr: `${h}h:${m}m:${s}s`,
-      uniqueCalls: u.uniquePhones.size || u.total,
-      uniqueAnswered: u.uniqueAnsweredPhones.size || u.answered,
-      createdAt: createdTime ? new Date(createdTime).getTime() : 0,
-      createdAtStr,
+      durationStr: formatReportDuration(u.totalSeconds),
+      uniqueCalls: u.uniquePhones.size || (u.total > 0 ? u.total : 0),
+      uniqueAnswered: u.uniqueAnsweredPhones.size || (u.answered > 0 ? u.answered : 0),
     };
   });
 
@@ -808,9 +837,6 @@ export default function RecorderHubDashboard() {
     switch (dashSortField) {
       case 'name':
         cmp = a.name.localeCompare(b.name);
-        break;
-      case 'createdAt':
-        cmp = a.createdAt - b.createdAt;
         break;
       case 'total':
         cmp = a.total - b.total;
@@ -834,33 +860,74 @@ export default function RecorderHubDashboard() {
     return dashSortOrder === 'asc' ? cmp : -cmp;
   });
 
-  const exportCSV = () => {
-    if (validCalls.length === 0) {
-      alert('No call records match the current filter selection to export.');
+  const downloadExcelReport = () => {
+    if (userActivityRows.length === 0) {
+      alert('No counselor report data available to export.');
       return;
     }
-    const headers = ['Counselor', 'PhoneNumber', 'Direction', 'Status', 'DurationSec', 'Date'];
-    const rows = validCalls.map((c) => {
-      const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-      const durSec = isAns ? (c.durationSeconds || 0) : 0;
-      return [
-        c.agentName || c.counselorName || (c.counselorEmail ? c.counselorEmail.split('@')[0] : null) || c.deviceId || 'Counselor Agent',
-        c.phoneNumber || c.phoneNumberMasked || '',
-        c.direction || 'INCOMING',
-        isAns ? 'ANSWERED' : 'UNANSWERED',
-        durSec,
-        c.startTime ? new Date(c.startTime).toLocaleString() : '',
-      ];
-    });
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    // Build worksheet data matching reference photo columns exactly
+    const worksheetData = [
+      ['Name', 'Total', 'Answered', 'Unanswered', 'Duration', 'Unique Calls', 'Answered Calls'],
+      ...userActivityRows.map((r) => [
+        r.name,
+        r.total,
+        r.answered,
+        r.unanswered,
+        r.durationStr,
+        r.uniqueCalls,
+        r.uniqueAnswered,
+      ]),
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+
+    // Set column widths for optimal display in Excel / Google Sheets
+    worksheet['!cols'] = [
+      { wch: 26 }, // Name
+      { wch: 10 }, // Total
+      { wch: 12 }, // Answered
+      { wch: 14 }, // Unanswered
+      { wch: 16 }, // Duration
+      { wch: 15 }, // Unique Calls
+      { wch: 16 }, // Answered Calls
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Call Report');
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(workbook, `RecorderHub_Call_Report_${dateStr}.xlsx`);
+  };
+
+  const exportCSV = () => {
+    if (userActivityRows.length === 0) {
+      alert('No counselor report data available to export.');
+      return;
+    }
+
+    const headers = ['Name', 'Total', 'Answered', 'Unanswered', 'Duration', 'Unique Calls', 'Answered Calls'];
+    const rows = userActivityRows.map((r) => [
+      `"${(r.name || '').replace(/"/g, '""')}"`,
+      r.total,
+      r.answered,
+      r.unanswered,
+      `"${r.durationStr}"`,
+      r.uniqueCalls,
+      r.uniqueAnswered,
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `RecorderHub_Calls_Export_${Date.now()}.csv`);
+    link.setAttribute('href', url);
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `RecorderHub_Call_Report_${dateStr}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -977,17 +1044,27 @@ export default function RecorderHubDashboard() {
             </div>
           </div>
 
-          {/* Right Action Icons & CSV Export */}
-          <div className="flex items-center space-x-5">
+          {/* Right Action Icons & Excel / CSV Export */}
+          <div className="flex items-center space-x-3">
             <button
-              onClick={exportCSV}
-              className="flex items-center space-x-2 bg-white border border-slate-900 text-slate-900 hover:bg-slate-50 font-semibold px-4 py-2 rounded-lg text-sm transition-all shadow-sm"
+              onClick={downloadExcelReport}
+              className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-all shadow-sm shadow-emerald-600/20"
+              title="Download call report as Excel (.xlsx) file"
             >
-              <Download className="w-4 h-4" />
-              <span>Export as CSV</span>
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Download Excel</span>
             </button>
 
-            <div className="flex items-center space-x-3 border-l border-slate-200 pl-5">
+            <button
+              onClick={exportCSV}
+              className="flex items-center space-x-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold px-3 py-2 rounded-lg text-sm transition-all shadow-sm"
+              title="Export report in CSV format"
+            >
+              <Download className="w-4 h-4 text-slate-500" />
+              <span>CSV</span>
+            </button>
+
+            <div className="flex items-center space-x-3 border-l border-slate-200 pl-3">
               <UserProfileMenu />
             </div>
           </div>
@@ -1127,7 +1204,12 @@ export default function RecorderHubDashboard() {
 
         {/* Section 3: User Activity Table */}
         <section className="mb-10">
-          <h2 className="text-xl font-bold text-slate-900 mb-4 tracking-tight">User activity</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-slate-900 tracking-tight">User activity</h2>
+            <div className="text-xs text-slate-500 font-medium">
+              Showing {userActivityRows.length} counselors
+            </div>
+          </div>
 
           <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
@@ -1135,19 +1217,18 @@ export default function RecorderHubDashboard() {
                 <thead className="bg-white text-slate-900 font-extrabold border-b border-slate-200">
                   <tr>
                     {renderDashSortHeader('name', 'Name', 'pl-6 text-left')}
-                    {renderDashSortHeader('createdAt', 'Account Created At')}
                     {renderDashSortHeader('total', 'Total')}
                     {renderDashSortHeader('answered', 'Answered')}
                     {renderDashSortHeader('unanswered', 'Unanswered')}
                     {renderDashSortHeader('duration', 'Duration')}
                     {renderDashSortHeader('uniqueCalls', 'Unique Calls')}
-                    {renderDashSortHeader('uniqueAnswered', 'Unique Answered Calls', 'pr-6')}
+                    {renderDashSortHeader('uniqueAnswered', 'Answered Calls', 'pr-6')}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {userActivityRows.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-12 text-center text-slate-500 font-medium">
+                      <td colSpan={7} className="p-12 text-center text-slate-500 font-medium">
                         {loading ? (
                           <div className="flex items-center justify-center space-x-2">
                             <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
@@ -1162,7 +1243,6 @@ export default function RecorderHubDashboard() {
                     userActivityRows.map((user, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 transition-colors">
                         <td className="p-4 pl-6 font-semibold text-slate-900">{user.name}</td>
-                        <td className="p-4 text-center font-mono text-slate-700 text-xs">{user.createdAtStr}</td>
                         <td className="p-4 text-center text-slate-800 font-medium">{user.total}</td>
                         <td className="p-4 text-center text-slate-800 font-medium">{user.answered}</td>
                         <td className="p-4 text-center text-slate-800 font-medium">{user.unanswered}</td>
