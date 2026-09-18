@@ -1,6 +1,5 @@
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '1.1.1.1']);
-const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
 
@@ -19,8 +18,19 @@ async function refreshCache() {
     token: process.env.UPSTASH_REDIS_REST_TOKEN,
   });
 
-  await redis.del('cache:calls:latest');
-  console.log('Redis cache:calls:latest cleared successfully!');
+  const keys = [
+    'cache:calls:latest',
+    'cache:auth:counselors',
+    'cache:teams:list',
+    'cache:dashboard:summary',
+  ];
+
+  for (const key of keys) {
+    await redis.del(key);
+    console.log(`✓ Cleared: ${key}`);
+  }
+
+  console.log('\n🚀 All Upstash Redis caches cleared! Next dashboard reload will fetch fresh live data from MongoDB.');
 }
 
 refreshCache().catch(console.error);

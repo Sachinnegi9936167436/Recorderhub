@@ -26,6 +26,10 @@ export class CallsService {
         const phoneHash = crypto.createHash('sha256').update(normalized).digest('hex');
         const masked = maskPhoneNumber(normalized);
 
+        const isAnswered = (event.status || '').toUpperCase() === 'ANSWERED' || event.status === CallStatus.ANSWERED;
+        const effectiveDuration = isAnswered ? Number(event.durationSeconds || 0) : 0;
+        const evtStartTime = event.startTime ? new Date(event.startTime) : new Date();
+
         // Deduplicate strictly by idempotencyKey
         const existing = await this.callModel.findOne({ idempotencyKey: event.idempotencyKey }).exec();
         if (existing) {
