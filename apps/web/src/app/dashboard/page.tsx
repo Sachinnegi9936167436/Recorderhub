@@ -35,7 +35,7 @@ export default function RecorderHubDashboard() {
   const [counselorsList, setCounselorsList] = useState<any[]>([]);
   const [teamsList, setTeamsList] = useState<any[]>([]);
 
-  type DashSortField = 'name' | 'total' | 'answered' | 'unanswered' | 'duration' | 'uniqueCalls' | 'uniqueAnswered';
+  type DashSortField = 'name' | 'total' | 'answered' | 'unanswered' | 'whatsapp' | 'duration' | 'uniqueCalls' | 'uniqueAnswered';
   const [dashSortField, setDashSortField] = useState<DashSortField>('total');
   const [dashSortOrder, setDashSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -739,6 +739,7 @@ export default function RecorderHubDashboard() {
     total: number;
     answered: number;
     unanswered: number;
+    whatsapp: number;
     totalSeconds: number;
     uniquePhones: Set<string>;
     uniqueAnsweredPhones: Set<string>;
@@ -752,6 +753,7 @@ export default function RecorderHubDashboard() {
         total: 0,
         answered: 0,
         unanswered: 0,
+        whatsapp: 0,
         totalSeconds: 0,
         uniquePhones: new Set<string>(),
         uniqueAnsweredPhones: new Set<string>(),
@@ -792,6 +794,7 @@ export default function RecorderHubDashboard() {
           total: 0,
           answered: 0,
           unanswered: 0,
+          whatsapp: 0,
           totalSeconds: 0,
           uniquePhones: new Set<string>(),
           uniqueAnsweredPhones: new Set<string>(),
@@ -807,6 +810,13 @@ export default function RecorderHubDashboard() {
       entry.totalSeconds += (c.durationSeconds || 0);
     } else {
       entry.unanswered += 1;
+    }
+
+    const isWA = (c.channel || '').toUpperCase() === 'WHATSAPP' ||
+                 (c.disposition || '').toLowerCase().includes('whatsapp') ||
+                 (c.idempotencyKey || '').startsWith('WA_');
+    if (isWA) {
+      entry.whatsapp += 1;
     }
 
     const rawPhone = c.phoneNumber || c.phoneNumberMasked || c.leadId || '';
@@ -825,6 +835,7 @@ export default function RecorderHubDashboard() {
       total: u.total,
       answered: u.answered,
       unanswered: u.unanswered,
+      whatsapp: u.whatsapp,
       totalSeconds: u.totalSeconds,
       durationStr: formatReportDuration(u.totalSeconds),
       uniqueCalls: u.uniquePhones.size || (u.total > 0 ? u.total : 0),
@@ -847,6 +858,9 @@ export default function RecorderHubDashboard() {
       case 'unanswered':
         cmp = a.unanswered - b.unanswered;
         break;
+      case 'whatsapp':
+        cmp = a.whatsapp - b.whatsapp;
+        break;
       case 'duration':
         cmp = a.totalSeconds - b.totalSeconds;
         break;
@@ -866,14 +880,15 @@ export default function RecorderHubDashboard() {
       return;
     }
 
-    // Build worksheet data matching reference photo columns exactly
+    // Build worksheet data matching reference photo columns with WhatsApp Calls
     const worksheetData = [
-      ['Name', 'Total', 'Answered', 'Unanswered', 'Duration', 'Unique Calls', 'Answered Calls'],
+      ['Name', 'Total', 'Answered', 'Unanswered', 'WhatsApp Calls', 'Duration', 'Unique Calls', 'Answered Calls'],
       ...userActivityRows.map((r) => [
         r.name,
         r.total,
         r.answered,
         r.unanswered,
+        r.whatsapp,
         r.durationStr,
         r.uniqueCalls,
         r.uniqueAnswered,
@@ -888,6 +903,7 @@ export default function RecorderHubDashboard() {
       { wch: 10 }, // Total
       { wch: 12 }, // Answered
       { wch: 14 }, // Unanswered
+      { wch: 16 }, // WhatsApp Calls
       { wch: 16 }, // Duration
       { wch: 15 }, // Unique Calls
       { wch: 16 }, // Answered Calls
@@ -906,12 +922,13 @@ export default function RecorderHubDashboard() {
       return;
     }
 
-    const headers = ['Name', 'Total', 'Answered', 'Unanswered', 'Duration', 'Unique Calls', 'Answered Calls'];
+    const headers = ['Name', 'Total', 'Answered', 'Unanswered', 'WhatsApp Calls', 'Duration', 'Unique Calls', 'Answered Calls'];
     const rows = userActivityRows.map((r) => [
       `"${(r.name || '').replace(/"/g, '""')}"`,
       r.total,
       r.answered,
       r.unanswered,
+      r.whatsapp,
       `"${r.durationStr}"`,
       r.uniqueCalls,
       r.uniqueAnswered,
@@ -1220,6 +1237,7 @@ export default function RecorderHubDashboard() {
                     {renderDashSortHeader('total', 'Total')}
                     {renderDashSortHeader('answered', 'Answered')}
                     {renderDashSortHeader('unanswered', 'Unanswered')}
+                    {renderDashSortHeader('whatsapp', 'WhatsApp Calls')}
                     {renderDashSortHeader('duration', 'Duration')}
                     {renderDashSortHeader('uniqueCalls', 'Unique Calls')}
                     {renderDashSortHeader('uniqueAnswered', 'Answered Calls', 'pr-6')}
@@ -1228,7 +1246,7 @@ export default function RecorderHubDashboard() {
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {userActivityRows.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-12 text-center text-slate-500 font-medium">
+                      <td colSpan={8} className="p-12 text-center text-slate-500 font-medium">
                         {loading ? (
                           <div className="flex items-center justify-center space-x-2">
                             <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
@@ -1246,6 +1264,7 @@ export default function RecorderHubDashboard() {
                         <td className="p-4 text-center text-slate-800 font-medium">{user.total}</td>
                         <td className="p-4 text-center text-slate-800 font-medium">{user.answered}</td>
                         <td className="p-4 text-center text-slate-800 font-medium">{user.unanswered}</td>
+                        <td className="p-4 text-center text-emerald-600 font-semibold">{user.whatsapp}</td>
                         <td className="p-4 text-center font-mono text-slate-800">{user.durationStr}</td>
                         <td className="p-4 text-center text-slate-800 font-medium">{user.uniqueCalls}</td>
                         <td className="p-4 text-center text-slate-800 font-medium pr-6">{user.uniqueAnswered}</td>
