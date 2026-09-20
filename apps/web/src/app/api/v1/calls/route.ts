@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCallsWithCache, rebuildCallsCache, formatPhoneNumber, patchCallInCache, updateCallsCacheWithNewBatch, revalidateCallsCacheInBackground, CALLS_CACHE_KEY } from '@/lib/cache-service';
-import { cacheDel } from '@/lib/redis';
+import { cacheDel } from '@/lib/cache';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 import { getS3Client } from '@/lib/aws';
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
 
     const createdCall = await (CallModel as any).create(newCallData);
 
-    // Update Redis cache incrementally
+    // Update in-memory cache incrementally
     await updateCallsCacheWithNewBatch([createdCall.toObject ? createdCall.toObject() : createdCall]);
 
     const res = NextResponse.json({
@@ -248,7 +248,7 @@ export async function DELETE(req: Request) {
     // Delete from MongoDB
     await (CallModel as any).deleteOne(filter).exec();
 
-    // Invalidate Redis cache immediately
+    // Invalidate in-memory cache immediately
     await cacheDel(CALLS_CACHE_KEY).catch(() => {});
     revalidateCallsCacheInBackground();
 

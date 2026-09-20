@@ -283,7 +283,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. Update Redis calls cache incrementally (0ms MongoDB overhead)
+    // 3. Update in-memory calls cache incrementally (0ms MongoDB overhead)
     if (newlyCreatedDocs.length > 0) {
       await updateCallsCacheWithNewBatch(newlyCreatedDocs);
     }

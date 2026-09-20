@@ -1,7 +1,6 @@
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 const mongoose = require('mongoose');
-const { Redis } = require('@upstash/redis');
 require('dotenv').config({ path: 'apps/web/.env.local' });
 
 async function cleanup() {
@@ -49,16 +48,6 @@ async function cleanup() {
   );
 
   console.log(`Updated ${result.modifiedCount} WhatsApp calls (reset recordingStatus to 'NONE' and removed audioUrl / s3Key).`);
-
-  // Clear Redis Cache
-  console.log('Flushing Redis cache...');
-  const redis = new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
-  });
-
-  await redis.del('cache:calls:latest');
-  console.log('Redis cache:calls:latest cleared successfully!');
 
   await mongoose.disconnect();
   console.log('Cleanup completed successfully!');

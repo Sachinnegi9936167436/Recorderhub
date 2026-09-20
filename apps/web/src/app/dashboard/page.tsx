@@ -126,10 +126,10 @@ export default function RecorderHubDashboard() {
     fetchCounselors();
     fetchTeams();
     const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      if (typeof document !== 'undefined' && !document.hidden && document.visibilityState === 'visible') {
         fetchCalls();
       }
-    }, 30000);
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -464,6 +464,9 @@ export default function RecorderHubDashboard() {
       if (dateRange === 'Today') {
         const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
         if (callDate < startOfToday || callDate > endOfToday) return false;
+      } else if (dateRange === 'Last 24 hours') {
+        const last24h = new Date(now.getTime() - 24 * 3600 * 1000);
+        if (callDate < last24h || callDate > now) return false;
       } else if (dateRange === 'Yesterday') {
         const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
         const endOfYesterday = new Date(startOfToday.getTime() - 1);
@@ -969,6 +972,7 @@ export default function RecorderHubDashboard() {
                   >
                     <option value="This week">This week</option>
                     <option value="Today">Today</option>
+                    <option value="Last 24 hours">Last 24 hours</option>
                     <option value="Yesterday">Yesterday</option>
                     <option value="This month">This month</option>
                     <option value="All time">All time</option>

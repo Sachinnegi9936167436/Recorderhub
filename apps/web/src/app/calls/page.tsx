@@ -135,40 +135,15 @@ function AudioCell({ call, idx, canListen = true }: { call: any; idx: number; ca
 
   const isThisCallPlaying = isThisCallActive && isPlaying;
 
-  // Track actual audio file duration from metadata / cache
+  // Track actual audio file duration from active player or call record
   const [actualDuration, setActualDuration] = useState<number | null>(() => {
     if (call.recordingDuration && call.recordingDuration > 0) return call.recordingDuration;
     if (call.audioDuration && call.audioDuration > 0) return call.audioDuration;
     if (audioSrc && audioDurationCache.has(audioSrc)) {
       return audioDurationCache.get(audioSrc)!;
     }
-    return null;
+    return call.durationSeconds || null;
   });
-
-  useEffect(() => {
-    if (!audioSrc || actualDuration !== null) return;
-    if (audioDurationCache.has(audioSrc)) {
-      setActualDuration(audioDurationCache.get(audioSrc)!);
-      return;
-    }
-
-    const audio = new Audio();
-    audio.preload = 'metadata';
-    const onLoadedMetadata = () => {
-      if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration) && audio.duration > 0) {
-        const rounded = Math.round(audio.duration);
-        audioDurationCache.set(audioSrc, rounded);
-        setActualDuration(rounded);
-      }
-    };
-    audio.addEventListener('loadedmetadata', onLoadedMetadata);
-    audio.src = audioSrc;
-
-    return () => {
-      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
-      audio.src = '';
-    };
-  }, [audioSrc, actualDuration]);
 
   // When active player is playing this call and reports duration, update cache and state
   useEffect(() => {
@@ -575,10 +550,10 @@ function SalestrailCallsInner() {
     fetchTeams();
 
     const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      if (typeof document !== 'undefined' && !document.hidden && document.visibilityState === 'visible') {
         fetchCalls();
       }
-    }, 30000);
+    }, 60000);
 
     const handleGlobalPlay = (e: Event) => {
       const target = e.target as HTMLAudioElement;
@@ -603,59 +578,6 @@ function SalestrailCallsInner() {
       }
     };
   }, []);
-
-  // Background prefetch audio durations for calls with recordings to ensure accurate mismatch counting and filtering
-  useEffect(() => {
-    if (!callsList || callsList.length === 0) return;
-
-    let isMounted = true;
-    let updateTimer: any = null;
-
-    const notifyChange = () => {
-      if (!updateTimer) {
-        updateTimer = setTimeout(() => {
-          updateTimer = null;
-          if (isMounted) setAudioCacheVer((v) => v + 1);
-        }, 150);
-      }
-    };
-
-    const callsWithAudio = callsList.filter(
-      (c) => (c.audioUrl || c.s3Key) && c.recordingStatus !== 'NONE'
-    );
-
-    callsWithAudio.forEach((c) => {
-      const audioSrc = c.audioUrl || (c.s3Key ? `/api/v1/recordings/stream?key=${encodeURIComponent(c.s3Key)}` : null);
-      if (!audioSrc || audioDurationCache.has(audioSrc)) return;
-
-      const audio = new Audio();
-      audio.preload = 'metadata';
-      const onLoaded = () => {
-        if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration) && audio.duration > 0) {
-          audioDurationCache.set(audioSrc, Math.round(audio.duration));
-          notifyChange();
-        }
-        cleanup();
-      };
-      const onError = () => {
-        cleanup();
-      };
-      const cleanup = () => {
-        audio.removeEventListener('loadedmetadata', onLoaded);
-        audio.removeEventListener('error', onError);
-        audio.src = '';
-      };
-
-      audio.addEventListener('loadedmetadata', onLoaded);
-      audio.addEventListener('error', onError);
-      audio.src = audioSrc;
-    });
-
-    return () => {
-      isMounted = false;
-      if (updateTimer) clearTimeout(updateTimer);
-    };
-  }, [callsList]);
 
   const handleAssignCounselor = async (deviceId: string, newCounselorName: string) => {
     if (!deviceId || !newCounselorName) return;
@@ -1113,6 +1035,9 @@ function SalestrailCallsInner() {
         if (dateRange === 'Today') {
           const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
           if (callDate < startOfToday || callDate > endOfToday) return false;
+        } else if (dateRange === 'Last 24 hours') {
+          const last24h = new Date(now.getTime() - 24 * 3600 * 1000);
+          if (callDate < last24h || callDate > now) return false;
         } else if (dateRange === 'Yesterday') {
           const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
           const endOfYesterday = new Date(startOfToday.getTime() - 1);
@@ -1570,6 +1495,7 @@ function SalestrailCallsInner() {
                 >
                   <option value="This week">This week</option>
                   <option value="Today">Today</option>
+                  <option value="Last 24 hours">Last 24 hours</option>
                   <option value="Yesterday">Yesterday</option>
                   <option value="This month">This month</option>
                   <option value="All time">All time</option>

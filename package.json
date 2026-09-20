@@ -14,7 +14,6 @@
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "seed": "npm run seed --workspace=apps/api",
-    "cache:clear": "node scripts/clear_redis_cache.js",
     "lint": "eslint \"**/*.{ts,tsx}\""
   },
   "devDependencies": {

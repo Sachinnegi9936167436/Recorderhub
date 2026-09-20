@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { CallModel } from '@/lib/models';
 import { getS3Client } from '@/lib/aws';
-import { ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { cacheGet, cacheSet } from '@/lib/redis';
+import { cacheGet, cacheSet } from '@/lib/cache';
 import { patchCallInCache } from '@/lib/cache-service';
 
 export const dynamic = 'force-dynamic';

@@ -1,4 +1,4 @@
-import { cacheGet, cacheSet, cacheDel } from './redis';
+import { cacheGet, cacheSet, cacheDel } from './cache';
 import { connectToDatabase, withDbRetry } from './db';
 import { CallModel, DeviceModel, UserModel, TeamModel } from './models';
 
@@ -115,7 +115,7 @@ export function deduplicateCalls(calls: any[]): any[] {
 }
 
 /**
- * Rebuilds the calls cache from MongoDB Atlas, enriches device metadata, and saves to Redis.
+ * Rebuilds the calls cache from MongoDB Atlas, enriches device metadata, and saves to in-memory cache.
  */
 export async function rebuildCallsCache(): Promise<any[]> {
   if (isRebuildingCalls) {
@@ -207,7 +207,7 @@ export async function rebuildCallsCache(): Promise<any[]> {
 
     const deduplicated = deduplicateCalls(cleanCalls);
 
-    // Save into Redis with 24-hour TTL
+    // Save into in-memory cache with 24-hour TTL
     if (deduplicated && deduplicated.length > 0) {
       await cacheSet(CALLS_CACHE_KEY, deduplicated, CALLS_CACHE_TTL);
     }
@@ -222,7 +222,7 @@ export async function rebuildCallsCache(): Promise<any[]> {
 }
 
 /**
- * Fast-path retrieval of calls: Returns Redis data immediately (<50ms).
+ * Fast-path retrieval of calls: Returns cached data immediately (<5ms).
  * If cache is completely missing (cold start), builds cache synchronously once.
  */
 export async function getCallsWithCache(): Promise<{ calls: any[]; cacheHit: boolean }> {
@@ -231,7 +231,7 @@ export async function getCallsWithCache(): Promise<{ calls: any[]; cacheHit: boo
     return { calls: cached, cacheHit: true };
   }
 
-  // Cold start / Cache miss: Rebuild and store in Redis
+  // Cold start / Cache miss: Rebuild and store in in-memory cache
   const calls = await rebuildCallsCache();
   return { calls, cacheHit: false };
 }
@@ -254,8 +254,8 @@ export function revalidateCallsCacheInBackground(force = false): void {
 }
 
 /**
- * Updates the existing Redis cache with a new batch of calls from mobile sync (Non-destructive).
- * Operates purely in-memory and in Redis without triggering full MongoDB database scans.
+ * Updates the existing cache with a new batch of calls from mobile sync (Non-destructive).
+ * Operates purely in-memory without triggering full MongoDB database scans.
  */
 export async function updateCallsCacheWithNewBatch(newCalls: any[]): Promise<void> {
   if (!newCalls || newCalls.length === 0) return;
@@ -283,7 +283,7 @@ export async function updateCallsCacheWithNewBatch(newCalls: any[]): Promise<voi
 }
 
 /**
- * Updates a specific call in Redis (e.g. audio upload, rating, bookmark) without deleting the cache.
+ * Updates a specific call in cache (e.g. audio upload, rating, bookmark) without deleting the cache.
  */
 export async function patchCallInCache(callId: string, updates: Record<string, any>): Promise<void> {
   if (!callId) return;

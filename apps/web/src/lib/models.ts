@@ -20,7 +20,7 @@ const CallSchema = new Schema(
     userId: { type: String },
     agentName: { type: String, default: 'Counselor Agent' },
     deviceId: { type: String, default: 'ANDROID-XIAOMI-PROD' },
-    idempotencyKey: { type: String, index: true },
+    idempotencyKey: { type: String },
     phoneNumber: { type: String },
     phoneNumberMasked: { type: String },
     phoneNumberHash: { type: String },
@@ -74,15 +74,23 @@ const TeamSchema = new Schema(
 );
 
 CallSchema.index({ startTime: -1, createdAt: -1 });
-CallSchema.index({ phoneNumber: 1 });
+CallSchema.index({ phoneNumber: 1, startTime: -1 });
+CallSchema.index({ idempotencyKey: 1 }, { sparse: true });
 CallSchema.index({ deviceId: 1, startTime: -1 });
+CallSchema.index({ counselorEmail: 1, startTime: -1 });
+CallSchema.index({ agentName: 1, startTime: -1 });
+CallSchema.index({ team: 1, startTime: -1 });
+CallSchema.index({ recordingStatus: 1 });
 CallSchema.index({ s3Key: 1 }, { sparse: true });
 CallSchema.index({ audioUrl: 1 }, { sparse: true });
-CallSchema.index({ counselorEmail: 1, startTime: -1 });
-CallSchema.index({ recordingStatus: 1 });
+CallSchema.index({ status: 1, durationSeconds: 1 });
 
 UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1 });
+
+TeamSchema.index({ name: 1 });
+TeamSchema.index({ teamLeadEmail: 1 });
+TeamSchema.index({ teamLeadId: 1 });
 
 DeviceSchema.index({ deviceId: 1 });
 DeviceSchema.index({ lastSyncTimestamp: -1 });
@@ -91,4 +99,5 @@ export const UserModel = mongoose.models.User || mongoose.model('User', UserSche
 export const CallModel = mongoose.models.Call || mongoose.model('Call', CallSchema);
 export const DeviceModel = mongoose.models.Device || mongoose.model('Device', DeviceSchema);
 export const TeamModel = mongoose.models.Team || mongoose.model('Team', TeamSchema);
+
 

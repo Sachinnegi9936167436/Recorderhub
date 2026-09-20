@@ -127,7 +127,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return res;
     });
 
-    // Update Redis calls cache non-destructively so dashboard gets updated immediately
+    // Update in-memory calls cache non-destructively so dashboard gets updated immediately
     if (updated) {
       await patchCallInCache(updated._id?.toString() || updated.idempotencyKey, {
         recordingStatus: 'COMPLETED',

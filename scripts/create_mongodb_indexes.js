@@ -41,19 +41,29 @@ async function createIndexes() {
   const callsColl = db.collection('calls');
   console.log('\n--- Building indexes on "calls" collection ---');
   await safeCreateIndex(callsColl, { startTime: -1, createdAt: -1 });
-  await safeCreateIndex(callsColl, { phoneNumber: 1 });
+  await safeCreateIndex(callsColl, { phoneNumber: 1, startTime: -1 });
   await safeCreateIndex(callsColl, { deviceId: 1, startTime: -1 });
+  await safeCreateIndex(callsColl, { counselorEmail: 1, startTime: -1 });
+  await safeCreateIndex(callsColl, { agentName: 1, startTime: -1 });
+  await safeCreateIndex(callsColl, { team: 1, startTime: -1 });
+  await safeCreateIndex(callsColl, { recordingStatus: 1 });
   await safeCreateIndex(callsColl, { s3Key: 1 }, { sparse: true });
   await safeCreateIndex(callsColl, { audioUrl: 1 }, { sparse: true });
-  await safeCreateIndex(callsColl, { counselorEmail: 1, startTime: -1 });
-  await safeCreateIndex(callsColl, { recordingStatus: 1 });
-  await safeCreateIndex(callsColl, { idempotencyKey: 1 });
+  await safeCreateIndex(callsColl, { idempotencyKey: 1 }, { sparse: true });
+  await safeCreateIndex(callsColl, { status: 1, durationSeconds: 1 });
 
   // Users collection indexes
   const usersColl = db.collection('users');
   console.log('\n--- Building indexes on "users" collection ---');
   await safeCreateIndex(usersColl, { email: 1 });
   await safeCreateIndex(usersColl, { role: 1 });
+
+  // Teams collection indexes
+  const teamsColl = db.collection('teams');
+  console.log('\n--- Building indexes on "teams" collection ---');
+  await safeCreateIndex(teamsColl, { name: 1 });
+  await safeCreateIndex(teamsColl, { teamLeadEmail: 1 });
+  await safeCreateIndex(teamsColl, { teamLeadId: 1 });
 
   // Devices collection indexes
   const devicesColl = db.collection('devices');

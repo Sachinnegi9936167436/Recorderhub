@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { UserModel } from '@/lib/models';
-import { cacheDel } from '@/lib/redis';
+import { cacheDel } from '@/lib/cache';
 import { COUNSELORS_CACHE_KEY } from '@/lib/cache-service';
 import bcrypt from 'bcryptjs';
 

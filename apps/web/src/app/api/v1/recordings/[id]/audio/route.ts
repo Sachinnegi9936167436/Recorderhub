@@ -5,7 +5,7 @@ import { getS3Client } from '@/lib/aws';
 import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { connectToDatabase, withDbRetry } from '@/lib/db';
 import { CallModel } from '@/lib/models';
-import { cacheGet, cacheSet } from '@/lib/redis';
+import { cacheGet, cacheSet } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -96,7 +96,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         const finalKey = resolvedS3Key || (devPrefix ? `recordings/${devPrefix}/${recordingId}.mp3` : `recordings/${recordingId}.mp3`);
         const S3_CACHE_KEY = `s3:audio:${finalKey}`;
 
-        // Check Redis cache for instant 1ms redirect
+        // Check in-memory cache for instant 0ms redirect
         const cachedUrl = await cacheGet<string>(S3_CACHE_KEY);
         if (cachedUrl) {
           return NextResponse.redirect(cachedUrl, 307);
@@ -115,7 +115,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         });
         const presignedUrl = await getSignedUrl(s3Info.client, command, { expiresIn: 3600 });
 
-        // Cache in Redis for 55 minutes
+        // Cache in memory for 55 minutes
         await cacheSet(S3_CACHE_KEY, presignedUrl, 3300);
         await cacheSet(directCacheKey, presignedUrl, 3300);
 

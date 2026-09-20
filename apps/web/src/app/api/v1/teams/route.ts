@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { TeamModel, UserModel } from '@/lib/models';
-import { cacheGet, cacheSet, cacheDel } from '@/lib/redis';
+import { cacheGet, cacheSet, cacheDel } from '@/lib/cache';
 import { TEAMS_CACHE_KEY, TEAMS_CACHE_TTL } from '@/lib/cache-service';
 import mongoose from 'mongoose';
 

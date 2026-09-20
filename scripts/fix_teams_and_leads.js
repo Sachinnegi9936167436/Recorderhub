@@ -1,7 +1,6 @@
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 const mongoose = require('mongoose');
-const { Redis } = require('@upstash/redis');
 require('dotenv').config({ path: 'apps/web/.env.local' });
 
 async function fixTeamsAndLeads() {
@@ -87,22 +86,6 @@ async function fixTeamsAndLeads() {
   console.log('\n=== FINAL TEAMS IN DB ===');
   finalTeams.forEach(t => {
     console.log(`- Team: "${t.name}" | Admin: "${t.admin}" | TeamLeadEmail: "${t.teamLeadEmail}" | TeamLeadId: "${t.teamLeadId}" | Members: [${(t.members || []).join(', ')}]`);
-  });
-
-  // 6. Clear Redis Cache
-  console.log('\nFlushing Redis cache keys...');
-  try {
-    const redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-    await redis.del('cache:teams:all');
-    await redis.del('cache:calls:latest');
-    console.log('Redis caches cache:teams:all and cache:calls:latest cleared successfully!');
-  } catch (rErr) {
-    console.warn('Redis flush error (non-fatal):', rErr.message);
-  }
-
   await mongoose.disconnect();
   console.log('\nAll done!');
 }

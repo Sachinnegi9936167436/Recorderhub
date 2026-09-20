@@ -1,7 +1,6 @@
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 const mongoose = require('mongoose');
-const { Redis } = require('@upstash/redis');
 require('dotenv').config({ path: 'apps/web/.env.local' });
 
 function buildPhoneRegex(digits) {
@@ -114,16 +113,7 @@ async function run() {
   }
 
   console.log(`Summary: Reassigned ${reassignedCount} recordings to answered calls, cleaned ${cleanedCount} unanswered calls.`);
-
-  // Flush Redis Cache
-  console.log('Flushing Redis cache...');
-  const redis = new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
-  });
-
-  await redis.del('cache:calls:latest');
-  console.log('Redis cache cleared successfully!');
+  console.log('Database updated successfully!');
 
   await mongoose.disconnect();
 }

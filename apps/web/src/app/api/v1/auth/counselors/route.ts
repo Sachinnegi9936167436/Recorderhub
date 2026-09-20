@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { UserModel } from '@/lib/models';
-import { cacheGet, cacheSet, cacheDel } from '@/lib/redis';
+import { cacheGet, cacheSet, cacheDel } from '@/lib/cache';
 import { COUNSELORS_CACHE_KEY, COUNSELORS_CACHE_TTL } from '@/lib/cache-service';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';

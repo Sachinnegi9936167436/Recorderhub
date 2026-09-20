@@ -1,7 +1,7 @@
 import { connectToDatabase } from '@/lib/db';
 import { UserModel, CallModel, DeviceModel } from '@/lib/models';
 import { getS3Client } from '@/lib/aws';
-import { cacheDel } from '@/lib/redis';
+import { cacheDel } from '@/lib/cache';
 import mongoose from 'mongoose';
 import { ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 
@@ -135,7 +135,7 @@ export async function deleteCounselorCascade(identifier: string) {
     await (UserModel as any).deleteOne(filter).exec();
   }
 
-  // 7. Clear & refresh Redis caches
+  // 7. Clear & refresh in-memory caches
   await cacheDel('cache:auth:counselors').catch(() => {});
   const { revalidateCallsCacheInBackground } = await import('@/lib/cache-service');
   revalidateCallsCacheInBackground();

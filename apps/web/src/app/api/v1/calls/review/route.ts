@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     if (!updatedCall) {
       return NextResponse.json({ message: 'Call not found' }, { status: 404 });
     }
-    // Update Redis cache non-destructively
+    // Update in-memory cache non-destructively
     await patchCallInCache(callId, updateFields).catch(() => {});
 
     return NextResponse.json({

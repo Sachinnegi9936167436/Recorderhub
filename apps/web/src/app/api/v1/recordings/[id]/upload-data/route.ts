@@ -190,7 +190,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       }
     }
 
-    // Update Redis calls cache non-destructively (Incremental update without full DB scan)
+    // Update in-memory calls cache non-destructively (Incremental update without full DB scan)
     if (updatedCall) {
       await patchCallInCache(updatedCall._id?.toString() || updatedCall.idempotencyKey, {
         recordingStatus: 'COMPLETED',

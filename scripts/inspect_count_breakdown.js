@@ -2,21 +2,12 @@ const dns = require('dns');
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 const mongoose = require('mongoose');
 require('dotenv').config({ path: 'apps/web/.env.local' });
-const { Redis } = require('@upstash/redis');
-
 async function inspect() {
   await mongoose.connect(process.env.MONGODB_URI);
   const db = mongoose.connection.db;
 
   const total = await db.collection('calls').countDocuments();
   console.log('Total calls in MongoDB:', total);
-
-  const redis = new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
-  });
-  const cached = await redis.get('cache:calls:latest');
-  console.log('Total calls in Redis cache:', cached ? cached.length : 0);
 
   // Group by agent/counselor in MongoDB
   const byAgent = await db.collection('calls').aggregate([
