@@ -615,15 +615,18 @@ function SalestrailCallsInner() {
 
     // 2. Match device ID or agent name alias with directory email
     if (counselorsList.length > 0) {
-      const rawName = (call.agentName || call.counselorName || '').toLowerCase();
-      const user = counselorsList.find((u) => {
-        const prefix = u.email ? u.email.split('@')[0].toLowerCase() : '';
-        const fName = (u.firstName || '').toLowerCase();
-        return (prefix && rawName.includes(prefix)) || (fName && rawName.includes(fName));
-      });
-      if (user) {
-        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
-        if (fullName) return fullName;
+      const rawName = (call.agentName || call.counselorName || '').toLowerCase().trim();
+      if (rawName && rawName !== 'counselor agent' && rawName !== 'counselor') {
+        const user = counselorsList.find((u) => {
+          const prefix = u.email ? u.email.split('@')[0].toLowerCase().trim() : '';
+          const fName = (u.firstName || '').toLowerCase().trim();
+          const fullName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase().trim();
+          return (fName && rawName === fName) || (fullName && rawName === fullName) || (prefix && rawName === prefix);
+        });
+        if (user) {
+          const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+          if (fullName) return fullName;
+        }
       }
     }
 
@@ -816,12 +819,18 @@ function SalestrailCallsInner() {
 
     // 4. Sales User / Counselor: Can ONLY view & listen to their OWN calls
     if (isCounselor) {
+      const myUserObj = (counselorsList || []).find((c) => (c.email || '').toLowerCase().trim() === myEmailLower);
+      const myFullName = myUserObj ? `${myUserObj.firstName || ''} ${myUserObj.lastName || ''}`.trim().toLowerCase() : '';
+      const myFirstName = myUserObj?.firstName ? myUserObj.firstName.toLowerCase().trim() : '';
+      const myAgentName = (call.agentName || call.counselorName || '').toLowerCase().trim();
+
       const isMyOwnCall =
         (callEmail && callEmail === myEmailLower) ||
-        (myNamePrefix && resolvedCounselor.includes(myNamePrefix)) ||
-        (myNamePrefix && myNamePrefix.includes('shris') && resolvedCounselor.includes('shristi'));
+        (myFullName && resolvedCounselor === myFullName) ||
+        (myFirstName && (resolvedCounselor === myFirstName || myAgentName === myFirstName)) ||
+        (myNamePrefix && (resolvedCounselor === myNamePrefix || myAgentName === myNamePrefix));
 
-      return { canView: isMyOwnCall, canListen: isMyOwnCall };
+      return { canView: Boolean(isMyOwnCall), canListen: Boolean(isMyOwnCall) };
     }
 
     return { canView: true, canListen: true };
@@ -1070,12 +1079,23 @@ function SalestrailCallsInner() {
           const callEmail = (call.counselorEmail || call.email || '').toLowerCase().trim();
           const agentName = (call.agentName || call.counselorName || '').toLowerCase().trim();
 
+          const targetCounselor = (counselorsList || []).find((c) => {
+            const fn = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
+            const f1 = (c.firstName || '').trim().toLowerCase();
+            const em = (c.email || '').trim().toLowerCase();
+            return fn === targetLower || f1 === targetLower || em === targetLower;
+          });
+
+          const targetEmail = targetCounselor?.email?.toLowerCase().trim();
+          const targetFullName = targetCounselor ? `${targetCounselor.firstName || ''} ${targetCounselor.lastName || ''}`.trim().toLowerCase() : '';
+          const targetFirstName = targetCounselor?.firstName?.toLowerCase().trim();
+
           const matchesIndividual =
             userLower === targetLower ||
-            userLower.includes(targetLower) ||
-            targetLower.includes(userLower) ||
-            (callEmail && (callEmail === targetLower || callEmail.includes(targetLower) || targetLower.includes(callEmail))) ||
-            (agentName && (agentName === targetLower || agentName.includes(targetLower) || targetLower.includes(agentName)));
+            (targetFullName && userLower === targetFullName) ||
+            (targetFirstName && userLower === targetFirstName) ||
+            (targetEmail && callEmail && callEmail === targetEmail) ||
+            (agentName && (agentName === targetLower || (targetFirstName && agentName === targetFirstName) || (targetFullName && agentName === targetFullName)));
 
           if (!matchesIndividual) {
             return false;

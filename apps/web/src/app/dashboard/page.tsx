@@ -249,6 +249,34 @@ export default function RecorderHubDashboard() {
 
   const resolveCounselorName = (c: any) => {
     if (!c) return 'Counselor Agent';
+
+    // 1. Match by counselor email in counselorsList directory
+    const callEmail = (c.counselorEmail || c.email || '').toLowerCase().trim();
+    if (callEmail && counselorsList.length > 0) {
+      const user = counselorsList.find((u) => u.email?.toLowerCase().trim() === callEmail);
+      if (user) {
+        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+        if (fullName) return fullName;
+      }
+    }
+
+    // 2. Exact match on agent name or alias
+    if (counselorsList.length > 0) {
+      const rawName = (c.agentName || c.counselorName || '').toLowerCase().trim();
+      if (rawName && rawName !== 'counselor agent' && rawName !== 'counselor') {
+        const user = counselorsList.find((u) => {
+          const prefix = u.email ? u.email.split('@')[0].toLowerCase().trim() : '';
+          const fName = (u.firstName || '').toLowerCase().trim();
+          const fullName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase().trim();
+          return (fName && rawName === fName) || (fullName && rawName === fullName) || (prefix && rawName === prefix);
+        });
+        if (user) {
+          const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+          if (fullName) return fullName;
+        }
+      }
+    }
+
     const email = c.counselorEmail || c.email;
     const derivedName = email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null;
     const rawAgentName = (c.agentName && c.agentName !== 'Sachin Negi' && c.agentName !== 'Counselor' && c.agentName !== 'Counselor Agent') ? c.agentName : null;
@@ -259,13 +287,23 @@ export default function RecorderHubDashboard() {
   const canUserAccessCall = (call: any) => {
     if (isSuperAdmin || isAdmin || isManager) return true;
 
-    const resolvedCounselor = resolveCounselorName(call).toLowerCase();
-    const callEmail = (call.counselorEmail || call.email || '').toLowerCase();
-    const myEmailLower = (userEmail || '').toLowerCase();
+    const resolvedCounselor = resolveCounselorName(call).toLowerCase().trim();
+    const callEmail = (call.counselorEmail || call.email || '').toLowerCase().trim();
+    const myEmailLower = (userEmail || '').toLowerCase().trim();
     const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
 
     if (isTeamLead) {
-      const isMyOwn = (callEmail && callEmail === myEmailLower) || (myNamePrefix && resolvedCounselor.includes(myNamePrefix));
+      const myUserObj = (counselorsList || []).find((c) => (c.email || '').toLowerCase().trim() === myEmailLower);
+      const myFullName = myUserObj ? `${myUserObj.firstName || ''} ${myUserObj.lastName || ''}`.trim().toLowerCase() : '';
+      const myFirstName = myUserObj?.firstName ? myUserObj.firstName.toLowerCase().trim() : '';
+      const myAgentName = (call.agentName || call.counselorName || '').toLowerCase().trim();
+
+      const isMyOwn =
+        (callEmail && callEmail === myEmailLower) ||
+        (myFullName && resolvedCounselor === myFullName) ||
+        (myFirstName && (resolvedCounselor === myFirstName || myAgentName === myFirstName)) ||
+        (myNamePrefix && (resolvedCounselor === myNamePrefix || myAgentName === myNamePrefix));
+
       if (isMyOwn) return true;
 
       // Check direct team match
@@ -287,11 +325,18 @@ export default function RecorderHubDashboard() {
     }
 
     if (isCounselor) {
-      return (
+      const myUserObj = (counselorsList || []).find((c) => (c.email || '').toLowerCase().trim() === myEmailLower);
+      const myFullName = myUserObj ? `${myUserObj.firstName || ''} ${myUserObj.lastName || ''}`.trim().toLowerCase() : '';
+      const myFirstName = myUserObj?.firstName ? myUserObj.firstName.toLowerCase().trim() : '';
+      const myAgentName = (call.agentName || call.counselorName || '').toLowerCase().trim();
+
+      const isMyOwn =
         (callEmail && callEmail === myEmailLower) ||
-        (myNamePrefix && resolvedCounselor.includes(myNamePrefix)) ||
-        (myNamePrefix && myNamePrefix.includes('shris') && resolvedCounselor.includes('shristi'))
-      );
+        (myFullName && resolvedCounselor === myFullName) ||
+        (myFirstName && (resolvedCounselor === myFirstName || myAgentName === myFirstName)) ||
+        (myNamePrefix && (resolvedCounselor === myNamePrefix || myAgentName === myNamePrefix));
+
+      return Boolean(isMyOwn);
     }
 
     return true;
@@ -499,12 +544,23 @@ export default function RecorderHubDashboard() {
         const callEmail = (c.counselorEmail || c.email || '').toLowerCase().trim();
         const agentName = (c.agentName || c.counselorName || '').toLowerCase().trim();
 
+        const targetCounselor = (counselorsList || []).find((c) => {
+          const fn = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
+          const f1 = (c.firstName || '').trim().toLowerCase();
+          const em = (c.email || '').trim().toLowerCase();
+          return fn === targetLower || f1 === targetLower || em === targetLower;
+        });
+
+        const targetEmail = targetCounselor?.email?.toLowerCase().trim();
+        const targetFullName = targetCounselor ? `${targetCounselor.firstName || ''} ${targetCounselor.lastName || ''}`.trim().toLowerCase() : '';
+        const targetFirstName = targetCounselor?.firstName?.toLowerCase().trim();
+
         const matchesIndividual =
           userLower === targetLower ||
-          userLower.includes(targetLower) ||
-          targetLower.includes(userLower) ||
-          (callEmail && (callEmail === targetLower || callEmail.includes(targetLower) || targetLower.includes(callEmail))) ||
-          (agentName && (agentName === targetLower || agentName.includes(targetLower) || targetLower.includes(agentName)));
+          (targetFullName && userLower === targetFullName) ||
+          (targetFirstName && userLower === targetFirstName) ||
+          (targetEmail && callEmail && callEmail === targetEmail) ||
+          (agentName && (agentName === targetLower || (targetFirstName && agentName === targetFirstName) || (targetFullName && agentName === targetFullName)));
 
         if (!matchesIndividual) {
           return false;
@@ -785,9 +841,7 @@ export default function RecorderHubDashboard() {
     let targetKey = resolvedName;
     if (!userActivityMap[targetKey]) {
       const foundKey = Object.keys(userActivityMap).find(
-        (k) =>
-          k.toLowerCase().trim() === resolvedName.toLowerCase().trim() ||
-          (callEmailLower && k.toLowerCase().includes(callEmailLower.split('@')[0]))
+        (k) => k.toLowerCase().trim() === resolvedName.toLowerCase().trim()
       );
       if (foundKey) {
         targetKey = foundKey;
