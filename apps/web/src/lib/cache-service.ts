@@ -3,21 +3,21 @@ import { connectToDatabase, withDbRetry } from './db';
 import { CallModel, DeviceModel, UserModel, TeamModel } from './models';
 
 export const CALLS_CACHE_KEY = 'cache:calls:latest';
-export const CALLS_CACHE_TTL = 86400; // 24 hours
+export const CALLS_CACHE_TTL = 30; // 30 seconds fresh TTL
 
 export const COUNSELORS_CACHE_KEY = 'cache:auth:counselors';
-export const COUNSELORS_CACHE_TTL = 3600; // 1 hour
+export const COUNSELORS_CACHE_TTL = 300; // 5 minutes
 
 export const TEAMS_CACHE_KEY = 'cache:teams:list';
-export const TEAMS_CACHE_TTL = 3600; // 1 hour
+export const TEAMS_CACHE_TTL = 300; // 5 minutes
 
 export const DASHBOARD_SUMMARY_CACHE_KEY = 'cache:dashboard:summary';
-export const DASHBOARD_SUMMARY_CACHE_TTL = 86400; // 24 hours
+export const DASHBOARD_SUMMARY_CACHE_TTL = 30; // 30 seconds
 export const MAX_CACHED_CALLS = 100000; // Allow full active history without 3k truncation
 
 let isRebuildingCalls = false;
 let lastRebuildTimestamp = 0;
-const MIN_REBUILD_INTERVAL_MS = 120000; // Throttle full rebuilds to at most once per 2 minutes
+const MIN_REBUILD_INTERVAL_MS = 5000; // Throttle full rebuilds to at most once per 5 seconds
 
 /**
  * Normalizes and formats domestic and international phone numbers, preserving their true country code:

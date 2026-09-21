@@ -43,7 +43,7 @@ export async function GET(req: Request) {
     res.headers.set('Access-Control-Allow-Origin', '*');
     res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+    res.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.headers.set('X-Cache', cacheHit ? 'HIT' : 'MISS');
     return res;
   } catch (err: any) {
