@@ -70,9 +70,10 @@ export async function POST(req: Request) {
         );
       }
 
-      return NextResponse.json({
+      const token = 'jwt_' + Math.random().toString(36).substring(2);
+      const resObj = NextResponse.json({
         success: true,
-        accessToken: 'jwt_' + Math.random().toString(36).substring(2),
+        accessToken: token,
         user: {
           id: user._id ? user._id.toString() : user.email,
           email: user.email,
@@ -82,6 +83,13 @@ export async function POST(req: Request) {
           createdAt: user.createdAt,
         },
       });
+      resObj.cookies.set('recordhub_session', token, {
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30, // 30 days
+        sameSite: 'lax',
+        httpOnly: false,
+      });
+      return resObj;
     }
 
     // 2. User not in database yet - check pre-configured organization accounts
@@ -93,6 +101,8 @@ export async function POST(req: Request) {
           { status: 401 }
         );
       }
+
+      const token = 'jwt_' + Math.random().toString(36).substring(2);
 
       // Provision user into MongoDB
       try {
@@ -107,9 +117,9 @@ export async function POST(req: Request) {
           isActive: true,
         });
 
-        return NextResponse.json({
+        const resObj = NextResponse.json({
           success: true,
-          accessToken: 'jwt_' + Math.random().toString(36).substring(2),
+          accessToken: token,
           user: {
             id: createdUser._id.toString(),
             email: createdUser.email,
@@ -119,11 +129,18 @@ export async function POST(req: Request) {
             createdAt: createdUser.createdAt,
           },
         });
+        resObj.cookies.set('recordhub_session', token, {
+          path: '/',
+          maxAge: 60 * 60 * 24 * 30,
+          sameSite: 'lax',
+          httpOnly: false,
+        });
+        return resObj;
       } catch (createErr) {
         // Fallback response if DB write fails
-        return NextResponse.json({
+        const resObj = NextResponse.json({
           success: true,
-          accessToken: 'jwt_' + Math.random().toString(36).substring(2),
+          accessToken: token,
           user: {
             id: email,
             email,
@@ -132,6 +149,13 @@ export async function POST(req: Request) {
             role: defaultAcc.role,
           },
         });
+        resObj.cookies.set('recordhub_session', token, {
+          path: '/',
+          maxAge: 60 * 60 * 24 * 30,
+          sameSite: 'lax',
+          httpOnly: false,
+        });
+        return resObj;
       }
     }
 

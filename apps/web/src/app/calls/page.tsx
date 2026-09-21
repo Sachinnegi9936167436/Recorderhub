@@ -737,23 +737,19 @@ function SalestrailCallsInner() {
             const mClean = m.toLowerCase().trim();
             memberSet.add(mClean);
 
-            mClean.split(/\s+/).forEach((w) => {
-              if (w.length >= 3) memberSet.add(w);
-            });
-
             // Cross-reference with counselorsList (all users in DB)
             const matchingCounselors = (counselorsList || []).filter((c) => {
               const cEmail = (c.email || '').toLowerCase().trim();
               const cFull = `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase().trim();
               const cFirst = (c.firstName || '').toLowerCase().trim();
               const cPrefix = cEmail.split('@')[0];
+              const cId = c._id ? c._id.toString() : '';
               return (
-                cEmail.includes(mClean) ||
-                cFull.includes(mClean) ||
-                mClean.includes(cFirst) ||
+                cEmail === mClean ||
+                cFull === mClean ||
                 cFirst === mClean ||
-                cPrefix.includes(mClean) ||
-                mClean.includes(cPrefix)
+                cPrefix === mClean ||
+                cId === mClean
               );
             });
 
@@ -791,9 +787,16 @@ function SalestrailCallsInner() {
 
     // 3. Team Lead: Can view & listen to calls of counselors in their team(s) + own calls
     if (isTeamLead) {
+      const myUserObj = (counselorsList || []).find((c) => (c.email || '').toLowerCase().trim() === myEmailLower);
+      const myFullName = myUserObj ? `${myUserObj.firstName || ''} ${myUserObj.lastName || ''}`.trim().toLowerCase() : '';
+      const myFirstName = myUserObj?.firstName ? myUserObj.firstName.toLowerCase().trim() : '';
+      const myAgentName = (call.agentName || call.counselorName || '').toLowerCase().trim();
+
       const isMyOwnCall =
         (callEmail && callEmail === myEmailLower) ||
-        (myNamePrefix && resolvedCounselor.includes(myNamePrefix));
+        (myFullName && resolvedCounselor === myFullName) ||
+        (myFirstName && (resolvedCounselor === myFirstName || myAgentName === myFirstName)) ||
+        (myNamePrefix && (resolvedCounselor === myNamePrefix || myAgentName === myNamePrefix));
 
       if (isMyOwnCall) return { canView: true, canListen: true };
 
@@ -805,12 +808,13 @@ function SalestrailCallsInner() {
 
       const isMemberInMyTeam = myTeamMemberIdentifiers.some((identifier) => {
         if (!identifier || identifier.length < 2) return false;
+        const idLower = identifier.toLowerCase().trim();
         return (
-          resolvedCounselor.includes(identifier) ||
-          (callEmail && callEmail.includes(identifier)) ||
-          (call.agentName && call.agentName.toLowerCase().includes(identifier)) ||
-          (call.counselorName && call.counselorName.toLowerCase().includes(identifier)) ||
-          (call.leadName && call.leadName.toLowerCase().includes(identifier))
+          resolvedCounselor === idLower ||
+          (callEmail && (callEmail === idLower || callEmail.split('@')[0] === idLower)) ||
+          (call.agentName && call.agentName.toLowerCase().trim() === idLower) ||
+          (call.counselorName && call.counselorName.toLowerCase().trim() === idLower) ||
+          (call.userId && call.userId.toString() === idLower)
         );
       });
 
@@ -968,10 +972,10 @@ function SalestrailCallsInner() {
       const filtered = uniqueCounselors.filter((c) => {
         const cLower = c.toLowerCase().trim();
         if (allowedNames.has(c)) return true;
-        if (Array.from(allowedNames).some((a) => a.toLowerCase().trim() === cLower || cLower.includes(a.toLowerCase().trim()) || a.toLowerCase().trim().includes(cLower))) {
+        if (Array.from(allowedNames).some((a) => a.toLowerCase().trim() === cLower)) {
           return true;
         }
-        return myTeamMemberIdentifiers.some((id) => id && (cLower.includes(id) || id.includes(cLower)));
+        return myTeamMemberIdentifiers.some((id) => id && id.toLowerCase().trim() === cLower);
       });
 
       return filtered.length > 0 ? filtered : uniqueCounselors;
@@ -979,17 +983,20 @@ function SalestrailCallsInner() {
 
     // 3. Counselor / Sales Agent: see only themselves
     if (isCounselor) {
-      const myEmailLower = (userEmail || '').toLowerCase();
-      const myNamePrefix = myEmailLower ? myEmailLower.split('@')[0] : '';
+      const myEmailLower = (userEmail || '').toLowerCase().trim();
+      const myUserObj = (counselorsList || []).find((c) => (c.email || '').toLowerCase().trim() === myEmailLower);
+      const myFullName = myUserObj ? `${myUserObj.firstName || ''} ${myUserObj.lastName || ''}`.trim().toLowerCase() : '';
+      const myFirstName = myUserObj?.firstName ? myUserObj.firstName.toLowerCase().trim() : '';
+
       const matched = uniqueCounselors.filter((c) => {
-        const cLower = c.toLowerCase();
+        const cLower = c.toLowerCase().trim();
         return (
-          (myNamePrefix && cLower.includes(myNamePrefix)) ||
-          (myEmailLower && cLower.includes(myEmailLower)) ||
-          (myNamePrefix && (myNamePrefix.includes('shris') || myNamePrefix.includes('shristi')) && (cLower.includes('shris') || cLower.includes('shristi')))
+          cLower === myEmailLower ||
+          (myFullName && cLower === myFullName) ||
+          (myFirstName && cLower === myFirstName)
         );
       });
-      return matched.length > 0 ? matched : [userEmail ? userEmail.split('@')[0] : 'My Calls'];
+      return matched.length > 0 ? matched : [myFullName || myFirstName || (userEmail ? userEmail.split('@')[0] : 'My Calls')];
     }
 
     return uniqueCounselors;
@@ -1136,8 +1143,6 @@ function SalestrailCallsInner() {
                   if (m) {
                     const mLower = m.toLowerCase().trim();
                     memberIdentifiers.add(mLower);
-                    const mPrefix = mLower.split('@')[0].split(' ')[0];
-                    if (mPrefix) memberIdentifiers.add(mPrefix);
 
                     // Cross-reference with counselorsList
                     if (Array.isArray(counselorsList)) {
@@ -1146,13 +1151,13 @@ function SalestrailCallsInner() {
                         const cFull = `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase().trim();
                         const cFirst = (c.firstName || '').toLowerCase().trim();
                         const cPref = cEmail.split('@')[0];
+                        const cId = c._id ? c._id.toString() : '';
                         if (
-                          cEmail.includes(mLower) ||
-                          cFull.includes(mLower) ||
-                          mLower.includes(cFirst) ||
+                          cEmail === mLower ||
+                          cFull === mLower ||
                           cFirst === mLower ||
-                          cPref.includes(mLower) ||
-                          mLower.includes(cPref)
+                          cPref === mLower ||
+                          cId === mLower
                         ) {
                           if (cEmail) {
                             memberIdentifiers.add(cEmail);
@@ -1193,17 +1198,13 @@ function SalestrailCallsInner() {
             const resolved = resolveCounselorName(call).toLowerCase().trim();
             const callUserId = (call.userId || '').toString().toLowerCase().trim();
 
-            const isDirectMember = (callEmail && memberIdentifiers.has(callEmail)) ||
+            const isDirectMember =
+              (callEmail && memberIdentifiers.has(callEmail)) ||
               (callUserId && memberIdentifiers.has(callUserId)) ||
               (resolved && memberIdentifiers.has(resolved)) ||
               (callAgent && memberIdentifiers.has(callAgent));
 
-            const idArray = Array.from(memberIdentifiers).filter((id) => id.length >= 3);
-            const isPartialMember = (callEmail && idArray.some((id) => callEmail.includes(id))) ||
-              (resolved && idArray.some((id) => resolved.includes(id) || id.includes(resolved))) ||
-              (callAgent && idArray.some((id) => callAgent.includes(id) || id.includes(callAgent)));
-
-            if (!isDirectMember && !isPartialMember) {
+            if (!isDirectMember) {
               return false;
             }
           }

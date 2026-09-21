@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Shield, AlertCircle, CheckCircle2 } from 'lucide-react';
 import LoginForm from '@/components/ui/login-form';
@@ -10,6 +10,18 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // If already logged in, redirect straight to dashboard
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const email = localStorage.getItem('userEmail');
+      const role = localStorage.getItem('userRole');
+      const hasCookie = document.cookie.includes('recordhub_session=');
+      if (email && role && hasCookie) {
+        router.replace('/dashboard');
+      }
+    }
+  }, [router]);
 
   const handleLogin = async ({ email, pass }: { email: string; pass: string }) => {
     setLoading(true);
@@ -34,24 +46,24 @@ export default function LoginPage() {
         return;
       }
 
-      // Success: Save user profile & token to localStorage
+      // Success: Save user profile & token to localStorage and cookie
       const user = data.user || {};
       const userRole = user.role || 'ADMIN';
       const userEmail = user.email || email.trim();
+      const token = data.accessToken || 'jwt_session_' + Date.now();
 
       if (typeof window !== 'undefined') {
         localStorage.setItem('userRole', userRole);
         localStorage.setItem('userEmail', userEmail);
-        if (data.accessToken) {
-          localStorage.setItem('access_token', data.accessToken);
-        }
+        localStorage.setItem('access_token', token);
+        document.cookie = `recordhub_session=${token}; path=/; max-age=2592000; SameSite=Lax`;
       }
 
       setSuccessMessage(`Authenticated as ${userRole}! Redirecting...`);
 
       setTimeout(() => {
-        router.push('/dashboard');
-      }, 500);
+        router.replace('/dashboard');
+      }, 400);
     } catch (err: any) {
       console.error('Login request failed:', err);
       setErrorMessage('Network error during authentication. Please try again.');

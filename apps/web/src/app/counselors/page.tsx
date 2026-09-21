@@ -201,11 +201,14 @@ function CounselorsAndTeamsInner() {
     const matchedCounselor = counselors.find((c) => {
       const full = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
       const first = (c.firstName || '').trim().toLowerCase();
-      const target = adminSelected.toLowerCase();
+      const email = (c.email || '').toLowerCase().trim();
+      const pref = email.split('@')[0];
+      const target = adminSelected.toLowerCase().trim();
       return (
-        (c.email && c.email.toLowerCase() === target) ||
-        (full && (full === target || target.includes(full) || full.includes(target))) ||
-        (first && (first === target || target.includes(first)))
+        email === target ||
+        full === target ||
+        first === target ||
+        pref === target
       );
     });
 
@@ -254,11 +257,14 @@ function CounselorsAndTeamsInner() {
     const matchedCounselor = counselors.find((c) => {
       const full = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
       const first = (c.firstName || '').trim().toLowerCase();
-      const target = primaryAdmin.toLowerCase();
+      const email = (c.email || '').toLowerCase().trim();
+      const pref = email.split('@')[0];
+      const target = primaryAdmin.toLowerCase().trim();
       return (
-        (c.email && c.email.toLowerCase() === target) ||
-        (full && (full === target || target.includes(full) || full.includes(target))) ||
-        (first && (first === target || target.includes(first)))
+        email === target ||
+        full === target ||
+        first === target ||
+        pref === target
       );
     });
 
@@ -304,11 +310,14 @@ function CounselorsAndTeamsInner() {
     const matchedCounselor = counselors.find((c) => {
       const full = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
       const first = (c.firstName || '').trim().toLowerCase();
-      const target = adminName.toLowerCase();
+      const email = (c.email || '').toLowerCase().trim();
+      const pref = email.split('@')[0];
+      const target = adminName.toLowerCase().trim();
       return (
-        (c.email && c.email.toLowerCase() === target) ||
-        (full && (full === target || target.includes(full) || full.includes(target))) ||
-        (first && (first === target || target.includes(first)))
+        email === target ||
+        full === target ||
+        first === target ||
+        pref === target
       );
     });
 

@@ -2,7 +2,7 @@
 
 import React, { Suspense } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { 
   BarChart3, 
   PhoneCall, 
@@ -85,51 +85,64 @@ function NavigationInner() {
 }
 
 export function useUserRole() {
+  const router = useRouter();
   const [role, setRole] = React.useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('userRole') || 'ADMIN';
+      return localStorage.getItem('userRole') || '';
     }
-    return 'ADMIN';
+    return '';
   });
   const [email, setEmail] = React.useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('userEmail') || 'admin@academically.com';
+      return localStorage.getItem('userEmail') || '';
     }
-    return 'admin@academically.com';
+    return '';
   });
+  const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
-      const storedRole = localStorage.getItem('userRole') || 'ADMIN';
-      const storedEmail = localStorage.getItem('userEmail') || 'admin@academically.com';
+      const storedRole = localStorage.getItem('userRole');
+      const storedEmail = localStorage.getItem('userEmail');
+
+      if (!storedRole || !storedEmail) {
+        setRole('');
+        setEmail('');
+        setIsLoading(false);
+        // Clear any orphaned cookies
+        document.cookie = 'recordhub_session=; path=/; max-age=0; SameSite=Lax';
+        router.replace('/');
+        return;
+      }
+
       setRole(storedRole);
       setEmail(storedEmail);
+      setIsLoading(false);
 
       // Refresh role from server in background to ensure up-to-date permissions
-      if (storedEmail) {
-        fetch('/api/v1/auth/counselors', { cache: 'no-store' })
-          .then((res) => res.json())
-          .then((users) => {
-            if (Array.isArray(users)) {
-              const current = users.find((u: any) => (u.email || '').toLowerCase() === storedEmail.toLowerCase());
-              if (current && current.role && current.role !== storedRole) {
-                setRole(current.role);
-                localStorage.setItem('userRole', current.role);
-              }
+      fetch('/api/v1/auth/counselors', { cache: 'no-store' })
+        .then((res) => res.json())
+        .then((users) => {
+          if (Array.isArray(users)) {
+            const current = users.find((u: any) => (u.email || '').toLowerCase() === storedEmail.toLowerCase());
+            if (current && current.role && current.role !== storedRole) {
+              setRole(current.role);
+              localStorage.setItem('userRole', current.role);
             }
-          })
-          .catch(() => {});
-      }
+          }
+        })
+        .catch(() => {});
     }
-  }, []);
+  }, [router]);
 
   const isSuperAdmin = role === 'SUPER_ADMIN';
   const isAdmin = role === 'ADMIN' || role === 'COMPANY_ADMIN';
   const isManager = role === 'MANAGER';
   const isTeamLead = role === 'TEAM_LEAD';
   const isCounselor = role === 'COUNSELOR' || role === 'AGENT' || role === 'SALES_AGENT' || role === 'SALES';
+  const isAuthenticated = Boolean(email && role);
 
-  return { role, email, isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor };
+  return { role, email, isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor, isAuthenticated, isLoading };
 }
 
 export function Navigation() {

@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Navigation } from '@/components/Navigation';
+import { Navigation, useUserRole } from '@/components/Navigation';
 import { Smartphone, CheckCircle2, AlertTriangle, BatteryCharging, RefreshCw, FolderCheck, HardDrive, Clock, Search, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 export default function DeviceHealthPage() {
+  const { role: userRole, isAdmin, isSuperAdmin, isAuthenticated } = useUserRole();
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');

@@ -28,8 +28,10 @@ export function UserProfileMenu() {
       localStorage.removeItem('userRole');
       localStorage.removeItem('userEmail');
       localStorage.removeItem('access_token');
+      document.cookie = 'recordhub_session=; path=/; max-age=0; SameSite=Lax';
+      document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax';
     }
-    router.push('/');
+    router.replace('/');
   };
 
   const getRoleLabel = (role: string) => {
