@@ -5,7 +5,15 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
-@Entity(tableName = "call_events", indices = [Index(value = ["idempotencyKey"], unique = true)])
+@Entity(
+    tableName = "call_events",
+    indices = [
+        Index(value = ["idempotencyKey"], unique = true),
+        Index(value = ["syncStatus"]),
+        Index(value = ["startTime"]),
+        Index(value = ["isPrivate", "startTime"])
+    ]
+)
 data class CallEventEntity(
     @PrimaryKey
     val id: String = UUID.randomUUID().toString(),

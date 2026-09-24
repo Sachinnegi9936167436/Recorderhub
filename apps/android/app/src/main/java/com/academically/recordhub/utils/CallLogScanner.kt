@@ -36,7 +36,7 @@ object CallLogScanner {
             val sevenDaysAgo = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L)
             val effectiveCutoffMs = maxOf(accountCutoffMs, sevenDaysAgo)
 
-            val allDbEventsInitial = db.callEventDao().getAllEvents().toMutableList()
+            val allDbEventsInitial = db.callEventDao().getEventsSince(effectiveCutoffMs).toMutableList()
             val claimedPaths = allDbEventsInitial
                 .mapNotNull { it.recordingPath }
                 .filter { it.isNotBlank() }
@@ -90,7 +90,7 @@ object CallLogScanner {
                         else -> "INCOMING"
                     }
 
-                    val cleanDigits = rawNumber.replace("\\D".toRegex(), "")
+                    val cleanDigits = PhoneUtils.NON_DIGITS_REGEX.replace(rawNumber, "")
                     val formattedPhone = PhoneUtils.formatInternationalNumber(rawNumber, cachedName)
                     val idempotencyKey = if (isWhatsApp) "WA_LOG-$dateMs-$cleanDigits" else "SYS-LOG-$dateMs-$cleanDigits"
                     val endTimeMs = dateMs + (durationSec * 1000L)
@@ -152,38 +152,30 @@ object CallLogScanner {
             }
 
             // Secondary pass: Attach audio recordings strictly to recent SIM/Cellular calls in Room DB missing recording paths
-            val allDbEvents = db.callEventDao().getAllEvents()
+            val unlinkedEvents = db.callEventDao().getUnlinkedSimEvents(effectiveCutoffMs)
 
-            for (evt in allDbEvents) {
-                val isWa = evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")
-                if (isWa) {
-                    continue // WhatsApp calls must NEVER be matched by SimCallRecordingScanner
-                }
+            for (evt in unlinkedEvents) {
+                val matchedFile = SimCallRecordingScanner.findAudioForCall(
+                    context, 
+                    evt.phoneNumber, 
+                    evt.startTime, 
+                    evt.endTime,
+                    claimedPaths,
+                    evt.durationSeconds
+                )
 
-                val isUnlinked = evt.recordingPath.isNullOrEmpty() || evt.recordingStatus == "NONE"
-                if (isUnlinked && evt.durationSeconds > 0 && evt.startTime >= effectiveCutoffMs) {
-                    val matchedFile = SimCallRecordingScanner.findAudioForCall(
-                        context, 
-                        evt.phoneNumber, 
-                        evt.startTime, 
-                        evt.endTime,
-                        claimedPaths,
-                        evt.durationSeconds
-                    )
-
-                    if (matchedFile != null && matchedFile.exists()) {
-                        claimedPaths.add(matchedFile.absolutePath)
-                        claimedPaths.add(matchedFile.name)
-                        Log.i(TAG, "Linking audio recording ${matchedFile.name} strictly to call ${evt.idempotencyKey}")
-                        db.callEventDao().insertCallEvent(
-                            evt.copy(
-                                recordingPath = matchedFile.absolutePath,
-                                recordingStatus = "PENDING_UPLOAD",
-                                syncStatus = "PENDING"
-                            )
+                if (matchedFile != null && matchedFile.exists()) {
+                    claimedPaths.add(matchedFile.absolutePath)
+                    claimedPaths.add(matchedFile.name)
+                    Log.i(TAG, "Linking audio recording ${matchedFile.name} strictly to call ${evt.idempotencyKey}")
+                    db.callEventDao().insertCallEvent(
+                        evt.copy(
+                            recordingPath = matchedFile.absolutePath,
+                            recordingStatus = "PENDING_UPLOAD",
+                            syncStatus = "PENDING"
                         )
-                        importedCount++
-                    }
+                    )
+                    importedCount++
                 }
             }
 

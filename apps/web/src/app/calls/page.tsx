@@ -511,19 +511,96 @@ function SalestrailCallsInner() {
   const [counselorsList, setCounselorsList] = useState<any[]>([]);
   const [assigningDeviceId, setAssigningDeviceId] = useState<string | null>(null);
 
-  const fetchCalls = async () => {
+  // Server-side pagination & aggregated statistics state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  type SortField = 'user' | 'phone' | 'name' | 'type' | 'startTime' | 'direction' | 'status' | 'duration' | 'audio';
+  type SortOrder = 'asc' | 'desc';
+  const [sortField, setSortField] = useState<SortField>('startTime');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+
+  const [serverStats, setServerStats] = useState({
+    totalCount: 0,
+    totalDurSec: 0,
+    totalTalkTimeStr: '0s',
+    outboundCount: 0,
+    outboundDurSec: 0,
+    outboundTalkTimeStr: '0s',
+    inboundCount: 0,
+    inboundDurSec: 0,
+    inboundTalkTimeStr: '0s',
+    answeredCount: 0,
+    simCount: 0,
+    waCount: 0,
+    mismatchCount: 0,
+  });
+
+  const isFetchingCallsRef = useRef(false);
+  const isFetchingCounselorsRef = useRef(false);
+  const isFetchingTeamsRef = useRef(false);
+
+  const fetchCalls = async (
+    targetPage = currentPage,
+    targetPageSize = pageSize,
+    targetSortField = sortField,
+    targetSortOrder = sortOrder
+  ) => {
     try {
-      if (callsList.length === 0) setLoading(true);
-      const res = await fetch('/api/v1/calls', {
+      setLoading(true);
+      const params = new URLSearchParams({
+        page: targetPage.toString(),
+        pageSize: targetPageSize.toString(),
+        dateRange,
+        sortField: targetSortField,
+        sortOrder: targetSortOrder,
+      });
+
+      if (anomalyFilter && anomalyFilter !== 'all') {
+        params.set('anomaly', anomalyFilter);
+      }
+
+      if (dateRange === 'Custom') {
+        if (customStartDate) params.set('startDate', customStartDate);
+        if (customEndDate) params.set('endDate', customEndDate);
+      }
+
+      if (searchQuery.trim()) {
+        params.set('search', searchQuery.trim());
+      }
+
+      if (repCategory === 'Individual' && subFilter !== 'All Counselors') {
+        params.set('agentName', subFilter);
+      } else if (repCategory === 'Teams' && subFilter !== 'All Teams') {
+        params.set('team', subFilter);
+      }
+
+      const res = await fetch(`/api/v1/calls?${params.toString()}`, {
         cache: 'no-store',
         headers: {
           Authorization: 'Bearer mock_jwt_token',
         },
       });
+
       if (res.ok) {
         const data = await res.json();
-        const apiCalls = Array.isArray(data) ? data : data.calls || [];
-        setCallsList(apiCalls);
+        if (data && data.calls) {
+          setCallsList(data.calls || []);
+          if (data.stats) {
+            setServerStats(data.stats);
+          }
+          if (typeof data.totalRecords === 'number') {
+            setTotalRecords(data.totalRecords);
+          }
+          if (typeof data.totalPages === 'number') {
+            setTotalPages(data.totalPages);
+          }
+        } else if (Array.isArray(data)) {
+          setCallsList(data);
+          setTotalRecords(data.length);
+          setTotalPages(Math.ceil(data.length / targetPageSize) || 1);
+        }
       }
     } catch (err) {
       console.error('Error fetching live calls:', err);
@@ -533,6 +610,8 @@ function SalestrailCallsInner() {
   };
 
   const fetchProvisionedCounselors = async () => {
+    if (isFetchingCounselorsRef.current) return;
+    isFetchingCounselorsRef.current = true;
     try {
       const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
       if (res.ok) {
@@ -541,6 +620,8 @@ function SalestrailCallsInner() {
       }
     } catch (err) {
       console.error('Error fetching counselors list:', err);
+    } finally {
+      isFetchingCounselorsRef.current = false;
     }
   };
 
@@ -1002,419 +1083,27 @@ function SalestrailCallsInner() {
     return uniqueCounselors;
   }, [isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor, uniqueCounselors, myManagedTeams, myTeamMemberIdentifiers, counselorsList, userEmail]);
 
-  // 1. Base Filter (Permissions, Message exclusion, Recordings query, Search Query, Date Range, Sales Rep / Team)
-  const baseFilteredCalls = useMemo(() => {
-    return callsList.filter((call) => {
-      const { canView } = canUserAccessCall(call);
-      if (!canView) return false;
+  // 2. Dynamic Summary Stats (Calculated server-side from entire MongoDB dataset of 17,800+ calls)
+  const callStats = serverStats;
 
-      // 0. Exclude non-call text/chat message entries and group mentions
-      const combined = `${call.phoneNumber || ''} ${call.leadName || ''} ${call.disposition || ''}`.toLowerCase();
-      if (
-        combined.includes('message') ||
-        combined.includes('messages') ||
-        combined.includes('unread') ||
-        combined.includes('mention') ||
-        combined.includes('group:') ||
-        combined.includes('sales group')
-      ) {
-        return false;
-      }
+  // Final calls list to display on current page
+  const paginatedCalls = callsList;
 
-      // 0.5. Filter for recordings view if ?filter=recordings query param is active
-      if (isRecordingsOnly) {
-        const hasRecording = call.audioUrl || call.s3Key || call.recordingStatus === 'COMPLETED' || call.recordingStatus === 'PENDING_UPLOAD';
-        if (!hasRecording || call.recordingStatus === 'NONE') {
-          return false;
-        }
-      }
-
-      // 1. Search Query Filter
-      const phone = call.phoneNumber || call.phoneNumberMasked || call.phone || '';
-      const name = call.leadName || call.name || '';
-      const user = resolveCounselorName(call);
-      const searchLower = searchQuery.toLowerCase();
-
-      const matchesSearch =
-        phone.toLowerCase().includes(searchLower) ||
-        name.toLowerCase().includes(searchLower) ||
-        user.toLowerCase().includes(searchLower);
-
-      if (!matchesSearch) return false;
-
-      // 2. Date Range Filter
-      if (dateRange !== 'All time') {
-        const callDate = call.startTime ? new Date(call.startTime) : new Date();
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-
-        if (dateRange === 'Today') {
-          const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-          if (callDate < startOfToday || callDate > endOfToday) return false;
-        } else if (dateRange === 'Last 24 hours') {
-          const last24h = new Date(now.getTime() - 24 * 3600 * 1000);
-          if (callDate < last24h || callDate > now) return false;
-        } else if (dateRange === 'Yesterday') {
-          const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
-          const endOfYesterday = new Date(startOfToday.getTime() - 1);
-          if (callDate < startOfYesterday || callDate > endOfYesterday) return false;
-        } else if (dateRange === 'This week') {
-          const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 86400000);
-          if (callDate < sevenDaysAgo) return false;
-        } else if (dateRange === 'This month') {
-          const thirtyDaysAgo = new Date(startOfToday.getTime() - 30 * 86400000);
-          if (callDate < thirtyDaysAgo) return false;
-        } else if (dateRange === 'Custom') {
-          if (customStartDate) {
-            const [sYear, sMonth, sDay] = customStartDate.split('-').map(Number);
-            const startCustom = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
-            if (callDate < startCustom) return false;
-          }
-          if (customEndDate) {
-            const [eYear, eMonth, eDay] = customEndDate.split('-').map(Number);
-            const endCustom = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999);
-            if (callDate > endCustom) return false;
-          }
-        }
-      }
-
-      // 3. Select Sales Rep / Team Filter
-      if (repCategory === 'Individual') {
-        if (subFilter !== 'All Counselors') {
-          const targetLower = subFilter.toLowerCase().trim();
-          const userLower = user.toLowerCase().trim();
-          const callEmail = (call.counselorEmail || call.email || '').toLowerCase().trim();
-          const agentName = (call.agentName || call.counselorName || '').toLowerCase().trim();
-
-          const targetCounselor = (counselorsList || []).find((c) => {
-            const fn = `${c.firstName || ''} ${c.lastName || ''}`.trim().toLowerCase();
-            const f1 = (c.firstName || '').trim().toLowerCase();
-            const em = (c.email || '').trim().toLowerCase();
-            return fn === targetLower || f1 === targetLower || em === targetLower;
-          });
-
-          const targetEmail = targetCounselor?.email?.toLowerCase().trim();
-          const targetFullName = targetCounselor ? `${targetCounselor.firstName || ''} ${targetCounselor.lastName || ''}`.trim().toLowerCase() : '';
-          const targetFirstName = targetCounselor?.firstName?.toLowerCase().trim();
-
-          const matchesIndividual =
-            userLower === targetLower ||
-            (targetFullName && userLower === targetFullName) ||
-            (targetFirstName && userLower === targetFirstName) ||
-            (targetEmail && callEmail && callEmail === targetEmail) ||
-            (agentName && (agentName === targetLower || (targetFirstName && agentName === targetFirstName) || (targetFullName && agentName === targetFullName)));
-
-          if (!matchesIndividual) {
-            return false;
-          }
-        }
-      } else if (repCategory === 'Teams') {
-        if (subFilter !== 'All Teams') {
-          const targetLower = subFilter.toLowerCase().trim();
-          const callDirectTeam = (call.team || call.teamName || call.department || '').toLowerCase().trim();
-
-          if (callDirectTeam && callDirectTeam === targetLower) {
-            // Direct match
-          } else {
-            // Check if counselor/agent belongs to this team
-            const teamObj = teamsList.find((t) => (t.name || '').toLowerCase().trim() === targetLower);
-            const memberIdentifiers = new Set<string>();
-
-            if (teamObj) {
-              if (teamObj.teamLeadEmail) memberIdentifiers.add(teamObj.teamLeadEmail.toLowerCase().trim());
-              if (teamObj.admin) {
-                const adm = teamObj.admin.toLowerCase().trim();
-                memberIdentifiers.add(adm);
-                const admPrefix = adm.split('@')[0];
-                if (admPrefix) memberIdentifiers.add(admPrefix);
-              }
-              if (Array.isArray(teamObj.admins)) {
-                teamObj.admins.forEach((a: string) => {
-                  if (a) {
-                    const aLower = a.toLowerCase().trim();
-                    memberIdentifiers.add(aLower);
-                    const aPrefix = aLower.split('@')[0];
-                    if (aPrefix) memberIdentifiers.add(aPrefix);
-                  }
-                });
-              }
-              if (Array.isArray(teamObj.members)) {
-                teamObj.members.forEach((m: string) => {
-                  if (m) {
-                    const mLower = m.toLowerCase().trim();
-                    memberIdentifiers.add(mLower);
-
-                    // Cross-reference with counselorsList
-                    if (Array.isArray(counselorsList)) {
-                      counselorsList.forEach((c) => {
-                        const cEmail = (c.email || '').toLowerCase().trim();
-                        const cFull = `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase().trim();
-                        const cFirst = (c.firstName || '').toLowerCase().trim();
-                        const cPref = cEmail.split('@')[0];
-                        const cId = c._id ? c._id.toString() : '';
-                        if (
-                          cEmail === mLower ||
-                          cFull === mLower ||
-                          cFirst === mLower ||
-                          cPref === mLower ||
-                          cId === mLower
-                        ) {
-                          if (cEmail) {
-                            memberIdentifiers.add(cEmail);
-                            memberIdentifiers.add(cPref);
-                          }
-                          if (cFull) memberIdentifiers.add(cFull);
-                          if (c.firstName) memberIdentifiers.add(c.firstName.toLowerCase().trim());
-                          if (c._id) memberIdentifiers.add(c._id.toString());
-                        }
-                      });
-                    }
-                  }
-                });
-              }
-            }
-
-            if (Array.isArray(counselorsList)) {
-              counselorsList.forEach((counselor: any) => {
-                const cTeam = (counselor.team || counselor.teamName || counselor.department || '').toLowerCase().trim();
-                if (cTeam === targetLower) {
-                  if (counselor.email) {
-                    const emailLower = counselor.email.toLowerCase().trim();
-                    memberIdentifiers.add(emailLower);
-                    const emailPrefix = emailLower.split('@')[0];
-                    if (emailPrefix) memberIdentifiers.add(emailPrefix);
-                  }
-                  const fullName = `${counselor.firstName || ''} ${counselor.lastName || ''}`.trim().toLowerCase();
-                  if (fullName) memberIdentifiers.add(fullName);
-                  if (counselor.firstName) memberIdentifiers.add(counselor.firstName.toLowerCase().trim());
-                  if (counselor._id) memberIdentifiers.add(counselor._id.toString());
-                  if (counselor.id) memberIdentifiers.add(counselor.id.toString());
-                }
-              });
-            }
-
-            const callEmail = (call.counselorEmail || call.email || '').toLowerCase().trim();
-            const callAgent = (call.agentName || call.counselorName || call.userName || call.user || '').toLowerCase().trim();
-            const resolved = resolveCounselorName(call).toLowerCase().trim();
-            const callUserId = (call.userId || '').toString().toLowerCase().trim();
-
-            const isDirectMember =
-              (callEmail && memberIdentifiers.has(callEmail)) ||
-              (callUserId && memberIdentifiers.has(callUserId)) ||
-              (resolved && memberIdentifiers.has(resolved)) ||
-              (callAgent && memberIdentifiers.has(callAgent));
-
-            if (!isDirectMember) {
-              return false;
-            }
-          }
-        }
-      }
-
-      return true;
-    });
-  }, [callsList, isRecordingsOnly, searchQuery, dateRange, customStartDate, customEndDate, repCategory, subFilter, userEmail, isAdmin, isManager, isTeamLead, isCounselor, counselorsList, teamsList]);
-
-  // 2. Dynamic Summary Stats calculated from current active filters
-  const callStats = useMemo(() => {
-    let totalDurSec = 0;
-    let answeredCount = 0;
-    let reviewedCount = 0;
-    let withRecCount = 0;
-    let waCount = 0;
-    let simCount = 0;
-    let mismatchCount = 0;
-
-    let outboundCount = 0;
-    let outboundDurSec = 0;
-    let inboundCount = 0;
-    let inboundDurSec = 0;
-
-    baseFilteredCalls.forEach((c) => {
-      const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-      const dur = isAns ? Number(c.durationSeconds || 0) : 0;
-      if (isAns) answeredCount++;
-      totalDurSec += dur;
-
-      const dir = (c.direction || '').toUpperCase();
-      const isOutbound = dir === 'OUTGOING' || dir === 'OUTBOUND';
-      const isInbound = dir === 'INCOMING' || dir === 'INBOUND';
-
-      if (isOutbound) {
-        outboundCount++;
-        outboundDurSec += dur;
-      } else if (isInbound) {
-        inboundCount++;
-        inboundDurSec += dur;
-      } else {
-        outboundCount++;
-        outboundDurSec += dur;
-      }
-
-      const hasRec = (c.audioUrl || c.s3Key || c.recordingStatus === 'COMPLETED' || c.recordingStatus === 'PENDING_UPLOAD') && c.recordingStatus !== 'NONE';
-      if (hasRec) {
-        withRecCount++;
-        if (isCallDurationMismatch(c)) {
-          mismatchCount++;
-        }
-      }
-      if (c.rating || c.isBookmarked) reviewedCount++;
-
-      const isWA = (c.channel || '').toUpperCase() === 'WHATSAPP' || (c.disposition || '').toLowerCase().includes('whatsapp') || (c.idempotencyKey || '').startsWith('WA_');
-      if (isWA) waCount++; else simCount++;
-    });
-
-    const formatDuration = (totalSec: number) => {
-      const hours = Math.floor(totalSec / 3600);
-      const mins = Math.floor((totalSec % 3600) / 60);
-      const secs = totalSec % 60;
-      if (hours > 0) return `${hours}h ${mins}m`;
-      if (mins > 0) return `${mins}m ${secs}s`;
-      return `${secs}s`;
-    };
-
-    return {
-      totalCount: baseFilteredCalls.length,
-      totalDurSec,
-      totalTalkTimeStr: formatDuration(totalDurSec),
-      outboundCount,
-      outboundDurSec,
-      outboundTalkTimeStr: formatDuration(outboundDurSec),
-      inboundCount,
-      inboundDurSec,
-      inboundTalkTimeStr: formatDuration(inboundDurSec),
-      answeredCount,
-      reviewedCount,
-      withRecCount,
-      waCount,
-      simCount,
-      mismatchCount,
-    };
-  }, [baseFilteredCalls, audioCacheVer]);
-
-  // 3. Final filtered calls with Anomaly / Category Tab selection applied
-  const filteredCalls = useMemo(() => {
-    return baseFilteredCalls.filter((call) => {
-      if (anomalyFilter === 'whatsapp') {
-        const isWA = (call.channel || '').toUpperCase() === 'WHATSAPP' || (call.disposition || '').toLowerCase().includes('whatsapp') || (call.idempotencyKey || '').startsWith('WA_');
-        if (!isWA) return false;
-      } else if (anomalyFilter === 'sim') {
-        const isWA = (call.channel || '').toUpperCase() === 'WHATSAPP' || (call.disposition || '').toLowerCase().includes('whatsapp') || (call.idempotencyKey || '').startsWith('WA_');
-        if (isWA) return false;
-      } else if (anomalyFilter === 'mismatch') {
-        if (!isCallDurationMismatch(call)) return false;
-      } else if (anomalyFilter === 'bookmarked') {
-        if (!call.isBookmarked && !call.rating) return false;
-      }
-
-      return true;
-    });
-  }, [baseFilteredCalls, anomalyFilter, audioCacheVer]);
-
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-
-  // Reset to Page 1 when any filter changes
+  // Trigger fast server-side query on filter or page changes (with search debouncing)
   useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, dateRange, customStartDate, customEndDate, repCategory, subFilter, isRecordingsOnly, anomalyFilter]);
-
-  type SortField = 'user' | 'phone' | 'name' | 'type' | 'startTime' | 'direction' | 'status' | 'duration' | 'audio';
-  type SortOrder = 'asc' | 'desc';
-
-  const [sortField, setSortField] = useState<SortField>('startTime');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+    const timer = setTimeout(() => {
+      fetchCalls(currentPage, pageSize, sortField, sortOrder);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery, dateRange, customStartDate, customEndDate, repCategory, subFilter, isRecordingsOnly, anomalyFilter, currentPage, pageSize]);
 
   const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortField(field);
-      setSortOrder(field === 'startTime' || field === 'duration' ? 'desc' : 'asc');
-    }
+    const newOrder = sortField === field ? (sortOrder === 'asc' ? 'desc' : 'asc') : (field === 'startTime' || field === 'duration' ? 'desc' : 'asc');
+    setSortField(field);
+    setSortOrder(newOrder);
+    setCurrentPage(1);
+    fetchCalls(1, pageSize, field, newOrder);
   };
-
-  const sortedCalls = useMemo(() => {
-    return [...filteredCalls].sort((a, b) => {
-      let cmp = 0;
-      switch (sortField) {
-        case 'user': {
-          const uA = resolveCounselorName(a);
-          const uB = resolveCounselorName(b);
-          cmp = uA.localeCompare(uB);
-          break;
-        }
-        case 'phone': {
-          const pA = a.phoneNumber || a.phoneNumberMasked || a.phone || '';
-          const pB = b.phoneNumber || b.phoneNumberMasked || b.phone || '';
-          cmp = pA.localeCompare(pB);
-          break;
-        }
-        case 'name': {
-          const pA = a.phoneNumber || a.phoneNumberMasked || a.phone || '';
-          const pB = b.phoneNumber || b.phoneNumberMasked || b.phone || '';
-          const nA = a.leadName || a.name || pA;
-          const nB = b.leadName || b.name || pB;
-          cmp = nA.localeCompare(nB);
-          break;
-        }
-        case 'type': {
-          const isWAA = (a.channel || '').toUpperCase() === 'WHATSAPP' || (a.disposition || '').toLowerCase().includes('whatsapp') || (a.idempotencyKey || '').startsWith('WA_');
-          const isWAB = (b.channel || '').toUpperCase() === 'WHATSAPP' || (b.disposition || '').toLowerCase().includes('whatsapp') || (b.idempotencyKey || '').startsWith('WA_');
-          const tA = isWAA ? 'WhatsApp' : 'SIM';
-          const tB = isWAB ? 'WhatsApp' : 'SIM';
-          cmp = tA.localeCompare(tB);
-          break;
-        }
-        case 'startTime': {
-          const timeA = a.startTime ? new Date(a.startTime).getTime() : 0;
-          const timeB = b.startTime ? new Date(b.startTime).getTime() : 0;
-          cmp = timeA - timeB;
-          break;
-        }
-        case 'direction': {
-          const isOutA = (a.direction || 'OUTGOING').toUpperCase() === 'OUTGOING' || (a.direction || '').toUpperCase() === 'OUTBOUND';
-          const isOutB = (b.direction || 'OUTGOING').toUpperCase() === 'OUTGOING' || (b.direction || '').toUpperCase() === 'OUTBOUND';
-          const dA = isOutA ? 'Outbound' : 'Inbound';
-          const dB = isOutB ? 'Outbound' : 'Inbound';
-          cmp = dA.localeCompare(dB);
-          break;
-        }
-        case 'status': {
-          const isAnsA = (a.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-          const isAnsB = (b.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-          const sA = isAnsA ? 'Answered' : 'Unanswered';
-          const sB = isAnsB ? 'Answered' : 'Unanswered';
-          cmp = sA.localeCompare(sB);
-          break;
-        }
-        case 'duration': {
-          const isAnsA = (a.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-          const isAnsB = (b.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-          const durA = isAnsA ? Number(a.durationSeconds || 0) : 0;
-          const durB = isAnsB ? Number(b.durationSeconds || 0) : 0;
-          cmp = durA - durB;
-          break;
-        }
-        case 'audio': {
-          const hasA = a.audioUrl || a.s3Key || a.recordingStatus === 'COMPLETED' ? 1 : 0;
-          const hasB = b.audioUrl || b.s3Key || b.recordingStatus === 'COMPLETED' ? 1 : 0;
-          cmp = hasA - hasB;
-          break;
-        }
-      }
-      return sortOrder === 'asc' ? cmp : -cmp;
-    });
-  }, [filteredCalls, sortField, sortOrder]);
-
-  const totalRecords = sortedCalls.length;
-  const totalPages = Math.ceil(totalRecords / pageSize) || 1;
-
-  const paginatedCalls = useMemo(() => {
-    const startIdx = (currentPage - 1) * pageSize;
-    return sortedCalls.slice(startIdx, startIdx + pageSize);
-  }, [sortedCalls, currentPage, pageSize]);
 
   const renderSortHeader = (field: SortField, label: string, extraClasses = '') => {
     const isActive = sortField === field;
@@ -1442,35 +1131,71 @@ function SalestrailCallsInner() {
     );
   };
 
-  const exportCSV = () => {
-    if (sortedCalls.length === 0) {
-      alert('No call records match the current filter selection to export.');
-      return;
-    }
-    const headers = ['User', 'Phone Number', 'Name', 'Type', 'Call Time', 'Direction', 'Status', 'Duration'];
-    const rows = sortedCalls.map((c) => {
-      const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-      const durSec = isAns ? Number(c.durationSeconds || 0) : 0;
-      return [
-        resolveCounselorName(c),
-        c.phoneNumber || c.phoneNumberMasked || '',
-        c.leadName || c.phoneNumber || '',
-        c.channel === 'WHATSAPP' ? 'WhatsApp' : 'SIM',
-        c.startTime ? new Date(c.startTime).toLocaleString() : '',
-        c.direction || 'Outbound',
-        isAns ? 'Answered' : 'Unanswered',
-        durSec > 0 ? `${Math.floor(durSec / 60)}m:${durSec % 60}s` : '0s',
-      ];
-    });
+  const exportCSV = async () => {
+    try {
+      const params = new URLSearchParams({
+        export: 'true',
+        dateRange,
+        sortField,
+        sortOrder,
+      });
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `RecorderHub_Calls_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      if (anomalyFilter && anomalyFilter !== 'all') {
+        params.set('anomaly', anomalyFilter);
+      }
+
+      if (dateRange === 'Custom') {
+        if (customStartDate) params.set('startDate', customStartDate);
+        if (customEndDate) params.set('endDate', customEndDate);
+      }
+
+      if (searchQuery.trim()) {
+        params.set('search', searchQuery.trim());
+      }
+
+      if (repCategory === 'Individual' && subFilter !== 'All Counselors') {
+        params.set('agentName', subFilter);
+      } else if (repCategory === 'Teams' && subFilter !== 'All Teams') {
+        params.set('team', subFilter);
+      }
+
+      const res = await fetch(`/api/v1/calls?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to export');
+      const data = await res.json();
+      const exportCalls = Array.isArray(data) ? data : data.calls || [];
+
+      if (exportCalls.length === 0) {
+        alert('No call records match the current filter selection to export.');
+        return;
+      }
+      const headers = ['User', 'Phone Number', 'Name', 'Type', 'Call Time', 'Direction', 'Status', 'Duration'];
+      const rows = exportCalls.map((c: any) => {
+        const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+        const durSec = isAns ? Number(c.durationSeconds || 0) : 0;
+        return [
+          resolveCounselorName(c),
+          c.phoneNumber || c.phoneNumberMasked || '',
+          c.leadName || c.phoneNumber || '',
+          c.channel === 'WHATSAPP' ? 'WhatsApp' : 'SIM',
+          c.startTime ? new Date(c.startTime).toLocaleString() : '',
+          c.direction || 'Outbound',
+          isAns ? 'Answered' : 'Unanswered',
+          durSec > 0 ? `${Math.floor(durSec / 60)}m:${durSec % 60}s` : '0s',
+        ];
+      });
+
+      const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e: any) => e.join(','))].join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `RecorderHub_Calls_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error exporting CSV:', err);
+      alert('Error exporting CSV');
+    }
   };
 
   return (

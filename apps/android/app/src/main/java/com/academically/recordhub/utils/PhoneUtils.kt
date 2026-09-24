@@ -2,6 +2,8 @@ package com.academically.recordhub.utils
 
 object PhoneUtils {
 
+    val NON_DIGITS_REGEX = Regex("\\D")
+
     /**
      * Formats any domestic or international phone number, preserving the true country code:
      * - Pakistan (+92): "+92 313 2323522"
@@ -26,7 +28,7 @@ object PhoneUtils {
 
         // 1. If it explicitly starts with '+', preserve exact international prefix
         if (trimmed.startsWith("+")) {
-            val digits = trimmed.replace("\\D".toRegex(), "")
+            val digits = NON_DIGITS_REGEX.replace(trimmed, "")
             return when {
                 digits.startsWith("92") && digits.length == 12 -> {
                     "+92 ${digits.substring(2, 5)} ${digits.substring(5)}"
@@ -53,7 +55,7 @@ object PhoneUtils {
             }
         }
 
-        val digitsOnly = trimmed.replace("\\D".toRegex(), "")
+        val digitsOnly = NON_DIGITS_REGEX.replace(trimmed, "")
 
         // 2. Unprefixed numbers with recognized international prefixes
         return when {

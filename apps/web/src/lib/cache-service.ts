@@ -3,7 +3,7 @@ import { connectToDatabase, withDbRetry } from './db';
 import { CallModel, DeviceModel, UserModel, TeamModel } from './models';
 
 export const CALLS_CACHE_KEY = 'cache:calls:latest';
-export const CALLS_CACHE_TTL = 30; // 30 seconds fresh TTL
+export const CALLS_CACHE_TTL = 86400; // 24 hours cache TTL (kept fresh via incremental sync)
 
 export const COUNSELORS_CACHE_KEY = 'cache:auth:counselors';
 export const COUNSELORS_CACHE_TTL = 300; // 5 minutes
@@ -12,11 +12,12 @@ export const TEAMS_CACHE_KEY = 'cache:teams:list';
 export const TEAMS_CACHE_TTL = 300; // 5 minutes
 
 export const DASHBOARD_SUMMARY_CACHE_KEY = 'cache:dashboard:summary';
-export const DASHBOARD_SUMMARY_CACHE_TTL = 30; // 30 seconds
-export const MAX_CACHED_CALLS = 100000; // Allow full active history without 3k truncation
+export const DASHBOARD_SUMMARY_CACHE_TTL = 60; // 60 seconds
+export const MAX_CACHED_CALLS = 2500; // Optimal recent calls cache capacity for fast <200ms page loads
 
 let isRebuildingCalls = false;
 let lastRebuildTimestamp = 0;
+let activeRebuildCallsPromise: Promise<any[]> | null = null;
 const MIN_REBUILD_INTERVAL_MS = 5000; // Throttle full rebuilds to at most once per 5 seconds
 
 /**
@@ -91,7 +92,7 @@ export function formatPhoneNumber(rawPhone: string): string {
 
 /**
  * Fast O(N) deduplication for call records by unique database _id or idempotencyKey.
- * Preserves all distinct back-to-back calls without time-window collapsing.
+ * Preserves the database sorted order (newest first).
  */
 export function deduplicateCalls(calls: any[]): any[] {
   if (!calls || calls.length === 0) return [];
@@ -107,118 +108,120 @@ export function deduplicateCalls(calls: any[]): any[] {
     }
   }
 
-  return deduplicated.sort((a, b) => {
-    const timeA = new Date(a.startTime || a.createdAt || 0).getTime();
-    const timeB = new Date(b.startTime || b.createdAt || 0).getTime();
-    return timeB - timeA;
-  });
+  return deduplicated;
 }
 
 /**
  * Rebuilds the calls cache from MongoDB Atlas, enriches device metadata, and saves to in-memory cache.
  */
 export async function rebuildCallsCache(): Promise<any[]> {
-  if (isRebuildingCalls) {
-    const cached = await cacheGet<any[]>(CALLS_CACHE_KEY);
-    if (cached && Array.isArray(cached) && cached.length > 0) {
-      return cached;
-    }
+  if (activeRebuildCallsPromise) {
+    return activeRebuildCallsPromise;
   }
 
-  isRebuildingCalls = true;
-  lastRebuildTimestamp = Date.now();
+  activeRebuildCallsPromise = (async () => {
+    isRebuildingCalls = true;
+    lastRebuildTimestamp = Date.now();
 
-  try {
-    const rawCalls = await withDbRetry(async () => {
-      return await (CallModel as any)
-        .find()
-        .select('idempotencyKey phoneNumber phoneNumberMasked direction status startTime endTime durationSeconds simSlot isPrivate disposition channel agentName counselorEmail leadName recordingStatus s3Key audioUrl notes team deviceId createdAt updatedAt')
-        .sort({ startTime: -1, createdAt: -1 })
-        .limit(MAX_CACHED_CALLS)
-        .lean()
-        .exec();
-    });
-
-    if (!rawCalls || rawCalls.length === 0) {
-      isRebuildingCalls = false;
-      return [];
-    }
-
-    // Enrich agent names from registered devices
     try {
-      const registeredDevices = await (DeviceModel as any).find().select('deviceId agentName counselorEmail').lean().exec();
-      if (registeredDevices && registeredDevices.length > 0) {
-        const deviceAgentMap = new Map<string, string>();
-        for (const dev of registeredDevices) {
-          if (dev.deviceId && (dev.agentName || dev.counselorEmail)) {
-            const name =
-              dev.agentName && dev.agentName !== 'Counselor Agent' && dev.agentName !== 'Counselor'
-                ? dev.agentName
-                : dev.counselorEmail
-                ? dev.counselorEmail
-                    .split('@')[0]
-                    .replace(/[._]/g, ' ')
-                    .replace(/\b\w/g, (l: string) => l.toUpperCase())
-                : null;
-            if (name) {
-              deviceAgentMap.set(dev.deviceId, name);
+      console.log('[rebuildCallsCache] Starting MongoDB query for up to', MAX_CACHED_CALLS, 'calls...');
+      const rawCalls = await withDbRetry(async () => {
+        return await (CallModel as any)
+          .find()
+          .select('idempotencyKey phoneNumber phoneNumberMasked direction status startTime endTime durationSeconds simSlot isPrivate disposition channel agentName counselorEmail leadName recordingStatus s3Key audioUrl notes team deviceId createdAt updatedAt')
+          .sort({ startTime: -1, createdAt: -1 })
+          .limit(MAX_CACHED_CALLS)
+          .lean()
+          .exec();
+      });
+
+      console.log('[rebuildCallsCache] MongoDB returned rawCalls count:', rawCalls?.length);
+
+      if (!rawCalls || rawCalls.length === 0) {
+        isRebuildingCalls = false;
+        return [];
+      }
+
+      // Enrich agent names from registered devices
+      try {
+        const registeredDevices = await (DeviceModel as any).find().select('deviceId agentName counselorEmail').lean().exec();
+        if (registeredDevices && registeredDevices.length > 0) {
+          const deviceAgentMap = new Map<string, string>();
+          for (const dev of registeredDevices) {
+            if (dev.deviceId && (dev.agentName || dev.counselorEmail)) {
+              const name =
+                dev.agentName && dev.agentName !== 'Counselor Agent' && dev.agentName !== 'Counselor'
+                  ? dev.agentName
+                  : dev.counselorEmail
+                  ? dev.counselorEmail
+                      .split('@')[0]
+                      .replace(/[._]/g, ' ')
+                      .replace(/\b\w/g, (l: string) => l.toUpperCase())
+                  : null;
+              if (name) {
+                deviceAgentMap.set(dev.deviceId, name);
+              }
+            }
+          }
+
+          for (const call of rawCalls) {
+            if (
+              (!call.agentName || call.agentName === 'Counselor Agent' || call.agentName === 'Counselor') &&
+              call.deviceId &&
+              deviceAgentMap.has(call.deviceId)
+            ) {
+              call.agentName = deviceAgentMap.get(call.deviceId);
             }
           }
         }
-
-        for (const call of rawCalls) {
-          if (
-            (!call.agentName || call.agentName === 'Counselor Agent' || call.agentName === 'Counselor') &&
-            call.deviceId &&
-            deviceAgentMap.has(call.deviceId)
-          ) {
-            call.agentName = deviceAgentMap.get(call.deviceId);
-          }
-        }
+      } catch (devErr) {
+        console.warn('Cache service device enrichment notice:', devErr);
       }
-    } catch (devErr) {
-      console.warn('Cache service device enrichment notice:', devErr);
-    }
 
-    // Clean text/chat messages & format phone numbers
-    const cleanCalls = rawCalls
-      .filter((c: any) => {
-        const fullStr = `${c.phoneNumber || ''} ${c.leadName || ''} ${c.disposition || ''}`.toLowerCase();
-        return (
-          !fullStr.includes('message') &&
-          !fullStr.includes('messages') &&
-          !fullStr.includes('unread') &&
-          !fullStr.includes('mention') &&
-          !fullStr.includes('group:')
-        );
-      })
-      .map((c: any) => {
-        const formatted = formatPhoneNumber(c.phoneNumber || c.phoneNumberMasked || '');
-        if (formatted) {
-          c.phoneNumber = formatted;
-          c.phoneNumberMasked = formatted;
-        }
-        const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
-        if (!isAns) {
-          c.durationSeconds = 0;
-        }
-        return c;
-      });
+      // Clean text/chat messages & format phone numbers
+      const cleanCalls = rawCalls
+        .filter((c: any) => {
+          const fullStr = `${c.phoneNumber || ''} ${c.leadName || ''} ${c.disposition || ''}`.toLowerCase();
+          return (
+            !fullStr.includes('message') &&
+            !fullStr.includes('messages') &&
+            !fullStr.includes('unread') &&
+            !fullStr.includes('mention') &&
+            !fullStr.includes('group:')
+          );
+        })
+        .map((c: any) => {
+          const formatted = formatPhoneNumber(c.phoneNumber || c.phoneNumberMasked || '');
+          if (formatted) {
+            c.phoneNumber = formatted;
+            c.phoneNumberMasked = formatted;
+          }
+          const isAns = (c.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
+          if (!isAns) {
+            c.durationSeconds = 0;
+          }
+          return c;
+        });
 
-    const deduplicated = deduplicateCalls(cleanCalls);
+      const deduplicated = deduplicateCalls(cleanCalls);
+      console.log('[rebuildCallsCache] Successfully prepared deduplicated calls:', deduplicated.length);
 
-    // Save into in-memory cache with 24-hour TTL
-    if (deduplicated && deduplicated.length > 0) {
-      await cacheSet(CALLS_CACHE_KEY, deduplicated, CALLS_CACHE_TTL);
-    }
+      // Save into in-memory cache
+      if (deduplicated && deduplicated.length > 0) {
+        await cacheSet(CALLS_CACHE_KEY, deduplicated, CALLS_CACHE_TTL);
+      }
 
-    return deduplicated;
-  } catch (err) {
-    console.error('Error rebuilding calls cache:', err);
-    return [];
-  } finally {
+      return deduplicated;
+    } catch (err) {
+      console.error('Error rebuilding calls cache:', err);
+      return [];
+    } finally {
     isRebuildingCalls = false;
+    activeRebuildCallsPromise = null;
   }
+  })();
+
+  return activeRebuildCallsPromise;
 }
 
 /**
@@ -310,5 +313,88 @@ export async function patchCallInCache(callId: string, updates: Record<string, a
     }
   } catch (err) {
     console.warn('Error patching call in cache:', err);
+  }
+}
+
+/**
+ * Executes a fast, targeted indexed query directly against MongoDB for specific filters or date ranges.
+ */
+export async function queryCallsFromDb(filters: {
+  counselorEmail?: string;
+  agentName?: string;
+  team?: string;
+  startDate?: string | Date;
+  endDate?: string | Date;
+  search?: string;
+  channel?: string;
+  status?: string;
+  limit?: number;
+  skip?: number;
+}): Promise<any[]> {
+  try {
+    return await withDbRetry(async () => {
+      const query: any = {};
+
+      if (filters.counselorEmail) {
+        query.counselorEmail = filters.counselorEmail.toLowerCase().trim();
+      } else if (filters.agentName) {
+        query.agentName = filters.agentName.trim();
+      }
+
+      if (filters.team) {
+        query.team = filters.team.trim();
+      }
+
+      if (filters.channel) {
+        query.channel = filters.channel.toUpperCase().trim();
+      }
+
+      if (filters.status) {
+        query.status = filters.status.toUpperCase().trim();
+      }
+
+      if (filters.startDate || filters.endDate) {
+        query.startTime = {};
+        if (filters.startDate) {
+          query.startTime.$gte = new Date(filters.startDate);
+        }
+        if (filters.endDate) {
+          query.startTime.$lte = new Date(filters.endDate);
+        }
+      }
+
+      if (filters.search) {
+        const term = filters.search.trim();
+        query.$or = [
+          { phoneNumber: { $regex: term, $options: 'i' } },
+          { phoneNumberMasked: { $regex: term, $options: 'i' } },
+          { leadName: { $regex: term, $options: 'i' } },
+        ];
+      }
+
+      const limit = Math.min(filters.limit || 1000, 5000);
+      const skip = filters.skip || 0;
+
+      const rawCalls = await (CallModel as any)
+        .find(query)
+        .select('idempotencyKey phoneNumber phoneNumberMasked direction status startTime endTime durationSeconds simSlot isPrivate disposition channel agentName counselorEmail leadName recordingStatus s3Key audioUrl notes team deviceId createdAt updatedAt')
+        .sort({ startTime: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec();
+
+      return deduplicateCalls(rawCalls.map((c: any) => {
+        const formatted = formatPhoneNumber(c.phoneNumber || c.phoneNumberMasked || '');
+        if (formatted) {
+          c.phoneNumber = formatted;
+          c.phoneNumberMasked = formatted;
+        }
+        return c;
+      }));
+    });
+  } catch (err) {
+    console.error('Error executing queryCallsFromDb:', err);
+    return [];
   }
 }

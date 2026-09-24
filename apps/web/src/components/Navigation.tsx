@@ -21,16 +21,16 @@ function NavigationInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentView = searchParams.get('view') || 'teams';
-  const { role, email: userEmail, isAdmin, isSuperAdmin, isCounselor } = useUserRole();
+  const { role, email: userEmail, isAdmin, isSuperAdmin, isCounselor, mounted } = useUserRole();
 
   const navItems = [
     { name: 'Analytics', href: '/dashboard', icon: BarChart3, hasSub: true },
     { name: 'Calls', href: '/calls', icon: PhoneCall },
     { name: 'Recording', href: '/calls?filter=recordings', icon: Mic },
-    ...(!isCounselor ? [
+    ...(mounted && !isCounselor ? [
       { name: 'Team Management', href: '/counselors?view=teams', viewKey: 'teams', icon: Users },
     ] : []),
-    ...(isAdmin || isSuperAdmin ? [
+    ...(mounted && (isAdmin || isSuperAdmin) ? [
       { name: 'User Management', href: '/counselors?view=users', viewKey: 'users', icon: UserCheck },
       { name: 'Settings', href: '/settings', icon: Settings },
     ] : []),
@@ -84,55 +84,73 @@ function NavigationInner() {
   );
 }
 
+let cachedCounselorList: any[] | null = null;
+let lastCounselorFetchTs = 0;
+let activeCounselorFetchPromise: Promise<any[]> | null = null;
+
+async function getCachedCounselorList(): Promise<any[]> {
+  const now = Date.now();
+  if (cachedCounselorList && (now - lastCounselorFetchTs < 60000)) {
+    return cachedCounselorList;
+  }
+  if (activeCounselorFetchPromise) {
+    return activeCounselorFetchPromise;
+  }
+  activeCounselorFetchPromise = fetch('/api/v1/auth/counselors')
+    .then((res) => res.json())
+    .then((data) => {
+      if (Array.isArray(data)) {
+        cachedCounselorList = data;
+        lastCounselorFetchTs = Date.now();
+      }
+      activeCounselorFetchPromise = null;
+      return data;
+    })
+    .catch(() => {
+      activeCounselorFetchPromise = null;
+      return cachedCounselorList || [];
+    });
+  return activeCounselorFetchPromise;
+}
+
 export function useUserRole() {
   const router = useRouter();
-  const [role, setRole] = React.useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('userRole') || '';
-    }
-    return '';
-  });
-  const [email, setEmail] = React.useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('userEmail') || '';
-    }
-    return '';
-  });
+  const [mounted, setMounted] = React.useState(false);
+  const [role, setRole] = React.useState<string>('');
+  const [email, setEmail] = React.useState<string>('');
   const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedRole = localStorage.getItem('userRole');
-      const storedEmail = localStorage.getItem('userEmail');
+    setMounted(true);
+    const storedRole = localStorage.getItem('userRole');
+    const storedEmail = localStorage.getItem('userEmail');
 
-      if (!storedRole || !storedEmail) {
-        setRole('');
-        setEmail('');
-        setIsLoading(false);
-        // Clear any orphaned cookies
-        document.cookie = 'recordhub_session=; path=/; max-age=0; SameSite=Lax';
-        router.replace('/');
-        return;
-      }
-
-      setRole(storedRole);
-      setEmail(storedEmail);
+    if (!storedRole || !storedEmail) {
+      setRole('');
+      setEmail('');
       setIsLoading(false);
-
-      // Refresh role from server in background to ensure up-to-date permissions
-      fetch('/api/v1/auth/counselors', { cache: 'no-store' })
-        .then((res) => res.json())
-        .then((users) => {
-          if (Array.isArray(users)) {
-            const current = users.find((u: any) => (u.email || '').toLowerCase() === storedEmail.toLowerCase());
-            if (current && current.role && current.role !== storedRole) {
-              setRole(current.role);
-              localStorage.setItem('userRole', current.role);
-            }
-          }
-        })
-        .catch(() => {});
+      // Clear any orphaned cookies
+      document.cookie = 'recordhub_session=; path=/; max-age=0; SameSite=Lax';
+      router.replace('/');
+      return;
     }
+
+    setRole(storedRole);
+    setEmail(storedEmail);
+    setIsLoading(false);
+
+    // Refresh role from server in background with request deduplication
+    getCachedCounselorList()
+      .then((users) => {
+        if (Array.isArray(users)) {
+          const current = users.find((u: any) => (u.email || '').toLowerCase() === storedEmail.toLowerCase());
+          if (current && current.role && current.role !== storedRole) {
+            setRole(current.role);
+            localStorage.setItem('userRole', current.role);
+          }
+        }
+      })
+      .catch(() => {});
   }, [router]);
 
   const isSuperAdmin = role === 'SUPER_ADMIN';
@@ -142,7 +160,7 @@ export function useUserRole() {
   const isCounselor = role === 'COUNSELOR' || role === 'AGENT' || role === 'SALES_AGENT' || role === 'SALES';
   const isAuthenticated = Boolean(email && role);
 
-  return { role, email, isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor, isAuthenticated, isLoading };
+  return { role, email, isSuperAdmin, isAdmin, isManager, isTeamLead, isCounselor, isAuthenticated, isLoading, mounted };
 }
 
 export function Navigation() {

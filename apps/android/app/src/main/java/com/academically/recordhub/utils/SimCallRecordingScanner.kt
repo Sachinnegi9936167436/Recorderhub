@@ -36,6 +36,12 @@ object SimCallRecordingScanner {
         "/Truecaller/Voice"
     )
 
+    private val REGEX_EPOCH = Regex("(\\b1[67]\\d{11}\\b)")
+    private val REGEX_UNDER = Regex("(\\d{8})[_\\-\\s](\\d{6})")
+    private val REGEX_DASHED = Regex("(\\d{4})[\\-\\.](\\d{2})[\\-\\.](\\d{2})[_\\-\\s](\\d{2})[\\-\\.:](\\d{2})[\\-\\.:](\\d{2})")
+    private val REGEX_14 = Regex("(\\b20\\d{12}\\b)")
+    private val REGEX_SAMSUNG = Regex("(\\b\\d{6})[_\\-](\\d{6}\\b)")
+
     data class CandidateMatch(
         val file: File? = null,
         val uri: Uri? = null,
@@ -52,7 +58,7 @@ object SimCallRecordingScanner {
         claimedPaths: Set<String> = emptySet(),
         expectedDurationSec: Int = 0
     ): File? {
-        val cleanPhone = phoneNumber.replace("\\D".toRegex(), "").takeLast(10)
+        val cleanPhone = PhoneUtils.NON_DIGITS_REGEX.replace(phoneNumber, "").takeLast(10)
         val prefs = context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
         val treeUriStr = prefs.getString("custom_recording_tree_uri", null)
         val accountCreatedAtMs = prefs.getLong("account_created_at", 0L)
@@ -78,8 +84,7 @@ object SimCallRecordingScanner {
             val baseName = fileName.substringBeforeLast(".")
 
             // Pattern A: 13-digit epoch timestamp (e.g. 1725426000000)
-            val regexEpoch = "(\\b1[67]\\d{11}\\b)".toRegex()
-            val matchEpoch = regexEpoch.find(baseName)
+            val matchEpoch = REGEX_EPOCH.find(baseName)
             if (matchEpoch != null) {
                 val ts = matchEpoch.value.toLongOrNull()
                 if (ts != null && ts > 1000000000000L) {
@@ -88,8 +93,7 @@ object SimCallRecordingScanner {
             }
 
             // Pattern B: YYYYMMDD_HHMMSS or YYYYMMDD-HHMMSS (e.g. 20260904_123626)
-            val regexUnder = "(\\d{8})[_\\-\\s](\\d{6})".toRegex()
-            val matchUnder = regexUnder.find(baseName)
+            val matchUnder = REGEX_UNDER.find(baseName)
             if (matchUnder != null) {
                 try {
                     val sdf = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
@@ -101,8 +105,7 @@ object SimCallRecordingScanner {
             }
 
             // Pattern C: YYYY-MM-DD_HH-MM-SS or YYYY.MM.DD.HH.MM.SS (e.g. 2026-09-04_12-36-26)
-            val regexDashed = "(\\d{4})[\\-\\.](\\d{2})[\\-\\.](\\d{2})[_\\-\\s](\\d{2})[\\-\\.:](\\d{2})[\\-\\.:](\\d{2})".toRegex()
-            val matchDashed = regexDashed.find(baseName)
+            val matchDashed = REGEX_DASHED.find(baseName)
             if (matchDashed != null) {
                 try {
                     val g = matchDashed.groupValues
@@ -116,8 +119,7 @@ object SimCallRecordingScanner {
             }
 
             // Pattern D: 14 consecutive digits (e.g. 20260904123626)
-            val regex14 = "(\\b20\\d{12}\\b)".toRegex()
-            val match14 = regex14.find(baseName)
+            val match14 = REGEX_14.find(baseName)
             if (match14 != null) {
                 try {
                     val sdf = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
@@ -129,8 +131,7 @@ object SimCallRecordingScanner {
             }
 
             // Pattern E: YYMMDD_HHMMSS (Samsung style: 260904_123626)
-            val regexSamsung = "(\\b\\d{6})[_\\-](\\d{6}\\b)".toRegex()
-            val matchSamsung = regexSamsung.find(baseName)
+            val matchSamsung = REGEX_SAMSUNG.find(baseName)
             if (matchSamsung != null) {
                 try {
                     val formatted = "20${matchSamsung.groupValues[1]}${matchSamsung.groupValues[2]}"
@@ -182,7 +183,7 @@ object SimCallRecordingScanner {
                 fileName
             }
 
-            val remainingDigits = nameWithoutDate.replace("\\D".toRegex(), "")
+            val remainingDigits = PhoneUtils.NON_DIGITS_REGEX.replace(nameWithoutDate, "")
             val timeDiffEndSec = Math.abs(effectiveTime - endTimeMs) / 1000L
             val timeDiffStartSec = Math.abs(effectiveTime - startTimeMs) / 1000L
             val minDeltaSec = Math.min(timeDiffEndSec, timeDiffStartSec)

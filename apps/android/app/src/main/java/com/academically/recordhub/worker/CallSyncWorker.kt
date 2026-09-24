@@ -29,13 +29,6 @@ class CallSyncWorker(
     params: WorkerParameters
 ) : CoroutineWorker(context, params) {
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
-        .build()
-
     override suspend fun doWork(): Result {
         try {
             com.academically.recordhub.utils.CallLogScanner.scanRecentCallLogs(applicationContext)
@@ -56,7 +49,7 @@ class CallSyncWorker(
         }
         val pendingAudioUploads = pendingEvents.filter { 
             val isWa = it.disposition.contains("WhatsApp", ignoreCase = true) || it.idempotencyKey.startsWith("WA_")
-            if (isWa && !com.academically.recordhub.service.WhatsAppCallNotificationListener.ENABLE_WHATSAPP_AUDIO_RECORDING) {
+            if (isWa) {
                 false
             } else {
                 !it.recordingPath.isNullOrEmpty() && File(it.recordingPath).exists() && it.recordingStatus != "SYNCED"
@@ -72,14 +65,7 @@ class CallSyncWorker(
 
         try {
             AppLogManager.log("SYNC", "CallSyncWorker", "Connecting to Cloud API: $baseUrl ...")
-
-            val retrofit = Retrofit.Builder()
-                .baseUrl(baseUrl)
-                .client(httpClient)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build()
-
-            val api = retrofit.create(RecordHubApi::class.java)
+            val api = getApi(baseUrl)
 
             val counselorEmail = prefs.getString("counselor_email", null)
             var counselorName = prefs.getString("counselor_name", null)
@@ -131,7 +117,7 @@ class CallSyncWorker(
                             timeZone = TimeZone.getTimeZone("UTC")
                         }
                         val isWaEvent = evt.disposition.contains("WhatsApp", ignoreCase = true) || evt.idempotencyKey.startsWith("WA_")
-                        val hasRec = if (isWaEvent && !com.academically.recordhub.service.WhatsAppCallNotificationListener.ENABLE_WHATSAPP_AUDIO_RECORDING) {
+                        val hasRec = if (isWaEvent) {
                             false
                         } else {
                             !evt.recordingPath.isNullOrEmpty() && File(evt.recordingPath).exists() && evt.recordingStatus != "SYNCED"
@@ -382,6 +368,39 @@ class CallSyncWorker(
             }
         } catch (e: Exception) {
             AppLogManager.log("ERROR", "RecordingSync", "Audio upload error: ${e.message}")
+        }
+    }
+
+    companion object {
+        val httpClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .writeTimeout(60, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+                .build()
+        }
+
+        @Volatile
+        private var cachedApi: RecordHubApi? = null
+        @Volatile
+        private var cachedBaseUrl: String? = null
+
+        @Synchronized
+        fun getApi(baseUrl: String): RecordHubApi {
+            val current = cachedApi
+            if (current != null && cachedBaseUrl == baseUrl) {
+                return current
+            }
+            val retrofit = Retrofit.Builder()
+                .baseUrl(baseUrl)
+                .client(httpClient)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
+            val api = retrofit.create(RecordHubApi::class.java)
+            cachedApi = api
+            cachedBaseUrl = baseUrl
+            return api
         }
     }
 }

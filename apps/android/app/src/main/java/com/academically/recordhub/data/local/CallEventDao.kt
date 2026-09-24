@@ -21,6 +21,12 @@ interface CallEventDao {
     @Query("SELECT * FROM call_events ORDER BY startTime DESC")
     suspend fun getAllEvents(): List<CallEventEntity>
 
+    @Query("SELECT * FROM call_events WHERE startTime >= :cutoffMs ORDER BY startTime DESC")
+    suspend fun getEventsSince(cutoffMs: Long): List<CallEventEntity>
+
+    @Query("SELECT * FROM call_events WHERE (recordingPath IS NULL OR recordingPath = '' OR recordingStatus = 'NONE') AND durationSeconds > 0 AND startTime >= :cutoffMs AND idempotencyKey NOT LIKE 'WA_%'")
+    suspend fun getUnlinkedSimEvents(cutoffMs: Long): List<CallEventEntity>
+
     @Query("SELECT * FROM call_events WHERE isPrivate = 0 ORDER BY startTime DESC")
     fun getTrackedCallsFlow(): Flow<List<CallEventEntity>>
 

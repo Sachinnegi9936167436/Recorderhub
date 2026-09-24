@@ -16,9 +16,12 @@ data class LogEntry(
 )
 
 object AppLogManager {
-    private val logBuffer = ArrayDeque<LogEntry>(300)
+    private const val MAX_LOGS = 150
+    private val logBuffer = ArrayDeque<LogEntry>(MAX_LOGS)
     private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())
     val logs: StateFlow<List<LogEntry>> = _logs
+
+    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
     init {
         log("INFO", "System", "RecorderHub Telemetry Engine Started.")
@@ -28,7 +31,7 @@ object AppLogManager {
 
     @Synchronized
     fun log(level: String, tag: String, message: String) {
-        val timeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+        val timeStr = timeFormat.format(Date())
         val entry = LogEntry(timestamp = timeStr, level = level, tag = tag, message = message)
 
         // Log to Android Logcat
@@ -38,12 +41,12 @@ object AppLogManager {
             else -> Log.i(tag, message)
         }
 
-        // Keep last 300 logs in memory ring buffer for UI
-        if (logBuffer.size >= 300) {
+        // Keep last 150 logs in memory ring buffer for UI
+        if (logBuffer.size >= MAX_LOGS) {
             logBuffer.removeLast()
         }
         logBuffer.addFirst(entry)
-        _logs.value = logBuffer.toList()
+        _logs.value = ArrayList(logBuffer)
     }
 
     @Synchronized

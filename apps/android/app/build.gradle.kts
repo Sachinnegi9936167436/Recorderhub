@@ -12,8 +12,8 @@ android {
         applicationId = "com.academically.recordhub"
         minSdk = 26
         targetSdk = 34
-        versionCode = 107
-        versionName = "1.0.7-prod"
+        versionCode = 108
+        versionName = "1.0.8-prod"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -24,6 +24,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

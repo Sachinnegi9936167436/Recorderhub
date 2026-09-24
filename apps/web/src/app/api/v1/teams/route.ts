@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/db';
+import { connectToDatabase, withDbRetry } from '@/lib/db';
 import { TeamModel, UserModel } from '@/lib/models';
 import { cacheGet, cacheSet, cacheDel } from '@/lib/cache';
 import { TEAMS_CACHE_KEY, TEAMS_CACHE_TTL } from '@/lib/cache-service';
@@ -17,8 +17,10 @@ export async function GET() {
       return res;
     }
 
-    await connectToDatabase();
-    let teams = await (TeamModel as any).find().sort({ createdAt: -1 }).lean().exec();
+    let teams: any[] = [];
+    await withDbRetry(async () => {
+      teams = await (TeamModel as any).find().sort({ createdAt: -1 }).lean().exec();
+    });
 
     // If no teams exist in DB, check if we should auto-seed the upskill team for Rajdeep
     if (!teams || teams.length === 0) {

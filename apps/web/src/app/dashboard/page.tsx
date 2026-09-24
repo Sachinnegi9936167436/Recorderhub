@@ -74,10 +74,43 @@ export default function RecorderHubDashboard() {
     );
   };
 
+  const isFetchingCallsRef = React.useRef(false);
+  const isFetchingCounselorsRef = React.useRef(false);
+  const isFetchingTeamsRef = React.useRef(false);
+  const [summaryData, setSummaryData] = useState<any | null>(null);
+
+  const fetchSummary = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (dateRange) params.set('dateRange', dateRange);
+      if (customStartDate) params.set('startDate', customStartDate);
+      if (customEndDate) params.set('endDate', customEndDate);
+      if (salesRepFilter === 'Individual' || salesRepFilter === 'Counselors') {
+        if (teamFilter && teamFilter !== 'All Counselors') {
+          params.set('counselorEmail', teamFilter);
+        }
+      } else if (salesRepFilter === 'Teams') {
+        if (teamFilter && teamFilter !== 'All Teams') {
+          params.set('team', teamFilter);
+        }
+      }
+
+      const res = await fetch(`/api/v1/dashboard/summary?${params.toString()}`, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setSummaryData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching dashboard summary:', err);
+    }
+  };
+
   const fetchCalls = async () => {
+    if (isFetchingCallsRef.current) return;
+    isFetchingCallsRef.current = true;
     try {
       if (calls.length === 0) setLoading(true);
-      const res = await fetch('/api/v1/calls', {
+      const res = await fetch('/api/v1/calls?limit=1000', {
         cache: 'no-store',
         headers: {
           Authorization: 'Bearer mock_jwt_token',
@@ -92,10 +125,13 @@ export default function RecorderHubDashboard() {
       console.error('Error fetching live dashboard calls:', err);
     } finally {
       setLoading(false);
+      isFetchingCallsRef.current = false;
     }
   };
 
   const fetchCounselors = async () => {
+    if (isFetchingCounselorsRef.current) return;
+    isFetchingCounselorsRef.current = true;
     try {
       const res = await fetch('/api/v1/auth/counselors', { cache: 'no-store' });
       if (res.ok) {
@@ -104,10 +140,14 @@ export default function RecorderHubDashboard() {
       }
     } catch (err) {
       console.error('Error fetching counselors list:', err);
+    } finally {
+      isFetchingCounselorsRef.current = false;
     }
   };
 
   const fetchTeams = async () => {
+    if (isFetchingTeamsRef.current) return;
+    isFetchingTeamsRef.current = true;
     try {
       const res = await fetch('/api/v1/teams', { cache: 'no-store' });
       if (res.ok) {
@@ -118,20 +158,24 @@ export default function RecorderHubDashboard() {
       }
     } catch (err) {
       console.error('Error fetching dashboard teams:', err);
+    } finally {
+      isFetchingTeamsRef.current = false;
     }
   };
 
   useEffect(() => {
+    fetchSummary();
     fetchCalls();
     fetchCounselors();
     fetchTeams();
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && !document.hidden && document.visibilityState === 'visible') {
+        fetchSummary();
         fetchCalls();
       }
     }, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [dateRange, customStartDate, customEndDate, salesRepFilter, teamFilter]);
 
   const activeTeams = teamsList;
 
@@ -672,23 +716,23 @@ export default function RecorderHubDashboard() {
     return true;
   });
 
-  const totalCallsCount = validCalls.length;
-  const outboundCount = validCalls.filter((c) => (c?.direction || '').toUpperCase() === 'OUTGOING' || (c?.direction || '').toUpperCase() === 'OUTBOUND').length;
-  const inboundCount = validCalls.filter((c) => (c?.direction || '').toUpperCase() === 'INCOMING' || (c?.direction || '').toUpperCase() === 'INBOUND').length;
-  const answeredCount = validCalls.filter((c) => (c?.status || '').toUpperCase() === 'ANSWERED').length;
+  const totalCallsCount = summaryData ? summaryData.totalCalls : validCalls.length;
+  const outboundCount = summaryData ? summaryData.outboundCalls : validCalls.filter((c) => (c?.direction || '').toUpperCase() === 'OUTGOING' || (c?.direction || '').toUpperCase() === 'OUTBOUND').length;
+  const inboundCount = summaryData ? summaryData.inboundCalls : validCalls.filter((c) => (c?.direction || '').toUpperCase() === 'INCOMING' || (c?.direction || '').toUpperCase() === 'INBOUND').length;
+  const answeredCount = summaryData ? summaryData.answeredCalls : validCalls.filter((c) => (c?.status || '').toUpperCase() === 'ANSWERED').length;
 
-  const totalSeconds = validCalls.reduce((sum, c) => {
+  const totalSeconds = summaryData ? summaryData.totalDuration : validCalls.reduce((sum, c) => {
     const isAns = (c?.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
     return sum + (isAns ? (c?.durationSeconds || 0) : 0);
   }, 0);
 
-  const outboundSeconds = validCalls.reduce((sum, c) => {
+  const outboundSeconds = summaryData ? summaryData.outboundDuration : validCalls.reduce((sum, c) => {
     const isAns = (c?.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
     const isOut = (c?.direction || '').toUpperCase() === 'OUTGOING' || (c?.direction || '').toUpperCase() === 'OUTBOUND';
     return sum + (isAns && isOut ? (c?.durationSeconds || 0) : 0);
   }, 0);
 
-  const inboundSeconds = validCalls.reduce((sum, c) => {
+  const inboundSeconds = summaryData ? summaryData.inboundDuration : validCalls.reduce((sum, c) => {
     const isAns = (c?.status || 'ANSWERED').toUpperCase() === 'ANSWERED';
     const isIn = (c?.direction || '').toUpperCase() === 'INCOMING' || (c?.direction || '').toUpperCase() === 'INBOUND';
     return sum + (isAns && isIn ? (c?.durationSeconds || 0) : 0);
@@ -713,32 +757,20 @@ export default function RecorderHubDashboard() {
 
   // Hourly Call Breakdown (Most active hour by calls)
   const hourlyDistribution = React.useMemo(() => {
-    const hours = [
-      { hourIndex: 0, label: '12 am', count: 0 },
-      { hourIndex: 1, label: '1 am', count: 1 },
-      { hourIndex: 2, label: '2 am', count: 1 },
-      { hourIndex: 3, label: '3 am', count: 1 },
-      { hourIndex: 4, label: '4 am', count: 1 },
-      { hourIndex: 5, label: '5 am', count: 0 },
-      { hourIndex: 6, label: '6 am', count: 0 },
-      { hourIndex: 7, label: '7 am', count: 3 },
-      { hourIndex: 8, label: '8 am', count: 62 },
-      { hourIndex: 9, label: '9 am', count: 196 },
-      { hourIndex: 10, label: '10 am', count: 524 },
-      { hourIndex: 11, label: '11 am', count: 498 },
-      { hourIndex: 12, label: '12 pm', count: 609 },
-      { hourIndex: 13, label: '1 pm', count: 412 },
-      { hourIndex: 14, label: '2 pm', count: 530 },
-      { hourIndex: 15, label: '3 pm', count: 380 },
-      { hourIndex: 16, label: '4 pm', count: 290 },
-      { hourIndex: 17, label: '5 pm', count: 210 },
-      { hourIndex: 18, label: '6 pm', count: 145 },
-      { hourIndex: 19, label: '7 pm', count: 88 },
-      { hourIndex: 20, label: '8 pm', count: 42 },
-      { hourIndex: 21, label: '9 pm', count: 18 },
-      { hourIndex: 22, label: '10 pm', count: 6 },
-      { hourIndex: 23, label: '11 pm', count: 2 },
+    const labels = [
+      '12 am', '1 am', '2 am', '3 am', '4 am', '5 am', '6 am', '7 am', '8 am', '9 am', '10 am', '11 am',
+      '12 pm', '1 pm', '2 pm', '3 pm', '4 pm', '5 pm', '6 pm', '7 pm', '8 pm', '9 pm', '10 pm', '11 pm'
     ];
+
+    if (summaryData?.hourlyDistribution && Array.isArray(summaryData.hourlyDistribution)) {
+      return summaryData.hourlyDistribution.map((h: any) => ({
+        hourIndex: h.hourIndex,
+        label: labels[h.hourIndex] || `${h.hourIndex}`,
+        count: h.count || 0,
+      }));
+    }
+
+    const hours = labels.map((label, idx) => ({ hourIndex: idx, label, count: 0 }));
 
     if (validCalls.length > 0) {
       const liveCounts = new Array(24).fill(0);
@@ -761,7 +793,7 @@ export default function RecorderHubDashboard() {
     }
 
     return hours;
-  }, [validCalls]);
+  }, [summaryData, validCalls]);
 
   const maxHourlyCount = Math.max(...hourlyDistribution.map((h) => h.count), 1);
   const peakHour = React.useMemo(() => {
@@ -814,29 +846,21 @@ export default function RecorderHubDashboard() {
     }
   });
 
-  // 2. Map every filtered call to the appropriate counselor record
-  validCalls.forEach((c) => {
-    if (!c) return;
-    const email = c.counselorEmail || c.email;
-    const callEmailLower = email ? email.toLowerCase().trim() : '';
+  // 2. Map calls to the appropriate counselor record (using MongoDB server-side aggregation when available)
+  if (summaryData?.byCounselor && Array.isArray(summaryData.byCounselor) && summaryData.byCounselor.length > 0) {
+    summaryData.byCounselor.forEach((item: any) => {
+      const email = (item.counselorEmail || item._id || '').toLowerCase().trim();
+      const matchedCounselor = counselorsList.find((usr) => {
+        if (email && usr.email && usr.email.toLowerCase().trim() === email) return true;
+        return false;
+      });
+      const canonicalName = matchedCounselor
+        ? `${matchedCounselor.firstName || ''} ${matchedCounselor.lastName || ''}`.trim() || matchedCounselor.name
+        : item.agentName || (email ? email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : 'Counselor Agent');
 
-    const matchedCounselor = counselorsList.find((usr) => {
-      if (callEmailLower && usr.email && usr.email.toLowerCase().trim() === callEmailLower) return true;
-      if (c.userId && usr._id && String(usr._id) === String(c.userId)) return true;
-      return false;
-    });
-
-    const canonicalName = matchedCounselor
-      ? `${matchedCounselor.firstName || ''} ${matchedCounselor.lastName || ''}`.trim() || matchedCounselor.name
-      : null;
-
-    const resolvedName = canonicalName || resolveCounselorName(c);
-
-    let targetKey = resolvedName;
-    if (!userActivityMap[targetKey]) {
-      const foundKey = Object.keys(userActivityMap).find(
-        (k) => k.toLowerCase().trim() === resolvedName.toLowerCase().trim()
-      );
+      const resolvedName = canonicalName || 'Counselor Agent';
+      let targetKey = resolvedName;
+      const foundKey = Object.keys(userActivityMap).find((k) => k.toLowerCase().trim() === resolvedName.toLowerCase().trim());
       if (foundKey) {
         targetKey = foundKey;
       } else {
@@ -851,34 +875,80 @@ export default function RecorderHubDashboard() {
           uniqueAnsweredPhones: new Set<string>(),
         };
       }
-    }
 
-    const entry = userActivityMap[targetKey];
-    entry.total += 1;
-    const isAnswered = (c.status || '').toUpperCase() === 'ANSWERED';
-    if (isAnswered) {
-      entry.answered += 1;
-      entry.totalSeconds += (c.durationSeconds || 0);
-    } else {
-      entry.unanswered += 1;
-    }
+      const entry = userActivityMap[targetKey];
+      entry.total += (item.totalCalls || 0);
+      entry.answered += (item.answeredCalls || 0);
+      entry.unanswered += (item.unansweredCalls || 0);
+      entry.whatsapp += (item.whatsappCalls || 0);
+      entry.totalSeconds += (item.durationSeconds || 0);
+    });
+  } else {
+    validCalls.forEach((c) => {
+      if (!c) return;
+      const email = c.counselorEmail || c.email;
+      const callEmailLower = email ? email.toLowerCase().trim() : '';
 
-    const isWA = (c.channel || '').toUpperCase() === 'WHATSAPP' ||
-                 (c.disposition || '').toLowerCase().includes('whatsapp') ||
-                 (c.idempotencyKey || '').startsWith('WA_');
-    if (isWA) {
-      entry.whatsapp += 1;
-    }
+      const matchedCounselor = counselorsList.find((usr) => {
+        if (callEmailLower && usr.email && usr.email.toLowerCase().trim() === callEmailLower) return true;
+        if (c.userId && usr._id && String(usr._id) === String(c.userId)) return true;
+        return false;
+      });
 
-    const rawPhone = c.phoneNumber || c.phoneNumberMasked || c.leadId || '';
-    const normPhone = normalizePhoneNumber(rawPhone);
-    if (normPhone) {
-      entry.uniquePhones.add(normPhone);
-      if (isAnswered) {
-        entry.uniqueAnsweredPhones.add(normPhone);
+      const canonicalName = matchedCounselor
+        ? `${matchedCounselor.firstName || ''} ${matchedCounselor.lastName || ''}`.trim() || matchedCounselor.name
+        : null;
+
+      const resolvedName = canonicalName || resolveCounselorName(c);
+
+      let targetKey = resolvedName;
+      if (!userActivityMap[targetKey]) {
+        const foundKey = Object.keys(userActivityMap).find(
+          (k) => k.toLowerCase().trim() === resolvedName.toLowerCase().trim()
+        );
+        if (foundKey) {
+          targetKey = foundKey;
+        } else {
+          userActivityMap[targetKey] = {
+            name: targetKey,
+            total: 0,
+            answered: 0,
+            unanswered: 0,
+            whatsapp: 0,
+            totalSeconds: 0,
+            uniquePhones: new Set<string>(),
+            uniqueAnsweredPhones: new Set<string>(),
+          };
+        }
       }
-    }
-  });
+
+      const entry = userActivityMap[targetKey];
+      entry.total += 1;
+      const isAnswered = (c.status || '').toUpperCase() === 'ANSWERED';
+      if (isAnswered) {
+        entry.answered += 1;
+        entry.totalSeconds += (c.durationSeconds || 0);
+      } else {
+        entry.unanswered += 1;
+      }
+
+      const isWA = (c.channel || '').toUpperCase() === 'WHATSAPP' ||
+                   (c.disposition || '').toLowerCase().includes('whatsapp') ||
+                   (c.idempotencyKey || '').startsWith('WA_');
+      if (isWA) {
+        entry.whatsapp += 1;
+      }
+
+      const rawPhone = c.phoneNumber || c.phoneNumberMasked || c.leadId || '';
+      const normPhone = normalizePhoneNumber(rawPhone);
+      if (normPhone) {
+        entry.uniquePhones.add(normPhone);
+        if (isAnswered) {
+          entry.uniqueAnsweredPhones.add(normPhone);
+        }
+      }
+    });
+  }
 
   const rawActivityRows = Object.values(userActivityMap).map((u) => {
     return {

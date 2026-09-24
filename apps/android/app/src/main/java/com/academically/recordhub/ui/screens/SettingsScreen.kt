@@ -68,18 +68,14 @@ fun SettingsScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
 
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    val isAccessibilityOn = remember {
-        mutableStateOf(com.academically.recordhub.service.RecordHubAccessibilityService.isAccessibilityServiceEnabled(context))
-    }
-    val isOverlayOn = remember {
-        mutableStateOf(com.academically.recordhub.service.CallRecordingShieldManager.hasOverlayPermission(context))
+    val isNotificationListenerOn = remember {
+        mutableStateOf(com.academically.recordhub.service.WhatsAppCallNotificationListener.isNotificationListenerEnabled(context))
     }
 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                isAccessibilityOn.value = com.academically.recordhub.service.RecordHubAccessibilityService.isAccessibilityServiceEnabled(context)
-                isOverlayOn.value = com.academically.recordhub.service.CallRecordingShieldManager.hasOverlayPermission(context)
+                isNotificationListenerOn.value = com.academically.recordhub.service.WhatsAppCallNotificationListener.isNotificationListenerEnabled(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -323,33 +319,25 @@ fun SettingsScreen(
                     )
 
                     SettingStatusRow(
-                        title = "In-Call Anti-Tamper Shield",
-                        subtitle = if (isOverlayOn.value) "Enforced (Touch Shield + Auto-Re-Record Active)" else if (isAccessibilityOn.value) "Accessibility Auto-Re-Record Active" else "Tap to grant Appear on Top permission",
-                        isActive = isOverlayOn.value || isAccessibilityOn.value,
+                        title = "WhatsApp Call Observer",
+                        subtitle = if (isNotificationListenerOn.value) "Active & monitoring VoIP calls" else "Tap to grant Notification Access",
+                        isActive = isNotificationListenerOn.value,
                         onClick = {
                             try {
-                                val intent = com.academically.recordhub.service.CallRecordingShieldManager.getOverlayPermissionIntent(context)
+                                val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 context.startActivity(intent)
                             } catch (e: Exception) {
-                                Toast.makeText(context, "Cannot open overlay settings", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Cannot open notification settings", Toast.LENGTH_SHORT).show()
                             }
                         }
                     )
 
                     SettingStatusRow(
-                        title = "WhatsApp Audio Connector",
-                        subtitle = if (isAccessibilityOn.value) "Active & capturing" else "Tap to enable Accessibility",
-                        isActive = isAccessibilityOn.value,
-                        onClick = {
-                            try {
-                                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Cannot open accessibility settings", Toast.LENGTH_SHORT).show()
-                            }
-                        }
+                        title = "Cellular Call Telephony Monitor",
+                        subtitle = "Active foreground call & audio recording detector",
+                        isActive = true,
+                        onClick = {}
                     )
 
                     SettingStatusRow(

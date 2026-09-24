@@ -248,19 +248,9 @@ class CallObserverService : Service() {
                     callStartTimeMs = System.currentTimeMillis()
                 }
                 lastState = state
-                Log.i(TAG, "Call State: OFFHOOK (Active Call). Activating Recording Anti-Tamper Shield...")
-                try {
-                    CallRecordingShieldManager.showShield(applicationContext)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error triggering CallRecordingShieldManager: ${e.message}")
-                }
+                Log.i(TAG, "Call State: OFFHOOK (Active Call: $phone)")
             }
             TelephonyManager.CALL_STATE_IDLE -> {
-                try {
-                    CallRecordingShieldManager.hideShield()
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error hiding CallRecordingShieldManager: ${e.message}")
-                }
                 if (lastState == TelephonyManager.CALL_STATE_OFFHOOK || lastState == TelephonyManager.CALL_STATE_RINGING) {
                     Log.i(TAG, "SIM Call Ended (IDLE). Triggering automatic call log scan and server sync...")
                     triggerAutoScanAndSync()

@@ -1,11 +1,4 @@
 import mongoose from 'mongoose';
-import dns from 'dns';
-
-try {
-  dns.setServers(['8.8.8.8', '1.1.1.1']);
-} catch (e) {
-  // Ignore in environments where setServers is restricted
-}
 
 /**
  * Global is used here to maintain a cached connection across hot reloads
@@ -74,16 +67,17 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
   if (!cached.promise) {
     const opts: mongoose.ConnectOptions = {
       bufferCommands: false,
-      maxPoolSize: 2, // Optimized for Vercel Serverless containers
-      minPoolSize: 0,
-      maxIdleTimeMS: 5000,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 20000,
-      connectTimeoutMS: 5000,
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      maxIdleTimeMS: 30000,
+      serverSelectionTimeoutMS: 8000,
+      socketTimeoutMS: 30000,
+      connectTimeoutMS: 8000,
       heartbeatFrequencyMS: 10000,
       autoIndex: false,
       retryWrites: true,
       retryReads: true,
+      family: 4,
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts)

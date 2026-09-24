@@ -41,10 +41,14 @@ class RecordHubApp : Application(), Configuration.Provider {
                     Log.w("RecordHubApp", "Foreground service start deferred from background: ${e.message}")
                 }
 
-                // 2. Schedule 15-minute fallback Periodic WorkManager
+                // 2. Schedule 15-minute fallback Periodic WorkManager (with network constraint to save battery)
+                val constraints = androidx.work.Constraints.Builder()
+                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                    .build()
+
                 val syncWorkRequest = PeriodicWorkRequestBuilder<CallSyncWorker>(
                     15, TimeUnit.MINUTES
-                ).build()
+                ).setConstraints(constraints).build()
                 WorkManager.getInstance(this).enqueueUniquePeriodicWork(
                     "CallSyncWorkerPeriodic",
                     ExistingPeriodicWorkPolicy.KEEP,

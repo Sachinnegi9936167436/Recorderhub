@@ -14,7 +14,6 @@ import androidx.work.WorkManager
 import com.academically.recordhub.data.local.AppDatabase
 import com.academically.recordhub.data.local.CallEventEntity
 import com.academically.recordhub.utils.AppLogManager
-import com.academically.recordhub.utils.WhatsAppAudioRecorder
 import com.academically.recordhub.worker.CallSyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,8 +21,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 class WhatsAppCallNotificationListener : NotificationListenerService() {
-    private lateinit var audioRecorder: WhatsAppAudioRecorder
-    private var isCallRecordingActive: Boolean = false
+    private var isCallActive: Boolean = false
     private var activeCallNotificationKey: String? = null
     private var activeCallNotificationId: Int = -1
     private var callStartTimeMs: Long = 0
@@ -33,8 +31,7 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        audioRecorder = WhatsAppAudioRecorder(applicationContext)
-        AppLogManager.log("INFO", "WhatsAppListener", "WhatsApp NotificationListenerService Initialized.")
+        AppLogManager.log("INFO", "WhatsAppListener", "WhatsApp NotificationListenerService Initialized (Call Logs Active).")
     }
 
     override fun onListenerConnected() {
@@ -170,8 +167,8 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
             activeCallNotificationKey = sbn.key
             activeCallNotificationId = sbn.id
 
-            if (!isCallRecordingActive) {
-                isCallRecordingActive = true
+            if (!isCallActive) {
+                isCallActive = true
                 callStartTimeMs = System.currentTimeMillis()
 
                 currentCallDirection = if (combinedStr.contains("incoming") || combinedStr.contains("आगमन") || combinedStr.contains("इनकमिंग")) {
@@ -184,9 +181,6 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                 currentContactTitle = cleanContactTitle(title, text)
 
                 AppLogManager.log("INFO", "WhatsAppListener", "Active WhatsApp call DETECTED: $packageName ($currentContactTitle) [$currentCallDirection]")
-                if (ENABLE_WHATSAPP_AUDIO_RECORDING) {
-                    audioRecorder.startRecording(currentContactTitle)
-                }
             }
         }
     }
@@ -206,20 +200,18 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
         }
 
         // Clean out common prefix strings like "Incoming voice call • " or "WhatsApp call • "
-        return candidate
-            .replace("(?i)incoming (voice|video)? ?call:?".toRegex(), "")
-            .replace("(?i)outgoing (voice|video)? ?call:?".toRegex(), "")
-            .replace("(?i)ongoing (voice|video)? ?call:?".toRegex(), "")
-            .replace("(?i)whatsapp (voice|video)? ?call:?".toRegex(), "")
-            .trim()
-            .ifBlank { "WhatsApp Contact" }
+        var cleaned = PREFIX_INCOMING_REGEX.replace(candidate, "")
+        cleaned = PREFIX_OUTGOING_REGEX.replace(cleaned, "")
+        cleaned = PREFIX_ONGOING_REGEX.replace(cleaned, "")
+        cleaned = PREFIX_WHATSAPP_REGEX.replace(cleaned, "")
+        return cleaned.trim().ifBlank { "WhatsApp Contact" }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         sbn ?: return
         val packageName = sbn.packageName ?: ""
 
-        if (isWhatsAppPackage(packageName) && isCallRecordingActive) {
+        if (isWhatsAppPackage(packageName) && isCallActive) {
             val isTargetNotification = sbn.key == activeCallNotificationKey || 
                                        sbn.id == activeCallNotificationId ||
                                        sbn.notification.category == Notification.CATEGORY_CALL ||
@@ -248,19 +240,18 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
     }
 
     private fun finishWhatsAppCall() {
-        if (!isCallRecordingActive) return
-        isCallRecordingActive = false
+        if (!isCallActive) return
+        isCallActive = false
 
         val durationSec = Math.max(1L, (System.currentTimeMillis() - callStartTimeMs) / 1000)
-        val recordedFile: File? = if (ENABLE_WHATSAPP_AUDIO_RECORDING) audioRecorder.stopRecording() else null
-        AppLogManager.log("INFO", "WhatsAppListener", "WhatsApp call FINISHED. Duration: ${durationSec}s File: ${recordedFile?.name ?: "Metadata Only (Audio Recording Paused)"}")
+        AppLogManager.log("INFO", "WhatsAppListener", "WhatsApp call FINISHED. Contact: $currentContactTitle, Duration: ${durationSec}s [$currentCallDirection]")
 
-        saveAndSyncWhatsAppCall(recordedFile, durationSec, currentContactTitle, currentCallDirection)
+        saveAndSyncWhatsAppCall(durationSec, currentContactTitle, currentCallDirection)
         activeCallNotificationKey = null
         activeCallNotificationId = -1
     }
 
-    private fun saveAndSyncWhatsAppCall(audioFile: File?, durationSeconds: Long, contactName: String, direction: String) {
+    private fun saveAndSyncWhatsAppCall(durationSeconds: Long, contactName: String, direction: String) {
         val context = applicationContext
         val db = AppDatabase.getInstance(context)
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "ANDROID_WHATSAPP_DEVICE"
@@ -283,8 +274,8 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
             durationSeconds = durationSeconds.toInt(),
             simSlot = 0,
             isPrivate = false,
-            recordingPath = audioFile?.absolutePath,
-            recordingStatus = if (audioFile != null && audioFile.exists()) "PENDING_UPLOAD" else "NONE",
+            recordingPath = null,
+            recordingStatus = "NONE",
             disposition = "WhatsApp Call",
             syncStatus = "PENDING"
         )
@@ -307,9 +298,13 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
     }
 
     companion object {
-        const val ENABLE_WHATSAPP_AUDIO_RECORDING = false
         var instance: WhatsAppCallNotificationListener? = null
         var isConnected: Boolean = false
+
+        private val PREFIX_INCOMING_REGEX = Regex("(?i)incoming (voice|video)? ?call:?")
+        private val PREFIX_OUTGOING_REGEX = Regex("(?i)outgoing (voice|video)? ?call:?")
+        private val PREFIX_ONGOING_REGEX = Regex("(?i)ongoing (voice|video)? ?call:?")
+        private val PREFIX_WHATSAPP_REGEX = Regex("(?i)whatsapp (voice|video)? ?call:?")
 
         fun isWhatsAppPackage(packageName: String): Boolean {
             if (packageName.isBlank()) return false

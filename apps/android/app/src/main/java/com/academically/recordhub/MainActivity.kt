@@ -71,7 +71,6 @@ class MainActivity : ComponentActivity() {
 
                 val db = remember { AppDatabase.getInstance(applicationContext) }
                 val trackedCallsFlow = db.callEventDao().getTrackedCallsFlow().collectAsState(initial = emptyList())
-                val privateCallsFlow = db.callEventDao().getPrivateCallsFlow().collectAsState(initial = emptyList())
 
                 val safFolderLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
                     contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
@@ -175,8 +174,7 @@ class MainActivity : ComponentActivity() {
                         val perms = mutableListOf(
                             android.Manifest.permission.READ_CALL_LOG,
                             android.Manifest.permission.READ_PHONE_STATE,
-                            android.Manifest.permission.READ_CONTACTS,
-                            android.Manifest.permission.RECORD_AUDIO
+                            android.Manifest.permission.READ_CONTACTS
                         )
                         if (Build.VERSION.SDK_INT >= 33) {
                             perms.add("android.permission.POST_NOTIFICATIONS")
@@ -245,10 +243,14 @@ class MainActivity : ComponentActivity() {
 
     private fun schedulePeriodicCallSync() {
         try {
-            AppLogManager.log("SYNC", "Background", "Enqueuing 15-Minute Periodic CallSyncWorker for AWS S3 Sync.")
+            AppLogManager.log("SYNC", "Background", "Enqueuing 15-Minute Periodic CallSyncWorker with network constraint.")
+            val constraints = androidx.work.Constraints.Builder()
+                .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                .build()
+
             val syncWorkRequest = PeriodicWorkRequestBuilder<CallSyncWorker>(
                 15, TimeUnit.MINUTES
-            ).build()
+            ).setConstraints(constraints).build()
 
             WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
                 "CallSyncWorkerPeriodic",
