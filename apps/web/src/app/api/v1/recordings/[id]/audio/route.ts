@@ -30,15 +30,23 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       return NextResponse.redirect(directCachedUrl, 307);
     }
 
-    // 1. Resolve actual recordingId or s3Key from MongoDB using fast indexed lookup (no unindexed regex)
+    // 1. Resolve actual recordingId or s3Key from MongoDB using flexible lookup
     try {
-      const isHex24 = /^[0-9a-fA-F]{24}$/.test(params.id);
-      const query = isHex24 
-        ? { $or: [{ _id: params.id }, { idempotencyKey: params.id }] } 
-        : { idempotencyKey: params.id };
+      await connectToDatabase();
+      const isHex24 = typeof params.id === 'string' && /^[0-9a-fA-F]{24}$/.test(params.id);
+      const query: any = {
+        $or: [
+          { idempotencyKey: params.id },
+          { audioUrl: { $regex: params.id, $options: 'i' } },
+          { s3Key: { $regex: params.id, $options: 'i' } },
+        ],
+      };
+      if (isHex24) {
+        query.$or.push({ _id: params.id });
+      }
 
       const callDoc = await withDbRetry(async () => {
-        return await (CallModel as any).findOne(query).select('s3Key audioUrl').lean().exec();
+        return await (CallModel as any).findOne(query).select('s3Key audioUrl agentName counselorName').lean().exec();
       });
 
       if (callDoc) {
@@ -53,8 +61,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         }
       }
     } catch (dbErr: any) {
-      // Non-fatal: S3 direct resolution will handle the file seamlessly
-      console.log(`[AudioRoute] Direct S3 lookup for ${recordingId}`);
+      console.log(`[AudioRoute] DB lookup notice for ${recordingId}:`, dbErr?.message || dbErr);
     }
 
     // 2. Try fetching from AWS S3 Bucket via direct Presigned GET URL
@@ -62,14 +69,22 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     if (s3Info) {
       try {
         const parts = recordingId.split('_');
-        const devPrefix = parts.length >= 2 ? parts[0] : '';
+        const agentPrefix1 = parts.length >= 2 ? parts.slice(0, 2).join('_') : '';
+        const agentPrefix2 = parts.length >= 1 ? parts[0] : '';
 
         const candidateKeys: string[] = [];
         if (s3KeyTarget) candidateKeys.push(s3KeyTarget);
-        if (devPrefix) {
-          candidateKeys.push(`recordings/${devPrefix}/${recordingId}.mp3`);
-          candidateKeys.push(`recordings/${devPrefix}/${recordingId}.m4a`);
-          candidateKeys.push(`recordings/${devPrefix}/${recordingId}.wav`);
+        if (agentPrefix1) {
+          candidateKeys.push(`recordings/${agentPrefix1}/${recordingId}.mp3`);
+          candidateKeys.push(`recordings/${agentPrefix1}/${recordingId}.m4a`);
+          candidateKeys.push(`recordings/${agentPrefix1}/${recordingId}.wav`);
+          candidateKeys.push(`recordings/${agentPrefix1}/${recordingId}`);
+        }
+        if (agentPrefix2 && agentPrefix2 !== agentPrefix1) {
+          candidateKeys.push(`recordings/${agentPrefix2}/${recordingId}.mp3`);
+          candidateKeys.push(`recordings/${agentPrefix2}/${recordingId}.m4a`);
+          candidateKeys.push(`recordings/${agentPrefix2}/${recordingId}.wav`);
+          candidateKeys.push(`recordings/${agentPrefix2}/${recordingId}`);
         }
         candidateKeys.push(`recordings/${recordingId}.mp3`);
         candidateKeys.push(`recordings/${recordingId}.m4a`);
@@ -79,49 +94,48 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         candidateKeys.push(`${recordingId}.mp3`);
         candidateKeys.push(`${recordingId}.m4a`);
 
-        let resolvedS3Key: string | null = s3KeyTarget;
+        let resolvedS3Key: string | null = null;
 
-        if (!resolvedS3Key) {
-          for (const key of candidateKeys) {
-            try {
-              await s3Info.client.send(new HeadObjectCommand({ Bucket: s3Info.bucket, Key: key }));
-              resolvedS3Key = key;
-              break;
-            } catch {
-              // candidate key not in bucket, continue
-            }
+        for (const key of candidateKeys) {
+          try {
+            await s3Info.client.send(new HeadObjectCommand({ Bucket: s3Info.bucket, Key: key }));
+            resolvedS3Key = key;
+            break;
+          } catch {
+            // candidate key not in bucket, continue
           }
         }
 
-        const finalKey = resolvedS3Key || (devPrefix ? `recordings/${devPrefix}/${recordingId}.mp3` : `recordings/${recordingId}.mp3`);
-        const S3_CACHE_KEY = `s3:audio:${finalKey}`;
+        if (resolvedS3Key) {
+          const S3_CACHE_KEY = `s3:audio:${resolvedS3Key}`;
 
-        // Check in-memory cache for instant 0ms redirect
-        const cachedUrl = await cacheGet<string>(S3_CACHE_KEY);
-        if (cachedUrl) {
-          return NextResponse.redirect(cachedUrl, 307);
+          // Check in-memory cache for instant 0ms redirect
+          const cachedUrl = await cacheGet<string>(S3_CACHE_KEY);
+          if (cachedUrl) {
+            return NextResponse.redirect(cachedUrl, 307);
+          }
+
+          const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+          const ext = resolvedS3Key.endsWith('.mp3') ? 'mp3' : resolvedS3Key.endsWith('.wav') ? 'wav' : 'm4a';
+          const mime = ext === 'mp3' ? 'audio/mpeg' : ext === 'wav' ? 'audio/wav' : 'audio/mp4';
+          const downloadFilename = `Recording_${recordingId}.${ext}`;
+
+          const command = new GetObjectCommand({
+            Bucket: s3Info.bucket,
+            Key: resolvedS3Key,
+            ResponseContentType: mime,
+            ResponseContentDisposition: `inline; filename="${downloadFilename}"`,
+          });
+          const presignedUrl = await getSignedUrl(s3Info.client, command, { expiresIn: 3600 });
+
+          // Cache in memory for 55 minutes
+          await cacheSet(S3_CACHE_KEY, presignedUrl, 3300);
+          await cacheSet(directCacheKey, presignedUrl, 3300);
+
+          return NextResponse.redirect(presignedUrl, 307);
         }
-
-        const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-        const ext = finalKey.endsWith('.mp3') ? 'mp3' : finalKey.endsWith('.wav') ? 'wav' : 'm4a';
-        const mime = ext === 'mp3' ? 'audio/mpeg' : ext === 'wav' ? 'audio/wav' : 'audio/mp4';
-        const downloadFilename = `Recording_${recordingId}.${ext}`;
-
-        const command = new GetObjectCommand({
-          Bucket: s3Info.bucket,
-          Key: finalKey,
-          ResponseContentType: mime,
-          ResponseContentDisposition: `inline; filename="${downloadFilename}"`
-        });
-        const presignedUrl = await getSignedUrl(s3Info.client, command, { expiresIn: 3600 });
-
-        // Cache in memory for 55 minutes
-        await cacheSet(S3_CACHE_KEY, presignedUrl, 3300);
-        await cacheSet(directCacheKey, presignedUrl, 3300);
-
-        return NextResponse.redirect(presignedUrl, 307);
       } catch (s3Err) {
-        console.warn(`S3 Presigned Redirect failed for ${recordingId}, checking fallback:`, s3Err);
+        console.warn(`S3 Presigned lookup error for ${recordingId}:`, s3Err);
       }
     }
 
