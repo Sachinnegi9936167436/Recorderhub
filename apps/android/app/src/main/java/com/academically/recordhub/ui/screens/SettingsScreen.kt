@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.academically.recordhub.utils.AppLogManager
+import kotlinx.coroutines.launch
 
 private val ScreenBg = Color(0xFFFAFAFA)
 private val CardBg = Color(0xFFFFFFFF)
@@ -359,7 +360,119 @@ fun SettingsScreen(
                 }
             }
 
-            // 4. Developer Tools & Logs Action
+            // 4. App Version & OTA Update Action
+            var isCheckingUpdate by remember { mutableStateOf(false) }
+            var settingsUpdateInfo by remember { mutableStateOf<com.academically.recordhub.data.remote.AppUpdateCheckResponse?>(null) }
+            var settingsDownloadProgress by remember { mutableIntStateOf(0) }
+            var settingsIsDownloading by remember { mutableStateOf(false) }
+            var settingsUpdateError by remember { mutableStateOf<String?>(null) }
+            val coroutineScope = rememberCoroutineScope()
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                border = BorderStroke(1.dp, CardBorderColor),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        if (!isCheckingUpdate) {
+                            isCheckingUpdate = true
+                            coroutineScope.launch {
+                                val update = com.academically.recordhub.utils.AppUpdateManager.checkForUpdate(context)
+                                isCheckingUpdate = false
+                                if (update != null && update.updateAvailable) {
+                                    settingsUpdateInfo = update
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "RecordHub is up to date (v${com.academically.recordhub.BuildConfig.VERSION_NAME})",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        }
+                    }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFFFF1F2)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = null,
+                                tint = Color(0xFFE11D48),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("App Version & Updates", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                                Surface(
+                                    color = Color(0xFFF1F5F9),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        "v${com.academically.recordhub.BuildConfig.VERSION_NAME}",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextSecondary,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Text("Tap to check for latest APK releases", fontSize = 11.5.sp, color = TextSecondary)
+                        }
+                    }
+                    if (isCheckingUpdate) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color(0xFFE11D48), strokeWidth = 2.dp)
+                    } else {
+                        Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = TextSecondary)
+                    }
+                }
+            }
+
+            if (settingsUpdateInfo != null) {
+                com.academically.recordhub.ui.components.AppUpdateDialog(
+                    updateInfo = settingsUpdateInfo!!,
+                    downloadProgress = settingsDownloadProgress,
+                    isDownloading = settingsIsDownloading,
+                    errorMessage = settingsUpdateError,
+                    onUpdateClick = {
+                        val url = settingsUpdateInfo?.downloadUrl
+                        if (!url.isNullOrBlank()) {
+                            settingsIsDownloading = true
+                            settingsUpdateError = null
+                            coroutineScope.launch {
+                                val result = com.academically.recordhub.utils.AppUpdateManager.downloadAndInstallApk(
+                                    context = context,
+                                    downloadUrl = url,
+                                    onProgress = { progress -> settingsDownloadProgress = progress }
+                                )
+                                settingsIsDownloading = false
+                                if (result.isFailure) {
+                                    settingsUpdateError = result.exceptionOrNull()?.message ?: "Download failed"
+                                }
+                            }
+                        }
+                    },
+                    onDismiss = {
+                        settingsUpdateInfo = null
+                    }
+                )
+            }
+
+            // 5. Developer Tools & Logs Action
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = CardBg),

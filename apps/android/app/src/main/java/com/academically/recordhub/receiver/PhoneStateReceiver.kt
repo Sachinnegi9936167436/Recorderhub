@@ -35,7 +35,16 @@ class PhoneStateReceiver : BroadcastReceiver() {
         val isLoggedIn = prefs.getBoolean("is_logged_in", false)
         if (!isLoggedIn) return
 
-        // Ensure CallObserverService is running
+        // 1. Ensure WhatsApp Listener is active
+        try {
+            if (com.academically.recordhub.service.WhatsAppCallNotificationListener.isNotificationListenerEnabled(context)) {
+                if (!com.academically.recordhub.service.WhatsAppCallNotificationListener.isConnected || com.academically.recordhub.service.WhatsAppCallNotificationListener.instance == null) {
+                    com.academically.recordhub.service.WhatsAppCallNotificationListener.triggerRebind(context)
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 2. Safely attempt to start CallObserverService without crashing on Android 12+ FGS restrictions
         try {
             val serviceIntent = Intent(context, CallObserverService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -44,12 +53,27 @@ class PhoneStateReceiver : BroadcastReceiver() {
                 context.startService(serviceIntent)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not start CallObserverService from PhoneStateReceiver: ${e.message}")
+            Log.w(TAG, "Foreground service start deferred (Android 12+ FGS restriction): ${e.message}")
         }
 
-        // When call ends (IDLE state), trigger auto-scan & immediate server sync via WorkManager
+        // 3. When call ends (IDLE state), trigger auto-scan & immediate server sync via WorkManager
         if (stateStr == TelephonyManager.EXTRA_STATE_IDLE) {
             AppLogManager.log("SYNC", TAG, "SIM Call ended (IDLE detected via BroadcastReceiver). Scheduling CallSyncWorker...")
+
+            // Immediate pass via coroutine
+            val pendingResult = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    delay(1500)
+                    CallLogScanner.scanRecentCallLogs(context.applicationContext)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Instant scan error in PhoneStateReceiver: ${e.message}")
+                } finally {
+                    try {
+                        pendingResult.finish()
+                    } catch (_: Exception) {}
+                }
+            }
 
             try {
                 // Pass 1: Run after 4s (allowing OEM dialers on Samsung/Xiaomi/Vivo to finish writing audio)

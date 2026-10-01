@@ -24,17 +24,19 @@ object CallLogScanner {
         try {
             db.callEventDao().clearDemoData()
 
-            // Strictly get or initialize exact account creation timestamp cutoff
             val prefs = context.getSharedPreferences("recordhub_prefs", Context.MODE_PRIVATE)
+            val now = System.currentTimeMillis()
             var accountCutoffMs = prefs.getLong("account_created_at", 0L)
-            if (accountCutoffMs == 0L) {
-                accountCutoffMs = System.currentTimeMillis()
+            if (accountCutoffMs == 0L || accountCutoffMs > now) {
+                // If timestamp missing or in the future due to server clock difference, default to 7 days ago
+                accountCutoffMs = now - (7 * 24 * 60 * 60 * 1000L)
                 prefs.edit().putLong("account_created_at", accountCutoffMs).apply()
             }
 
-            // Cap scan window to recent 7 days or account creation timestamp to prevent scanning thousands of stale records
-            val sevenDaysAgo = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L)
-            val effectiveCutoffMs = maxOf(accountCutoffMs, sevenDaysAgo)
+            // Cap scan window to recent 7 days or account creation timestamp (with a 5-minute safety buffer)
+            val sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000L)
+            val safeAccountCutoff = maxOf(accountCutoffMs - (5 * 60 * 1000L), sevenDaysAgo)
+            val effectiveCutoffMs = safeAccountCutoff.coerceAtMost(now)
 
             val allDbEventsInitial = db.callEventDao().getEventsSince(effectiveCutoffMs).toMutableList()
             val claimedPaths = allDbEventsInitial

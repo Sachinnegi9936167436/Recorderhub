@@ -38,6 +38,10 @@ export async function GET(req: Request) {
     }
 
     const match: any = {};
+    const andConditions: any[] = [];
+
+    // Filter out non-call text/chat message noise
+    andConditions.push({ phoneNumber: { $not: /message|messages|unread|mention|group:/i } });
 
     // 1. Date Range Matching
     if (dateRange !== 'All time') {
@@ -46,43 +50,85 @@ export async function GET(req: Request) {
 
       if (dateRange === 'Today') {
         const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        match.startTime = { $gte: startOfToday, $lte: endOfToday };
+        andConditions.push({ startTime: { $gte: startOfToday, $lte: endOfToday } });
       } else if (dateRange === 'Last 24 hours') {
         const last24h = new Date(now.getTime() - 24 * 3600 * 1000);
-        match.startTime = { $gte: last24h, $lte: now };
+        andConditions.push({ startTime: { $gte: last24h, $lte: now } });
       } else if (dateRange === 'Yesterday') {
         const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
         const endOfYesterday = new Date(startOfToday.getTime() - 1);
-        match.startTime = { $gte: startOfYesterday, $lte: endOfYesterday };
+        andConditions.push({ startTime: { $gte: startOfYesterday, $lte: endOfYesterday } });
       } else if (dateRange === 'This week') {
         const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 86400000);
-        match.startTime = { $gte: sevenDaysAgo };
+        andConditions.push({ startTime: { $gte: sevenDaysAgo } });
       } else if (dateRange === 'This month') {
         const thirtyDaysAgo = new Date(startOfToday.getTime() - 30 * 86400000);
-        match.startTime = { $gte: thirtyDaysAgo };
+        andConditions.push({ startTime: { $gte: thirtyDaysAgo } });
       } else if (dateRange === 'Custom') {
         if (startDateParam || endDateParam) {
-          match.startTime = {};
+          const customDateMatch: any = {};
           if (startDateParam) {
             const [sYear, sMonth, sDay] = startDateParam.split('-').map(Number);
-            match.startTime.$gte = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
+            customDateMatch.$gte = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
           }
           if (endDateParam) {
             const [eYear, eMonth, eDay] = endDateParam.split('-').map(Number);
-            match.startTime.$lte = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999);
+            customDateMatch.$lte = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999);
           }
+          andConditions.push({ startTime: customDateMatch });
         }
       }
     }
 
     if (counselorEmail) {
-      match.counselorEmail = counselorEmail.toLowerCase().trim();
+      andConditions.push({ counselorEmail: counselorEmail.toLowerCase().trim() });
     }
     if (team && team !== 'All Teams') {
-      match.team = team.trim();
+      const cleanTeam = team.trim();
+      const teamDoc = await (TeamModel as any).findOne({ name: { $regex: `^${cleanTeam}$`, $options: 'i' } }).lean().exec();
+      const teamMembers: string[] = [];
+      if (teamDoc) {
+        if (Array.isArray(teamDoc.members)) {
+          teamDoc.members.forEach((m: string) => {
+            if (m && m.trim()) teamMembers.push(m.trim());
+          });
+        }
+        if (teamDoc.admin) teamMembers.push(teamDoc.admin.trim());
+        if (teamDoc.teamLeadEmail) teamMembers.push(teamDoc.teamLeadEmail.trim());
+      }
+      const usersInTeam = await (UserModel as any).find({ team: { $regex: `^${cleanTeam}$`, $options: 'i' } }).lean().exec();
+      usersInTeam.forEach((u: any) => {
+        if (u.email) teamMembers.push(u.email);
+        if (u.firstName) teamMembers.push(u.firstName);
+        if (u.firstName && u.lastName) teamMembers.push(`${u.firstName} ${u.lastName}`.trim());
+      });
+
+      const memberRegexes = Array.from(new Set(teamMembers)).filter(Boolean).map((m) => ({
+        $regex: m,
+        $options: 'i',
+      }));
+
+      const teamOrClauses: any[] = [
+        { team: { $regex: `^${cleanTeam}$`, $options: 'i' } },
+        { teamName: { $regex: `^${cleanTeam}$`, $options: 'i' } },
+        { department: { $regex: `^${cleanTeam}$`, $options: 'i' } },
+      ];
+
+      memberRegexes.forEach((r) => {
+        teamOrClauses.push({ agentName: r });
+        teamOrClauses.push({ counselorEmail: r });
+        teamOrClauses.push({ counselorName: r });
+        teamOrClauses.push({ userName: r });
+      });
+
+      andConditions.push({ $or: teamOrClauses });
     }
     if (channel) {
-      match.channel = channel.toUpperCase().trim();
+      andConditions.push({ channel: channel.toUpperCase().trim() });
+    }
+
+    if (andConditions.length > 0) {
+      match.$and = andConditions;
     }
 
     const summaryResult = await withDbRetry(async () => {

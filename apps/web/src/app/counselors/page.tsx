@@ -26,9 +26,12 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Check
+  Check,
+  Smartphone,
+  Sparkles
 } from 'lucide-react';
 import Link from 'next/link';
+import { ApkReleaseManagerModal } from '@/components/ApkReleaseManagerModal';
 
 function CounselorsAndTeamsInner() {
   const { role: userRole, email: userEmail, isSuperAdmin, isAdmin, isManager, isCounselor } = useUserRole();
@@ -52,6 +55,7 @@ function CounselorsAndTeamsInner() {
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isApkModalOpen, setIsApkModalOpen] = useState(false);
 
   // Teams State (Persisted in localStorage)
   const [teamsList, setTeamsList] = useState<any[]>([]);
@@ -884,16 +888,27 @@ function CounselorsAndTeamsInner() {
                 <p className="text-xs text-slate-500 mt-1">Admin Console • Provision, Update & Revoke User Accounts & Credentials</p>
               </div>
 
-              <button
-                onClick={() => {
-                  resetForm();
-                  setIsCreateModalOpen(true);
-                }}
-                className="inline-flex items-center space-x-2 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer shrink-0"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Create New User</span>
-              </button>
+              <div className="flex items-center space-x-3 shrink-0">
+                <button
+                  onClick={() => setIsApkModalOpen(true)}
+                  className="inline-flex items-center space-x-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-2xs cursor-pointer"
+                  title="Manage APK Releases & Auto-Updates"
+                >
+                  <Smartphone className="w-4 h-4 text-rose-600" />
+                  <span>APK Auto-Update</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    resetForm();
+                    setIsCreateModalOpen(true);
+                  }}
+                  className="inline-flex items-center space-x-2 bg-[#242938] hover:bg-[#1a1e29] text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create New User</span>
+                </button>
+              </div>
             </div>
 
             {/* Filter and Search Bar */}
@@ -957,22 +972,25 @@ function CounselorsAndTeamsInner() {
                 <table className="w-full text-left">
                   <thead className="bg-white border-b border-slate-100">
                     <tr>
-                      <th className="py-4 pl-8 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[22%]">
+                      <th className="py-4 pl-8 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[20%]">
                         NAME
                       </th>
-                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[26%]">
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[22%]">
                         EMAIL
                       </th>
-                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[13%]">
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[12%]">
                         ROLE
                       </th>
-                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[13%]">
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[11%]">
                         STATUS
                       </th>
-                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[14%]">
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[15%]">
+                        APP VERSION
+                      </th>
+                      <th className="py-4 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider w-[11%]">
                         CREATED AT
                       </th>
-                      <th className="py-4 pr-8 font-semibold text-slate-500 uppercase text-xs tracking-wider text-right w-[12%]">
+                      <th className="py-4 pr-8 font-semibold text-slate-500 uppercase text-xs tracking-wider text-right w-[9%]">
                         ACTIONS
                       </th>
                     </tr>
@@ -980,7 +998,7 @@ function CounselorsAndTeamsInner() {
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {filteredCounselors.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-12 text-center text-slate-500 font-medium">
+                        <td colSpan={7} className="p-12 text-center text-slate-500 font-medium">
                           {loading ? 'Loading user directory...' : 'No users match the selected criteria.'}
                         </td>
                       </tr>
@@ -1043,6 +1061,41 @@ function CounselorsAndTeamsInner() {
                                 <span className="inline-flex items-center space-x-1.5 px-3.5 py-1 rounded-lg border border-slate-300/80 bg-slate-100 text-slate-500 text-xs font-bold shadow-2xs">
                                   <XCircle className="w-4 h-4 stroke-[2.2]" />
                                   <span>Inactive</span>
+                                </span>
+                              )}
+                            </td>
+
+                            {/* APP VERSION */}
+                            <td className="py-5 px-4 whitespace-nowrap">
+                              {c.appVersion ? (
+                                <div className="flex flex-col space-y-1">
+                                  <div className="flex items-center space-x-1.5">
+                                    <span
+                                      className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                                        c.isAppOutdated
+                                          ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      }`}
+                                      title={c.isAppOutdated ? `Outdated! Installed: ${c.appVersion}, Latest: ${c.latestAppVersion || 'Newer'}` : `Up to date: ${c.appVersion}`}
+                                    >
+                                      <span className={`w-1.5 h-1.5 rounded-full ${c.isAppOutdated ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`}></span>
+                                      <span>{c.appVersion}</span>
+                                      {c.isAppOutdated && (
+                                        <span className="text-[9px] bg-amber-200 text-amber-900 px-1 py-0.2 rounded font-extrabold uppercase">
+                                          Outdated
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  {c.deviceModel && (
+                                    <span className="text-[11px] text-slate-400 font-medium truncate max-w-[140px]" title={c.deviceModel}>
+                                      📱 {c.deviceModel}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium text-slate-400 bg-slate-100">
+                                  Not Installed
                                 </span>
                               )}
                             </td>
@@ -1939,6 +1992,13 @@ function CounselorsAndTeamsInner() {
             </div>
           </div>
         )}
+
+        {/* APK Release & Auto-Update Manager Modal */}
+        <ApkReleaseManagerModal
+          isOpen={isApkModalOpen}
+          onClose={() => setIsApkModalOpen(false)}
+          onReleaseUpdated={fetchCounselors}
+        />
       </main>
     </div>
   );

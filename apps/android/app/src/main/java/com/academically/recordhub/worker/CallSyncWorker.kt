@@ -30,6 +30,19 @@ class CallSyncWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // 1. Auto-heal WhatsApp NotificationListener if unbound in background
+        try {
+            if (com.academically.recordhub.service.WhatsAppCallNotificationListener.isNotificationListenerEnabled(applicationContext)) {
+                if (!com.academically.recordhub.service.WhatsAppCallNotificationListener.isConnected || com.academically.recordhub.service.WhatsAppCallNotificationListener.instance == null) {
+                    AppLogManager.log("WARN", "CallSyncWorker", "NotificationListener disconnected/unbound. Triggering auto-rebind...")
+                    com.academically.recordhub.service.WhatsAppCallNotificationListener.triggerRebind(applicationContext)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("CallSyncWorker", "Error auto-healing WhatsApp listener: ${e.message}")
+        }
+
+        // 2. Pre-scan recent call logs & link recordings
         try {
             com.academically.recordhub.utils.CallLogScanner.scanRecentCallLogs(applicationContext)
         } catch (e: Exception) {

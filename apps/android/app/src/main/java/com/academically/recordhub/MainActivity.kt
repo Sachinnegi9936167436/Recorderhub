@@ -68,6 +68,17 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 val scope = rememberCoroutineScope()
+                var updateInfo by remember { mutableStateOf<com.academically.recordhub.data.remote.AppUpdateCheckResponse?>(null) }
+                var downloadProgress by remember { mutableIntStateOf(0) }
+                var isDownloading by remember { mutableStateOf(false) }
+                var updateError by remember { mutableStateOf<String?>(null) }
+
+                LaunchedEffect(Unit) {
+                    val info = com.academically.recordhub.utils.AppUpdateManager.checkForUpdate(applicationContext)
+                    if (info != null) {
+                        updateInfo = info
+                    }
+                }
 
                 val db = remember { AppDatabase.getInstance(applicationContext) }
                 val trackedCallsFlow = db.callEventDao().getTrackedCallsFlow().collectAsState(initial = emptyList())
@@ -184,6 +195,23 @@ class MainActivity : ComponentActivity() {
                         }
                         permissionLauncher.launch(perms.toTypedArray())
 
+                        // Request Battery Optimization Exemption for persistent background sync
+                        try {
+                            val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && powerManager != null) {
+                                if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                                    AppLogManager.log("INFO", "UI_Action", "Requesting Battery Optimization Exemption...")
+                                    val batteryIntent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = android.net.Uri.parse("package:$packageName")
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    startActivity(batteryIntent)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            AppLogManager.log("WARN", "UI_Action", "Could not open battery ignore intent: ${e.message}")
+                        }
+
                         if (!isNotificationListenerEnabled(applicationContext)) {
                             try {
                                 AppLogManager.log("INFO", "UI_Action", "Opening Notification Listener Settings for WhatsApp...")
@@ -220,6 +248,37 @@ class MainActivity : ComponentActivity() {
                             AppLogManager.log("INFO", "UI_Action", "User tapped 'Log Out' Button.")
                             prefs.edit().putBoolean("is_logged_in", false).apply()
                             currentStep = 0
+                        }
+                    )
+                }
+
+                // In-App OTA Update Dialog
+                if (updateInfo != null) {
+                    com.academically.recordhub.ui.components.AppUpdateDialog(
+                        updateInfo = updateInfo!!,
+                        downloadProgress = downloadProgress,
+                        isDownloading = isDownloading,
+                        errorMessage = updateError,
+                        onUpdateClick = {
+                            val url = updateInfo?.downloadUrl
+                            if (!url.isNullOrBlank()) {
+                                isDownloading = true
+                                updateError = null
+                                scope.launch {
+                                    val result = com.academically.recordhub.utils.AppUpdateManager.downloadAndInstallApk(
+                                        context = applicationContext,
+                                        downloadUrl = url,
+                                        onProgress = { progress -> downloadProgress = progress }
+                                    )
+                                    isDownloading = false
+                                    if (result.isFailure) {
+                                        updateError = result.exceptionOrNull()?.message ?: "Download failed"
+                                    }
+                                }
+                            }
+                        },
+                        onDismiss = {
+                            updateInfo = null
                         }
                     )
                 }

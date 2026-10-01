@@ -43,7 +43,8 @@ import {
   Plus,
   Pencil,
   Trash2,
-  CheckCircle2
+  CheckCircle2,
+  PhoneMissed
 } from 'lucide-react';
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 
@@ -258,7 +259,7 @@ function SalestrailCallsInner() {
   const [repCategory, setRepCategory] = useState('Teams');
   const [subFilter, setSubFilter] = useState('All Teams');
   const [searchQuery, setSearchQuery] = useState('');
-  const [anomalyFilter, setAnomalyFilter] = useState<'all' | 'short_calls' | 'recordings' | 'sim' | 'whatsapp' | 'long_calls' | 'mismatch' | 'bookmarked'>('all');
+  const [anomalyFilter, setAnomalyFilter] = useState<'all' | 'short_calls' | 'recordings' | 'sim' | 'whatsapp' | 'unanswered' | 'long_calls' | 'mismatch' | 'bookmarked'>('all');
   const [audioCacheVer, setAudioCacheVer] = useState(0);
 
   // Super Admin: Add & Edit Call Modals State
@@ -501,6 +502,7 @@ function SalestrailCallsInner() {
 
   const handleRepCategoryChange = (cat: string) => {
     setRepCategory(cat);
+    setCurrentPage(1);
     if (cat === 'Individual') {
       setSubFilter('All Counselors');
     } else {
@@ -532,48 +534,99 @@ function SalestrailCallsInner() {
     inboundDurSec: 0,
     inboundTalkTimeStr: '0s',
     answeredCount: 0,
+    unansweredCount: 0,
     simCount: 0,
     waCount: 0,
     mismatchCount: 0,
   });
 
-  const isFetchingCallsRef = useRef(false);
   const isFetchingCounselorsRef = useRef(false);
   const isFetchingTeamsRef = useRef(false);
+  const latestRequestIdRef = useRef(0);
+  const activeAbortControllerRef = useRef<AbortController | null>(null);
+  const allKnownCounselorsRef = useRef<Set<string>>(new Set());
+
+  // Synchronously keep active filters up to date on every render to eliminate stale closures
+  const filtersRef = useRef({
+    dateRange,
+    customStartDate,
+    customEndDate,
+    repCategory,
+    subFilter,
+    searchQuery,
+    anomalyFilter,
+    isRecordingsOnly,
+    currentPage,
+    pageSize,
+    sortField,
+    sortOrder,
+  });
+
+  // Always update synchronously in render body
+  filtersRef.current = {
+    dateRange,
+    customStartDate,
+    customEndDate,
+    repCategory,
+    subFilter,
+    searchQuery,
+    anomalyFilter,
+    isRecordingsOnly,
+    currentPage,
+    pageSize,
+    sortField,
+    sortOrder,
+  };
 
   const fetchCalls = async (
-    targetPage = currentPage,
-    targetPageSize = pageSize,
-    targetSortField = sortField,
-    targetSortOrder = sortOrder
+    targetPage?: number,
+    targetPageSize?: number,
+    targetSortField?: SortField,
+    targetSortOrder?: SortOrder
   ) => {
+    const currentFilters = filtersRef.current;
+    const pageToFetch = targetPage ?? currentFilters.currentPage;
+    const sizeToFetch = targetPageSize ?? currentFilters.pageSize;
+    const fieldToFetch = targetSortField ?? currentFilters.sortField;
+    const orderToFetch = targetSortOrder ?? currentFilters.sortOrder;
+
+    const requestId = ++latestRequestIdRef.current;
+
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    activeAbortControllerRef.current = abortController;
+
     try {
       setLoading(true);
       const params = new URLSearchParams({
-        page: targetPage.toString(),
-        pageSize: targetPageSize.toString(),
-        dateRange,
-        sortField: targetSortField,
-        sortOrder: targetSortOrder,
+        page: pageToFetch.toString(),
+        pageSize: sizeToFetch.toString(),
+        dateRange: currentFilters.dateRange,
+        sortField: fieldToFetch,
+        sortOrder: orderToFetch,
       });
 
-      if (anomalyFilter && anomalyFilter !== 'all') {
-        params.set('anomaly', anomalyFilter);
+      if (currentFilters.anomalyFilter && currentFilters.anomalyFilter !== 'all') {
+        params.set('anomaly', currentFilters.anomalyFilter);
+      } else if (currentFilters.isRecordingsOnly) {
+        params.set('anomaly', 'recordings');
       }
 
-      if (dateRange === 'Custom') {
-        if (customStartDate) params.set('startDate', customStartDate);
-        if (customEndDate) params.set('endDate', customEndDate);
+      if (currentFilters.dateRange === 'Custom') {
+        if (currentFilters.customStartDate) params.set('startDate', currentFilters.customStartDate);
+        if (currentFilters.customEndDate) params.set('endDate', currentFilters.customEndDate);
       }
 
-      if (searchQuery.trim()) {
-        params.set('search', searchQuery.trim());
+      if (currentFilters.searchQuery.trim()) {
+        params.set('search', currentFilters.searchQuery.trim());
       }
 
-      if (repCategory === 'Individual' && subFilter !== 'All Counselors') {
-        params.set('agentName', subFilter);
-      } else if (repCategory === 'Teams' && subFilter !== 'All Teams') {
-        params.set('team', subFilter);
+      if (currentFilters.repCategory === 'Individual' && currentFilters.subFilter !== 'All Counselors') {
+        params.set('agentName', currentFilters.subFilter);
+      } else if (currentFilters.repCategory === 'Teams' && currentFilters.subFilter !== 'All Teams') {
+        params.set('team', currentFilters.subFilter);
       }
 
       const res = await fetch(`/api/v1/calls?${params.toString()}`, {
@@ -581,10 +634,14 @@ function SalestrailCallsInner() {
         headers: {
           Authorization: 'Bearer mock_jwt_token',
         },
+        signal: abortController.signal,
       });
 
       if (res.ok) {
         const data = await res.json();
+        // Discard stale responses if a newer request was dispatched
+        if (requestId !== latestRequestIdRef.current) return;
+
         if (data && data.calls) {
           setCallsList(data.calls || []);
           if (data.stats) {
@@ -599,13 +656,16 @@ function SalestrailCallsInner() {
         } else if (Array.isArray(data)) {
           setCallsList(data);
           setTotalRecords(data.length);
-          setTotalPages(Math.ceil(data.length / targetPageSize) || 1);
+          setTotalPages(Math.ceil(data.length / sizeToFetch) || 1);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error('Error fetching live calls:', err);
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -626,7 +686,6 @@ function SalestrailCallsInner() {
   };
 
   useEffect(() => {
-    fetchCalls();
     fetchProvisionedCounselors();
     fetchTeams();
 
@@ -923,18 +982,22 @@ function SalestrailCallsInner() {
 
   // Get unique list of counselor names for dropdown
   const uniqueCounselors = useMemo(() => {
-    const names = new Set<string>();
+    const names = new Set<string>(allKnownCounselorsRef.current);
 
     // 1. From counselorsList (all provisioned users)
     (counselorsList || []).forEach((c) => {
       const full = `${c.firstName || ''} ${c.lastName || ''}`.trim();
       if (full) {
         names.add(full);
+        allKnownCounselorsRef.current.add(full);
       } else if (c.name) {
         names.add(c.name.trim());
+        allKnownCounselorsRef.current.add(c.name.trim());
       } else if (c.email) {
         const prefix = c.email.split('@')[0];
-        names.add(prefix.replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()));
+        const formatted = prefix.replace(/[._]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+        names.add(formatted);
+        allKnownCounselorsRef.current.add(formatted);
       }
     });
 
@@ -948,6 +1011,7 @@ function SalestrailCallsInner() {
         !resolved.startsWith('ANDROID-')
       ) {
         names.add(resolved);
+        allKnownCounselorsRef.current.add(resolved);
       }
     });
 
@@ -1236,7 +1300,10 @@ function SalestrailCallsInner() {
               <div className="relative">
                 <select
                   value={dateRange}
-                  onChange={(e) => setDateRange(e.target.value)}
+                  onChange={(e) => {
+                    setDateRange(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   className="appearance-none bg-white border border-slate-200 text-slate-800 font-medium rounded-xl px-4 py-2.5 pr-8 shadow-sm focus:outline-none min-w-[140px] cursor-pointer hover:border-slate-300 transition-colors"
                 >
                   <option value="This week">This week</option>
@@ -1257,7 +1324,10 @@ function SalestrailCallsInner() {
                     <input
                       type="date"
                       value={customStartDate}
-                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      onChange={(e) => {
+                        setCustomStartDate(e.target.value);
+                        setCurrentPage(1);
+                      }}
                       className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer"
                     />
                   </div>
@@ -1266,7 +1336,10 @@ function SalestrailCallsInner() {
                     <input
                       type="date"
                       value={customEndDate}
-                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      onChange={(e) => {
+                        setCustomEndDate(e.target.value);
+                        setCurrentPage(1);
+                      }}
                       className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer"
                     />
                   </div>
@@ -1275,6 +1348,7 @@ function SalestrailCallsInner() {
                       onClick={() => {
                         setCustomStartDate('');
                         setCustomEndDate('');
+                        setCurrentPage(1);
                       }}
                       className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
                       title="Clear custom dates"
@@ -1306,7 +1380,10 @@ function SalestrailCallsInner() {
               <div className="relative">
                 <select
                   value={subFilter}
-                  onChange={(e) => setSubFilter(e.target.value)}
+                  onChange={(e) => {
+                    setSubFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   className="appearance-none bg-white border border-slate-200 text-slate-800 font-medium rounded-xl px-4 py-2.5 pr-8 shadow-sm focus:outline-none min-w-[160px] cursor-pointer hover:border-slate-300 transition-colors"
                 >
                   {repCategory === 'Individual' ? (
@@ -1369,7 +1446,10 @@ function SalestrailCallsInner() {
               type="text"
               placeholder="Search name / number"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs font-medium text-slate-800 placeholder-slate-400 shadow-sm focus:outline-none"
             />
           </div>
@@ -1379,8 +1459,11 @@ function SalestrailCallsInner() {
         <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
             <button
-              onClick={() => setAnomalyFilter('all')}
-              className={`px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'all'
+              onClick={() => {
+                setAnomalyFilter('all');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${anomalyFilter === 'all'
                 ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                 : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                 }`}
@@ -1389,8 +1472,11 @@ function SalestrailCallsInner() {
             </button>
 
             <button
-              onClick={() => setAnomalyFilter('sim')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'sim'
+              onClick={() => {
+                setAnomalyFilter('sim');
+                setCurrentPage(1);
+              }}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${anomalyFilter === 'sim'
                 ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                 : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
                 }`}
@@ -1400,8 +1486,11 @@ function SalestrailCallsInner() {
             </button>
 
             <button
-              onClick={() => setAnomalyFilter('whatsapp')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'whatsapp'
+              onClick={() => {
+                setAnomalyFilter('whatsapp');
+                setCurrentPage(1);
+              }}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${anomalyFilter === 'whatsapp'
                 ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                 : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
                 }`}
@@ -1411,8 +1500,25 @@ function SalestrailCallsInner() {
             </button>
 
             <button
-              onClick={() => setAnomalyFilter('mismatch')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all ${anomalyFilter === 'mismatch'
+              onClick={() => {
+                setAnomalyFilter('unanswered');
+                setCurrentPage(1);
+              }}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${anomalyFilter === 'unanswered'
+                ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                }`}
+            >
+              <PhoneMissed className="w-3.5 h-3.5" />
+              <span>Unanswered Calls ({callStats.unansweredCount || 0})</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setAnomalyFilter('mismatch');
+                setCurrentPage(1);
+              }}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${anomalyFilter === 'mismatch'
                 ? 'bg-red-600 text-white border-red-600 shadow-xs'
                 : 'bg-red-50 text-red-800 border-red-200 hover:bg-red-100'
                 }`}

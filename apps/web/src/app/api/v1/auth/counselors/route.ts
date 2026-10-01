@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
-import { UserModel } from '@/lib/models';
+import { UserModel, DeviceModel, AppReleaseModel } from '@/lib/models';
 import { cacheGet, cacheSet, cacheDel } from '@/lib/cache';
 import { COUNSELORS_CACHE_KEY, COUNSELORS_CACHE_TTL } from '@/lib/cache-service';
 import mongoose from 'mongoose';
@@ -11,35 +11,84 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
-    const cached = await cacheGet<any[]>(COUNSELORS_CACHE_KEY);
-    if (cached && Array.isArray(cached) && cached.length > 0) {
-      // Ensure super admins are never in the returned cached payload
-      const sanitized = cached.filter(
-        (c) => c.role !== 'SUPER_ADMIN' && c.email !== 'superadmin@academically.com'
-      );
-      const res = NextResponse.json(sanitized);
-      res.headers.set('X-Cache', 'HIT');
-      return res;
-    }
-
     await connectToDatabase();
-    const counselors = await (UserModel as any)
-      .find({
-        role: { $ne: 'SUPER_ADMIN' },
-        email: { $ne: 'superadmin@academically.com' },
-      })
-      .select('-passwordHash')
-      .sort({ createdAt: -1 })
-      .lean()
-      .exec();
-    
-    if (counselors && counselors.length > 0) {
-      await cacheSet(COUNSELORS_CACHE_KEY, counselors, COUNSELORS_CACHE_TTL);
-    }
 
-    const res = NextResponse.json(counselors || []);
-    res.headers.set('X-Cache', 'MISS');
-    return res;
+    const [counselors, devices, latestRelease] = await Promise.all([
+      (UserModel as any)
+        .find({
+          role: { $ne: 'SUPER_ADMIN' },
+          email: { $ne: 'superadmin@academically.com' },
+        })
+        .select('-passwordHash')
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec(),
+      (DeviceModel as any).find({}).sort({ lastSyncTimestamp: -1 }).lean().exec(),
+      (AppReleaseModel as any).findOne({ isActive: true }).sort({ versionCode: -1 }).lean().exec(),
+    ]);
+
+    // Build device lookup map by email, userId, and normalized agentName
+    const deviceByEmail = new Map<string, any>();
+    const deviceByUserId = new Map<string, any>();
+    const deviceByName = new Map<string, any>();
+
+    const normalize = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+
+    devices.forEach((dev: any) => {
+      if (dev.counselorEmail) {
+        const em = dev.counselorEmail.toLowerCase().trim();
+        if (!deviceByEmail.has(em)) deviceByEmail.set(em, dev);
+      }
+      if (dev.userId) {
+        const uid = dev.userId.toString();
+        if (!deviceByUserId.has(uid)) deviceByUserId.set(uid, dev);
+      }
+      if (dev.agentName) {
+        const normName = normalize(dev.agentName);
+        if (normName && !deviceByName.has(normName)) {
+          deviceByName.set(normName, dev);
+        }
+      }
+    });
+
+    const latestVerName = latestRelease?.versionName || '';
+    const latestVerCode = latestRelease?.versionCode || 0;
+
+    const enrichedCounselors = (counselors || []).map((c: any) => {
+      const emailLower = (c.email || '').toLowerCase().trim();
+      const userIdStr = c._id ? c._id.toString() : '';
+      const fullNameNorm = normalize(`${c.firstName || ''} ${c.lastName || ''}`);
+      const firstNameNorm = normalize(c.firstName || '');
+      const emailPrefixNorm = normalize(emailLower.split('@')[0]);
+
+      const device =
+        deviceByEmail.get(emailLower) ||
+        deviceByUserId.get(userIdStr) ||
+        deviceByName.get(fullNameNorm) ||
+        deviceByName.get(firstNameNorm) ||
+        deviceByName.get(emailPrefixNorm) ||
+        null;
+
+      const installedVersion = device?.appVersion || null;
+      let isOutdated = false;
+      if (installedVersion && latestVerName) {
+        isOutdated = installedVersion.trim().toLowerCase() !== latestVerName.trim().toLowerCase();
+      }
+
+      return {
+        ...c,
+        appVersion: installedVersion,
+        deviceModel: device?.deviceModel || null,
+        androidVersion: device?.androidVersion || null,
+        lastSyncTimestamp: device?.lastSyncTimestamp || null,
+        deviceStatus: device?.status || (installedVersion ? 'HEALTHY' : 'OFFLINE'),
+        isAppOutdated: isOutdated,
+        latestAppVersion: latestVerName || null,
+        latestAppVersionCode: latestVerCode || null,
+      };
+    });
+
+    return NextResponse.json(enrichedCounselors);
   } catch (err: any) {
     console.error('Error fetching counselors:', err);
     return NextResponse.json({ message: err.message || 'Error fetching counselors' }, { status: 500 });

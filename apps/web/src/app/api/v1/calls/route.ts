@@ -11,7 +11,7 @@ import {
 } from '@/lib/cache-service';
 import { cacheDel } from '@/lib/cache';
 import { connectToDatabase, withDbRetry } from '@/lib/db';
-import { CallModel, DeviceModel } from '@/lib/models';
+import { CallModel, DeviceModel, TeamModel, UserModel } from '@/lib/models';
 import { getS3Client } from '@/lib/aws';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import mongoose from 'mongoose';
@@ -52,11 +52,12 @@ export async function GET(req: Request) {
     const sortField = searchParams.get('sortField') || searchParams.get('sortBy') || 'startTime';
     const sortOrder = (searchParams.get('sortOrder') || searchParams.get('order') || 'desc').toLowerCase();
 
-    // 1. Build MongoDB Match Filter
+    // 1. Build MongoDB Match Filter (using andConditions to prevent filter overwrites)
     const match: any = {};
+    const andConditions: any[] = [];
 
     // Filter out non-call text/chat message noise
-    match.phoneNumber = { $not: /message|messages|unread|mention|group:/i };
+    andConditions.push({ phoneNumber: { $not: /message|messages|unread|mention|group:/i } });
 
     // Date Range Matching
     if (dateRange !== 'All time') {
@@ -65,81 +66,141 @@ export async function GET(req: Request) {
 
       if (dateRange === 'Today') {
         const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        match.startTime = { $gte: startOfToday, $lte: endOfToday };
+        andConditions.push({ startTime: { $gte: startOfToday, $lte: endOfToday } });
       } else if (dateRange === 'Last 24 hours') {
         const last24h = new Date(now.getTime() - 24 * 3600 * 1000);
-        match.startTime = { $gte: last24h, $lte: now };
+        andConditions.push({ startTime: { $gte: last24h, $lte: now } });
       } else if (dateRange === 'Yesterday') {
         const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
         const endOfYesterday = new Date(startOfToday.getTime() - 1);
-        match.startTime = { $gte: startOfYesterday, $lte: endOfYesterday };
+        andConditions.push({ startTime: { $gte: startOfYesterday, $lte: endOfYesterday } });
       } else if (dateRange === 'This week') {
         const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 86400000);
-        match.startTime = { $gte: sevenDaysAgo };
+        andConditions.push({ startTime: { $gte: sevenDaysAgo } });
       } else if (dateRange === 'This month') {
         const thirtyDaysAgo = new Date(startOfToday.getTime() - 30 * 86400000);
-        match.startTime = { $gte: thirtyDaysAgo };
+        andConditions.push({ startTime: { $gte: thirtyDaysAgo } });
       } else if (dateRange === 'Custom') {
         if (startDateParam || endDateParam) {
-          match.startTime = {};
+          const customDateMatch: any = {};
           if (startDateParam) {
             const [sYear, sMonth, sDay] = startDateParam.split('-').map(Number);
-            match.startTime.$gte = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
+            customDateMatch.$gte = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
           }
           if (endDateParam) {
             const [eYear, eMonth, eDay] = endDateParam.split('-').map(Number);
-            match.startTime.$lte = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999);
+            customDateMatch.$lte = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999);
           }
+          andConditions.push({ startTime: customDateMatch });
         }
       }
     }
 
+    // Counselor / Agent filter
     if (counselorEmail) {
-      match.counselorEmail = counselorEmail.toLowerCase().trim();
+      andConditions.push({ counselorEmail: counselorEmail.toLowerCase().trim() });
     } else if (agentName && agentName !== 'All Counselors') {
-      match.$or = [
-        { agentName: { $regex: agentName.trim(), $options: 'i' } },
-        { counselorEmail: { $regex: agentName.trim(), $options: 'i' } },
+      const cleanAgent = agentName.trim();
+      const tokens = cleanAgent.split(/\s+/).filter((t) => t.length >= 3);
+      const orClauses: any[] = [
+        { agentName: { $regex: cleanAgent, $options: 'i' } },
+        { counselorEmail: { $regex: cleanAgent, $options: 'i' } },
+        { counselorName: { $regex: cleanAgent, $options: 'i' } },
+        { userName: { $regex: cleanAgent, $options: 'i' } },
+        { user: { $regex: cleanAgent, $options: 'i' } },
       ];
+      tokens.forEach((token) => {
+        orClauses.push({ agentName: { $regex: token, $options: 'i' } });
+        orClauses.push({ counselorEmail: { $regex: token, $options: 'i' } });
+        orClauses.push({ counselorName: { $regex: token, $options: 'i' } });
+      });
+      andConditions.push({ $or: orClauses });
     }
 
+    // Team filter (resolves team members dynamically from Team and User models)
     if (team && team !== 'All Teams') {
-      match.team = team.trim();
+      const cleanTeam = team.trim();
+      const teamDoc = await (TeamModel as any).findOne({ name: { $regex: `^${cleanTeam}$`, $options: 'i' } }).lean().exec();
+      const teamMembers: string[] = [];
+      if (teamDoc) {
+        if (Array.isArray(teamDoc.members)) {
+          teamDoc.members.forEach((m: string) => {
+            if (m && m.trim()) teamMembers.push(m.trim());
+          });
+        }
+        if (teamDoc.admin) teamMembers.push(teamDoc.admin.trim());
+        if (teamDoc.teamLeadEmail) teamMembers.push(teamDoc.teamLeadEmail.trim());
+      }
+      const usersInTeam = await (UserModel as any).find({ team: { $regex: `^${cleanTeam}$`, $options: 'i' } }).lean().exec();
+      usersInTeam.forEach((u: any) => {
+        if (u.email) teamMembers.push(u.email);
+        if (u.firstName) teamMembers.push(u.firstName);
+        if (u.firstName && u.lastName) teamMembers.push(`${u.firstName} ${u.lastName}`.trim());
+      });
+
+      const memberRegexes = Array.from(new Set(teamMembers)).filter(Boolean).map((m) => ({
+        $regex: m,
+        $options: 'i',
+      }));
+
+      const teamOrClauses: any[] = [
+        { team: { $regex: `^${cleanTeam}$`, $options: 'i' } },
+        { teamName: { $regex: `^${cleanTeam}$`, $options: 'i' } },
+        { department: { $regex: `^${cleanTeam}$`, $options: 'i' } },
+      ];
+
+      memberRegexes.forEach((r) => {
+        teamOrClauses.push({ agentName: r });
+        teamOrClauses.push({ counselorEmail: r });
+        teamOrClauses.push({ counselorName: r });
+        teamOrClauses.push({ userName: r });
+      });
+
+      andConditions.push({ $or: teamOrClauses });
     }
 
     if (channel) {
-      match.channel = channel.toUpperCase().trim();
+      andConditions.push({ channel: channel.toUpperCase().trim() });
     }
 
     // Tab / Anomaly Filter
     if (anomaly === 'whatsapp') {
-      match.$or = [
-        { channel: 'WHATSAPP' },
-        { disposition: { $regex: /whatsapp/i } },
-        { idempotencyKey: { $regex: /^WA_/i } },
-      ];
+      andConditions.push({
+        $or: [
+          { channel: 'WHATSAPP' },
+          { disposition: { $regex: /whatsapp/i } },
+          { idempotencyKey: { $regex: /^WA_/i } },
+        ],
+      });
     } else if (anomaly === 'sim') {
-      match.channel = { $ne: 'WHATSAPP' };
-      match.disposition = { $not: /whatsapp/i };
+      andConditions.push({
+        channel: { $ne: 'WHATSAPP' },
+        disposition: { $not: /whatsapp/i },
+      });
+    } else if (anomaly === 'unanswered') {
+      andConditions.push({ status: { $ne: 'ANSWERED' } });
     } else if (anomaly === 'bookmarked') {
-      match.$or = [
-        { isBookmarked: true },
-        { rating: { $gt: 0 } },
-      ];
+      andConditions.push({
+        $or: [
+          { isBookmarked: true },
+          { rating: { $gt: 0 } },
+        ],
+      });
     } else if (anomaly === 'recordings') {
-      match.$or = [
-        { recordingStatus: { $in: ['COMPLETED', 'PENDING_UPLOAD'] } },
-        { s3Key: { $exists: true, $ne: '' } },
-        { audioUrl: { $exists: true, $ne: '' } },
-      ];
+      andConditions.push({
+        $or: [
+          { recordingStatus: { $in: ['COMPLETED', 'PENDING_UPLOAD'] } },
+          { s3Key: { $exists: true, $ne: '' } },
+          { audioUrl: { $exists: true, $ne: '' } },
+        ],
+      });
     }
 
     // Search Query (Phone, Contact Name, Counselor Name)
     if (search && search.trim()) {
       const term = search.trim();
       const searchRegex = { $regex: term, $options: 'i' };
-      match.$and = match.$and || [];
-      match.$and.push({
+      andConditions.push({
         $or: [
           { phoneNumber: searchRegex },
           { phoneNumberMasked: searchRegex },
@@ -147,6 +208,10 @@ export async function GET(req: Request) {
           { agentName: searchRegex },
         ],
       });
+    }
+
+    if (andConditions.length > 0) {
+      match.$and = andConditions;
     }
 
     // 2. Sorting Stage
@@ -253,6 +318,11 @@ export async function GET(req: Request) {
                       $cond: [{ $eq: [{ $toUpper: '$status' }, 'ANSWERED'] }, 1, 0],
                     },
                   },
+                  unansweredCount: {
+                    $sum: {
+                      $cond: [{ $ne: [{ $toUpper: '$status' }, 'ANSWERED'] }, 1, 0],
+                    },
+                  },
                   waCount: {
                     $sum: {
                       $cond: [
@@ -334,6 +404,7 @@ export async function GET(req: Request) {
       inboundCount: 0,
       inboundDuration: 0,
       answeredCount: 0,
+      unansweredCount: 0,
       waCount: 0,
       simCount: 0,
     };
@@ -374,6 +445,7 @@ export async function GET(req: Request) {
       inboundDurSec: rawStats.inboundDuration,
       inboundTalkTimeStr: formatDuration(rawStats.inboundDuration),
       answeredCount: rawStats.answeredCount,
+      unansweredCount: rawStats.unansweredCount,
       simCount: rawStats.simCount,
       waCount: rawStats.waCount,
       mismatchCount: 0,

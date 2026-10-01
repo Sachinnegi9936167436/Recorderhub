@@ -2,9 +2,11 @@ package com.academically.recordhub.data.remote
 
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 data class LoginRequest(val email: String, val pass: String)
 data class LoginResponse(val accessToken: String, val user: UserDto)
@@ -86,6 +88,16 @@ data class UploadCompleteRequest(
 data class ValidateSessionRequest(val email: String)
 data class ValidateSessionResponse(val valid: Boolean, val message: String? = null)
 
+data class AppUpdateCheckResponse(
+    val updateAvailable: Boolean = false,
+    val latestVersionName: String? = null,
+    val latestVersionCode: Int? = null,
+    val isForced: Boolean = false,
+    val downloadUrl: String? = null,
+    val fileSizeBytes: Long = 0L,
+    val releaseNotes: String? = null
+)
+
 interface RecordHubApi {
     @POST("auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
@@ -120,4 +132,15 @@ interface RecordHubApi {
         @Path("id") recordingId: String,
         @Body request: UploadCompleteRequest
     ): Response<Any>
+
+    @GET("app/check-update")
+    suspend fun checkAppUpdate(
+        @Query("versionCode") versionCode: Int,
+        @Query("appVersion") appVersion: String? = null,
+        @Query("deviceId") deviceId: String? = null,
+        @Query("email") email: String? = null,
+        @Query("deviceModel") deviceModel: String? = null,
+        @Query("androidVersion") androidVersion: String? = null,
+        @Query("agentName") agentName: String? = null
+    ): Response<AppUpdateCheckResponse>
 }

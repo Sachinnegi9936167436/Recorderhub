@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Navigation, useUserRole } from '@/components/Navigation';
 import Link from 'next/link';
-import { Settings, ShieldCheck, Database, Award, Save, RefreshCw, Shield, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Settings, ShieldCheck, Database, Award, Save, RefreshCw, Shield, CheckCircle2, AlertCircle, Smartphone } from 'lucide-react';
+import { ApkReleaseManagerModal } from '@/components/ApkReleaseManagerModal';
 
 export default function SettingsPage() {
   const { role: userRole, isAdmin, isSuperAdmin } = useUserRole();
@@ -12,6 +13,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [isApkModalOpen, setIsApkModalOpen] = useState(false);
 
   useEffect(() => {
     fetch('/api/v1/settings/retention')
@@ -256,6 +258,58 @@ export default function SettingsPage() {
             </div>
           </div>
         </form>
+
+        {/* Android APK Over-The-Air (OTA) Auto-Update Management */}
+        <div className="glass-panel p-6 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center border border-rose-500/20">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center space-x-2">
+                  <span>Android App OTA Auto-Update System</span>
+                  <span className="bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                    Active
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Publish new APK binaries to AWS S3. Connected counselor devices will detect the new build and auto-update.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsApkModalOpen(true)}
+              className="inline-flex items-center space-x-2 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md shadow-rose-600/20 cursor-pointer shrink-0"
+            >
+              <Smartphone className="w-4 h-4" />
+              <span>Manage APK Releases & Upload Build</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs pt-1">
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1">
+              <p className="font-semibold text-slate-300">Self-Hosted OTA</p>
+              <p className="text-slate-400 text-[11px]">Direct binary delivery via AWS S3 without third-party app store fees or delays.</p>
+            </div>
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1">
+              <p className="font-semibold text-slate-300">Mandatory / Force Update</p>
+              <p className="text-slate-400 text-[11px]">Enforce critical updates across all team devices to prevent call tracking sync issues.</p>
+            </div>
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1">
+              <p className="font-semibold text-slate-300">Fleet Version Tracking</p>
+              <p className="text-slate-400 text-[11px]">Inspect installed APK version and phone hardware model in User Management.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* APK Release Manager Modal */}
+        <ApkReleaseManagerModal
+          isOpen={isApkModalOpen}
+          onClose={() => setIsApkModalOpen(false)}
+        />
       </main>
     </div>
   );

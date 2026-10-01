@@ -73,6 +73,22 @@ const TeamSchema = new Schema(
   { timestamps: true },
 );
 
+const AppReleaseSchema = new Schema(
+  {
+    versionName: { type: String, required: true },
+    versionCode: { type: Number, required: true, unique: true },
+    downloadUrl: { type: String, required: true },
+    fileSizeBytes: { type: Number, default: 0 },
+    releaseNotes: { type: String, default: '' },
+    isForced: { type: Boolean, default: false },
+    minSupportedVersionCode: { type: Number, default: 1 },
+    isActive: { type: Boolean, default: true },
+    uploadedBy: { type: String, default: 'Admin' },
+    s3Key: { type: String },
+  },
+  { timestamps: true }
+);
+
 CallSchema.index({ startTime: -1, createdAt: -1 });
 CallSchema.index({ phoneNumber: 1, startTime: -1 });
 CallSchema.index({ idempotencyKey: 1 }, { sparse: true });
@@ -93,11 +109,16 @@ TeamSchema.index({ teamLeadEmail: 1 });
 TeamSchema.index({ teamLeadId: 1 });
 
 DeviceSchema.index({ deviceId: 1 });
+DeviceSchema.index({ counselorEmail: 1 });
 DeviceSchema.index({ lastSyncTimestamp: -1 });
+
+AppReleaseSchema.index({ versionCode: -1 });
+AppReleaseSchema.index({ isActive: 1, versionCode: -1 });
 
 export const UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
 export const CallModel = mongoose.models.Call || mongoose.model('Call', CallSchema);
 export const DeviceModel = mongoose.models.Device || mongoose.model('Device', DeviceSchema);
 export const TeamModel = mongoose.models.Team || mongoose.model('Team', TeamSchema);
+export const AppReleaseModel = mongoose.models.AppRelease || mongoose.model('AppRelease', AppReleaseSchema);
 
 
