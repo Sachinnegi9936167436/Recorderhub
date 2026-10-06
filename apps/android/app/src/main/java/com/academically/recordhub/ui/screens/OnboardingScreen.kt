@@ -285,6 +285,10 @@ fun OnboardingScreen(onProceedToPermissions: () -> Unit) {
                                 .putString("access_token", response.body()?.accessToken ?: "")
                                 .putLong("account_created_at", accountCreatedAtMs)
                             editor.apply()
+
+                            try {
+                                com.academically.recordhub.utils.AppUpdateManager.checkForUpdate(context)
+                            } catch (_: Exception) {}
                         } else if (response.code() == 401 || response.code() == 400) {
                             lastErrorMsg = "Invalid email or password"
                         } else {

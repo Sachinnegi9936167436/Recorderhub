@@ -272,9 +272,18 @@ export async function POST(req: Request) {
     if (deviceUpdates.size > 0) {
       for (const [deviceId, info] of Array.from(deviceUpdates.entries())) {
         try {
+          const updateSet: any = {
+            agentName: info.agentName,
+            counselorEmail: info.email,
+            lastSyncTimestamp: new Date(),
+          };
+          if (body.appVersion) updateSet.appVersion = body.appVersion;
+          if (body.deviceModel) updateSet.deviceModel = body.deviceModel;
+          if (body.androidVersion) updateSet.androidVersion = body.androidVersion;
+
           await (DeviceModel as any).updateOne(
             { deviceId },
-            { $set: { agentName: info.agentName, counselorEmail: info.email, lastSyncTimestamp: new Date() } },
+            { $set: updateSet },
             { upsert: true }
           );
         } catch (e) {

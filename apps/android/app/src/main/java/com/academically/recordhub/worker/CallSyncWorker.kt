@@ -169,7 +169,13 @@ class CallSyncWorker(
                         )
                     }
 
-                    val request = BatchSyncRequest(callEvents = dtoList)
+                    val deviceModelStr = "${android.os.Build.MANUFACTURER.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() }} ${android.os.Build.MODEL}".trim()
+                    val request = BatchSyncRequest(
+                        callEvents = dtoList,
+                        appVersion = com.academically.recordhub.BuildConfig.VERSION_NAME,
+                        deviceModel = deviceModelStr,
+                        androidVersion = "Android ${android.os.Build.VERSION.RELEASE}"
+                    )
                     val response = api.batchSyncCalls(authHeader, request)
 
                     if (response.isSuccessful && response.body() != null) {

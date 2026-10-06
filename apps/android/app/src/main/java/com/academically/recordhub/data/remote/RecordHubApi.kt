@@ -14,7 +14,10 @@ data class UserDto(val id: String, val email: String, val firstName: String, val
 
 data class BatchSyncRequest(
     val callEvents: List<CallEventDto>,
-    val completedRecordingIds: List<String>? = null
+    val completedRecordingIds: List<String>? = null,
+    val appVersion: String? = null,
+    val deviceModel: String? = null,
+    val androidVersion: String? = null
 )
 
 data class UploadUrlInfo(

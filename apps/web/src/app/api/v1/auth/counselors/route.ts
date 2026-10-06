@@ -72,7 +72,9 @@ export async function GET() {
       const installedVersion = device?.appVersion || null;
       let isOutdated = false;
       if (installedVersion && latestVerName) {
-        isOutdated = installedVersion.trim().toLowerCase() !== latestVerName.trim().toLowerCase();
+        const cleanInstalled = installedVersion.trim().toLowerCase().replace(/^v/, '').replace(/[-_].*$/, '');
+        const cleanLatest = latestVerName.trim().toLowerCase().replace(/^v/, '').replace(/[-_].*$/, '');
+        isOutdated = cleanInstalled !== cleanLatest;
       }
 
       return {
