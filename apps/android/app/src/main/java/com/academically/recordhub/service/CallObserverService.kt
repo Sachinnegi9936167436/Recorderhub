@@ -69,11 +69,11 @@ class CallObserverService : Service() {
         watchdogStarted = true
         serviceScope.launch {
             while (true) {
-                delay(30_000)
+                delay(60_000)
                 try {
                     if (WhatsAppCallNotificationListener.isNotificationListenerEnabled(applicationContext)) {
                         if (!WhatsAppCallNotificationListener.isConnected || WhatsAppCallNotificationListener.instance == null) {
-                            AppLogManager.log("WARN", TAG, "Watchdog detected WhatsAppCallNotificationListener disconnected/unbound. Rebinding...")
+                            AppLogManager.log("INFO", TAG, "Watchdog checking WhatsAppCallNotificationListener connection. Requesting safe rebind...")
                             WhatsAppCallNotificationListener.triggerRebind(applicationContext)
                         }
                     }

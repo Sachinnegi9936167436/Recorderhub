@@ -336,10 +336,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isNotificationListenerEnabled(context: Context): Boolean {
-        val flat = android.provider.Settings.Secure.getString(
-            context.contentResolver,
-            "enabled_notification_listeners"
-        )
-        return flat != null && flat.contains(context.packageName)
+        return com.academically.recordhub.service.WhatsAppCallNotificationListener.isNotificationListenerEnabled(context)
     }
 }

@@ -323,37 +323,39 @@ class WhatsAppCallNotificationListener : NotificationListenerService() {
                 val enabledListeners = Settings.Secure.getString(
                     context.contentResolver,
                     "enabled_notification_listeners"
-                ) ?: return false
+                ) ?: ""
+                val myPkg = context.packageName
                 val myComponentName = ComponentName(context, WhatsAppCallNotificationListener::class.java).flattenToString()
                 val myShortComponentName = ComponentName(context, WhatsAppCallNotificationListener::class.java).flattenToShortString()
-                enabledListeners.contains(myComponentName) ||
+
+                val isGrantedInSettings = enabledListeners.contains(myComponentName) ||
                         enabledListeners.contains(myShortComponentName) ||
-                        enabledListeners.contains(context.packageName)
+                        enabledListeners.contains(myPkg)
+
+                val isGrantedViaCompat = androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(context).contains(myPkg)
+
+                isGrantedInSettings || isGrantedViaCompat
             } catch (e: Exception) {
                 false
             }
         }
 
+        private var lastRebindAttemptMs: Long = 0
+
         fun triggerRebind(context: Context) {
+            val now = System.currentTimeMillis()
+            if (now - lastRebindAttemptMs < 10_000L) {
+                return
+            }
+            lastRebindAttemptMs = now
             try {
                 val componentName = ComponentName(context, WhatsAppCallNotificationListener::class.java)
-                val pm = context.packageManager
-                pm.setComponentEnabledSetting(
-                    componentName,
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    android.content.pm.PackageManager.DONT_KILL_APP
-                )
-                pm.setComponentEnabledSetting(
-                    componentName,
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    android.content.pm.PackageManager.DONT_KILL_APP
-                )
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     requestRebind(componentName)
+                    AppLogManager.log("INFO", "WhatsAppListener", "Triggered safe notification listener requestRebind.")
                 }
-                AppLogManager.log("INFO", "WhatsAppListener", "Triggered notification listener rebind.")
             } catch (e: Exception) {
-                AppLogManager.log("WARN", "WhatsAppListener", "Error triggering rebind: ${e.message}")
+                AppLogManager.log("WARN", "WhatsAppListener", "Error triggering requestRebind: ${e.message}")
             }
         }
     }

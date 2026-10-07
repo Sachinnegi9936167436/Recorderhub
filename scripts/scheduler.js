@@ -34,7 +34,7 @@ loadEnv();
 
 const WEB_PORT = process.env.WEB_PORT || process.env.PORT || 3000;
 const CRON_SECRET = process.env.CRON_SECRET || '$@Chin9936';
-const TARGET_HOUR_IST = 17; // 19 = 7:00 PM IST (24h format)
+const TARGET_HOUR_IST = 17; // 19 = 5:00 PM IST (24h format)
 const TARGET_MINUTE_IST = 0; // 00 minutes
 
 function triggerDailyReport() {

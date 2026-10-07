@@ -300,6 +300,8 @@ fun SettingsScreen(
             }
 
             // 3. Telemetry & Hardware Health Card
+            var showAutoStartDialog by remember { mutableStateOf(false) }
+
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = CardBg),
@@ -321,17 +323,29 @@ fun SettingsScreen(
 
                     SettingStatusRow(
                         title = "WhatsApp Call Observer",
-                        subtitle = if (isNotificationListenerOn.value) "Active & monitoring VoIP calls" else "Tap to grant Notification Access",
+                        subtitle = if (isNotificationListenerOn.value) "Active & monitoring VoIP calls (Tap to re-verify)" else "Disabled by OS • Tap to grant Notification Access",
                         isActive = isNotificationListenerOn.value,
                         onClick = {
-                            try {
-                                val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Cannot open notification settings", Toast.LENGTH_SHORT).show()
+                            if (!isNotificationListenerOn.value) {
+                                try {
+                                    val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Cannot open notification settings", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                com.academically.recordhub.service.WhatsAppCallNotificationListener.triggerRebind(context)
+                                Toast.makeText(context, "WhatsApp Call Observer is Active & Connected!", Toast.LENGTH_SHORT).show()
                             }
                         }
+                    )
+
+                    SettingStatusRow(
+                        title = "${com.academically.recordhub.utils.AutoStartHelper.getDeviceBrandName()} Autostart Protection",
+                        subtitle = "Prevents device from killing WhatsApp & SIM call observer",
+                        isActive = true,
+                        onClick = { showAutoStartDialog = true }
                     )
 
                     SettingStatusRow(
@@ -357,6 +371,84 @@ fun SettingsScreen(
                             }
                         }
                     )
+                }
+            }
+
+            if (showAutoStartDialog) {
+                Dialog(onDismissRequest = { showAutoStartDialog = false }) {
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${com.academically.recordhub.utils.AutoStartHelper.getDeviceBrandName()} Background Setup",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = TextPrimary
+                                )
+                                IconButton(onClick = { showAutoStartDialog = false }, modifier = Modifier.size(24.dp)) {
+                                    Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = TextSecondary)
+                                }
+                            }
+
+                            Text(
+                                text = "To prevent ${com.academically.recordhub.utils.AutoStartHelper.getDeviceBrandName()} OS from turning off WhatsApp Call Observer in the background, please ensure:",
+                                fontSize = 13.sp,
+                                color = TextSecondary,
+                                lineHeight = 18.sp
+                            )
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFFF8FAFC),
+                                border = BorderStroke(1.dp, CardBorderColor),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = com.academically.recordhub.utils.AutoStartHelper.getBrandSpecificGuidance(),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = TextPrimary,
+                                    lineHeight = 19.sp,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { showAutoStartDialog = false },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Done", color = TextPrimary)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        com.academically.recordhub.utils.AutoStartHelper.openAutoStartSettings(context)
+                                    },
+                                    modifier = Modifier.weight(1.3f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AmberGold, contentColor = TextPrimary),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Open Settings", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
