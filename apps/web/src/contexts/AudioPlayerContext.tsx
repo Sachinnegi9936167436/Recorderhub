@@ -175,6 +175,27 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     setCurrentTime(0);
     setDuration(call.durationSeconds || 0);
 
+    // Track recording playback action
+    try {
+      import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+        const phone = call.phoneNumber || call.phoneNumberMasked || call.phone || 'Phone Call';
+        const dur = call.durationSeconds ? `${call.durationSeconds}s` : 'Unknown duration';
+        const agent = call.agentName || call.counselorName || call.counselorEmail || '';
+        trackClientActivity({
+          action: 'PLAY_RECORDING',
+          actionCategory: 'RECORDINGS',
+          description: `Listened to call recording of ${phone} (${dur}${agent ? `, Agent: ${agent}` : ''})`,
+          path: typeof window !== 'undefined' ? window.location.pathname : '/calls',
+          details: {
+            callId: call._id || call.id || call.idempotencyKey,
+            phoneNumber: call.phoneNumber || call.phone,
+            duration: call.durationSeconds,
+            agentName: agent,
+          },
+        });
+      }).catch(() => {});
+    } catch (e) {}
+
     audio.src = src;
     audio.playbackRate = playbackSpeed;
     audio.volume = isMuted ? 0 : volume;

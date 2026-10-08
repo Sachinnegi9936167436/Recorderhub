@@ -12,8 +12,8 @@ android {
         applicationId = "com.academically.recordhub"
         minSdk = 26
         targetSdk = 34
-        versionCode = 108
-        versionName = "1.0.8-prod"
+        versionCode = 109
+        versionName = "1.0.9-prod"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

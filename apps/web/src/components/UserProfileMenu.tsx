@@ -24,10 +24,25 @@ export function UserProfileMenu() {
   }, []);
 
   const handleLogout = () => {
+    try {
+      import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+        trackClientActivity({
+          userEmail,
+          userRole,
+          action: 'LOGOUT',
+          actionCategory: 'AUTH',
+          description: `Logged out of RecordHub Web Dashboard`,
+          path: typeof window !== 'undefined' ? window.location.pathname : '/',
+        });
+      }).catch(() => {});
+    } catch (e) {}
+
     if (typeof window !== 'undefined') {
       localStorage.removeItem('userRole');
       localStorage.removeItem('userEmail');
       localStorage.removeItem('access_token');
+      localStorage.removeItem('recordhub_session_id');
+      sessionStorage.removeItem('recordhub_session_id');
       document.cookie = 'recordhub_session=; path=/; max-age=0; SameSite=Lax';
       document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax';
     }

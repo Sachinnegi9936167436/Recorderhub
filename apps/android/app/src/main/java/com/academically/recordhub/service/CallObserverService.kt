@@ -54,6 +54,7 @@ class CallObserverService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
+            startForegroundServiceNotification()
             registerCallStateListener()
             registerCallLogContentObserver()
             ensureWhatsAppListenerActive()
@@ -114,7 +115,16 @@ class CallObserverService : Service() {
         }
     }
 
+    private var lastAutoScanTriggerMs: Long = 0
+
     private fun triggerAutoScanAndSync() {
+        val now = System.currentTimeMillis()
+        if (now - lastAutoScanTriggerMs < 3500L) {
+            Log.d(TAG, "Skipping duplicate triggerAutoScanAndSync within 3.5s debounce window.")
+            return
+        }
+        lastAutoScanTriggerMs = now
+
         serviceScope.launch {
             try {
                 // Short delay to allow Android telephony provider to commit duration & contact info
@@ -169,26 +179,35 @@ class CallObserverService : Service() {
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build()
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= 34) {
                 try {
-                    if (Build.VERSION.SDK_INT >= 34) {
-                        startForeground(
-                            NOTIFICATION_ID,
-                            notification,
-                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
-                                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-                        )
-                    } else {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    )
+                } catch (e1: Exception) {
+                    try {
                         startForeground(
                             NOTIFICATION_ID,
                             notification,
                             android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                         )
+                    } catch (e2: Exception) {
+                        startForeground(
+                            NOTIFICATION_ID,
+                            notification,
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                        )
                     }
-                } catch (e: Exception) {
-                    AppLogManager.log("WARN", TAG, "Typed startForeground exception (${e.message}), attempting standard fallback...")
-                    startForeground(NOTIFICATION_ID, notification)
                 }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }

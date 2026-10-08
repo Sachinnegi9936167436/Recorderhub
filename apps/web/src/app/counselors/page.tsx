@@ -236,6 +236,16 @@ function CounselorsAndTeamsInner() {
         await fetchTeams();
         await fetchCounselors();
         setToastMessage(`Successfully created team "${newTeamPayload.name}" with admin "${adminSelected}"!`);
+
+        import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+          trackClientActivity({
+            action: 'CREATE_TEAM',
+            actionCategory: 'TEAM_MANAGEMENT',
+            description: `Created new team "${newTeamPayload.name}" with lead "${adminSelected}"`,
+            path: '/counselors?view=teams',
+            details: { teamName: newTeamPayload.name, admin: adminSelected },
+          });
+        }).catch(() => {});
       }
     } catch (err) {
       console.error('Error creating team:', err);
@@ -477,6 +487,18 @@ function CounselorsAndTeamsInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ firstName, lastName, email, role, pass: password }),
       });
+
+      try {
+        import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+          trackClientActivity({
+            action: 'CREATE_USER',
+            actionCategory: 'USER_MANAGEMENT',
+            description: `Created new user ${firstName} ${lastName} (${email}, Role: ${role})`,
+            path: '/counselors?view=users',
+            details: { createdEmail: email, role },
+          });
+        }).catch(() => {});
+      } catch (e) {}
     } catch (err: any) {
       console.error('Error creating counselor:', err);
     } finally {
@@ -527,6 +549,16 @@ function CounselorsAndTeamsInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatePayload),
       });
+
+      import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+        trackClientActivity({
+          action: 'UPDATE_USER',
+          actionCategory: 'USER_MANAGEMENT',
+          description: `Updated profile for user ${firstName} ${lastName} (${email}, Role: ${role})`,
+          path: '/counselors?view=users',
+          details: { updatedEmail: email, role },
+        });
+      }).catch(() => {});
     } catch (err: any) {
       console.error('Error updating counselor:', err);
     }
@@ -574,6 +606,16 @@ function CounselorsAndTeamsInner() {
         setPasswordCounselor(null);
         setNewPassword('');
         setConfirmPassword('');
+
+        import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+          trackClientActivity({
+            action: 'CHANGE_PASSWORD',
+            actionCategory: 'USER_MANAGEMENT',
+            description: `Reset password for user ${displayName} (${targetEmail})`,
+            path: '/counselors?view=users',
+            details: { targetEmail },
+          });
+        }).catch(() => {});
       } else {
         const data = await res.json();
         alert(data.message || 'Failed to update password');
@@ -605,6 +647,16 @@ function CounselorsAndTeamsInner() {
       if (res.ok) {
         const data = await res.json();
         setToastMessage(`Deleted ${displayName} (${data.deletedCallsCount || 0} call logs & ${data.deletedS3RecordingsCount || 0} S3 recordings removed)`);
+
+        import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+          trackClientActivity({
+            action: 'DELETE_USER',
+            actionCategory: 'USER_MANAGEMENT',
+            description: `Deleted user ${displayName} (${counselor.email})`,
+            path: '/counselors?view=users',
+            details: { deletedEmail: counselor.email },
+          });
+        }).catch(() => {});
       }
     } catch (err: any) {
       console.error('Error deleting counselor:', err);

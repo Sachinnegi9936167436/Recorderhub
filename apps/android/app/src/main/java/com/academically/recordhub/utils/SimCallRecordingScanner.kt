@@ -303,6 +303,11 @@ object SimCallRecordingScanner {
                             continue
                         }
 
+                        val (parsedTs, _) = extractTimestamp(candidateName)
+                        val candidateTime = parsedTs ?: effectiveModMs
+                        if (accountCreatedAtMs > 0L && candidateTime < (accountCreatedAtMs - 60000L)) continue
+                        if (candidateTime < (startTimeMs - 15 * 60 * 1000L) || candidateTime > (endTimeMs + 10 * 60 * 1000L)) continue
+
                         var finalDurSec = durSec
                         var directFileObj: File? = null
                         if (rawPath.isNotBlank()) {
@@ -346,6 +351,11 @@ object SimCallRecordingScanner {
                                 continue
                             }
 
+                            val (parsedTs, _) = extractTimestamp(fileName)
+                            val candidateTime = parsedTs ?: doc.lastModified()
+                            if (accountCreatedAtMs > 0L && candidateTime < (accountCreatedAtMs - 60000L)) continue
+                            if (candidateTime < (startTimeMs - 15 * 60 * 1000L) || candidateTime > (endTimeMs + 10 * 60 * 1000L)) continue
+
                             val score = evaluateScore(fileName, doc.lastModified(), expectedDurationSec, doc.length())
                             if (score > 0) {
                                 candidates.add(CandidateMatch(uri = doc.uri, fileName = fileName, score = score, source = "SAF_Folder"))
@@ -378,6 +388,11 @@ object SimCallRecordingScanner {
                             if (claimedPaths.contains(file.absolutePath) || claimedPaths.contains(file.name)) {
                                 continue
                             }
+
+                            val (parsedTs, _) = extractTimestamp(file.name)
+                            val candidateTime = parsedTs ?: file.lastModified()
+                            if (accountCreatedAtMs > 0L && candidateTime < (accountCreatedAtMs - 60000L)) continue
+                            if (candidateTime < (startTimeMs - 15 * 60 * 1000L) || candidateTime > (endTimeMs + 10 * 60 * 1000L)) continue
 
                             val fileDur = getAudioDuration(file)
                             val score = evaluateScore(file.name, file.lastModified(), fileDur, file.length())

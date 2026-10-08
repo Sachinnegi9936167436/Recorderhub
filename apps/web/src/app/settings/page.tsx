@@ -41,6 +41,16 @@ export default function SettingsPage() {
         setSaved(true);
         setSaveMessage(`S3 Lifecycle updated: auto-delete after ${retentionDays} days (${Math.round(retentionDays / 30)} months)`);
         setTimeout(() => setSaved(false), 4000);
+
+        import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+          trackClientActivity({
+            action: 'UPDATE_SETTINGS',
+            actionCategory: 'SETTINGS',
+            description: `Updated S3 data retention policy to ${retentionDays} days (${Math.round(retentionDays / 30)} months)`,
+            path: '/settings',
+            details: { retentionDays },
+          });
+        }).catch(() => {});
       } else {
         setSaveMessage(data?.error || 'Failed to update S3 policy');
       }

@@ -20,8 +20,16 @@ import {
   Clock,
   Calendar, 
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  History,
+  Radio,
+  Headphones,
+  Monitor,
+  ExternalLink,
+  ShieldCheck,
+  Laptop
 } from 'lucide-react';
+import Link from 'next/link';
 
 export default function RecorderHubDashboard() {
   const { role: userRole, email: userEmail, isSuperAdmin, isAdmin, isManager, isTeamLead: rawIsTeamLead, isCounselor: rawIsCounselor } = useUserRole();
@@ -34,6 +42,10 @@ export default function RecorderHubDashboard() {
   const [teamFilter, setTeamFilter] = useState('All Teams');
   const [counselorsList, setCounselorsList] = useState<any[]>([]);
   const [teamsList, setTeamsList] = useState<any[]>([]);
+  const [recentActivities, setRecentActivities] = useState<any[]>([]);
+  const [activeUsersCount, setActiveUsersCount] = useState<number>(0);
+  const [dashboardOpensToday, setDashboardOpensToday] = useState<number>(0);
+  const [expandedSessions, setExpandedSessions] = useState<Record<string, boolean>>({});
 
   type DashSortField = 'name' | 'total' | 'answered' | 'unanswered' | 'whatsapp' | 'duration' | 'uniqueCalls' | 'uniqueAnswered';
   const [dashSortField, setDashSortField] = useState<DashSortField>('total');
@@ -163,19 +175,49 @@ export default function RecorderHubDashboard() {
     }
   };
 
+  const fetchRecentActivities = async () => {
+    if (!isAdmin && !isSuperAdmin) return;
+    try {
+      const res = await fetch('/api/v1/activity?limit=20&distinctUsers=true', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const rawSessions: any[] = data.sessions || data.logs || [];
+        // Deduplicate strictly by userEmail so that each user has EXACTLY 1 card
+        const uniqueUserSessions: any[] = [];
+        const seenEmails = new Set<string>();
+        for (const s of rawSessions) {
+          const em = (s.userEmail || '').toLowerCase().trim();
+          if (em && !seenEmails.has(em)) {
+            seenEmails.add(em);
+            uniqueUserSessions.push(s);
+          }
+        }
+        setRecentActivities(uniqueUserSessions);
+        if (data.stats) {
+          setActiveUsersCount(data.stats.uniqueUsersToday || uniqueUserSessions.length || 0);
+          setDashboardOpensToday(data.stats.totalDashboardOpensToday || 0);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching recent activities for dashboard:', err);
+    }
+  };
+
   useEffect(() => {
     fetchSummary();
     fetchCalls();
     fetchCounselors();
     fetchTeams();
+    fetchRecentActivities();
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && !document.hidden && document.visibilityState === 'visible') {
         fetchSummary();
         fetchCalls();
+        fetchRecentActivities();
       }
-    }, 60000);
+    }, 30000);
     return () => clearInterval(interval);
-  }, [dateRange, customStartDate, customEndDate, salesRepFilter, teamFilter]);
+  }, [dateRange, customStartDate, customEndDate, salesRepFilter, teamFilter, isAdmin, isSuperAdmin]);
 
   const activeTeams = teamsList;
 
@@ -1035,6 +1077,24 @@ export default function RecorderHubDashboard() {
 
     const dateStr = new Date().toISOString().split('T')[0];
     XLSX.writeFile(workbook, `RecorderHub_Call_Report_${dateStr}.xlsx`);
+
+    try {
+      import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+        trackClientActivity({
+          action: 'EXPORT_REPORT',
+          actionCategory: 'EXPORTS',
+          description: `Exported Call Analytics Report Excel (${userActivityRows.length} counselors, Date: ${dateRange}, Team: ${teamFilter})`,
+          path: '/dashboard',
+          details: {
+            exportCount: userActivityRows.length,
+            format: 'xlsx',
+            dateRange,
+            teamFilter,
+            salesRepFilter,
+          },
+        });
+      }).catch(() => {});
+    } catch (e) {}
   };
 
   const exportCSV = () => {
@@ -1042,6 +1102,24 @@ export default function RecorderHubDashboard() {
       alert('No counselor report data available to export.');
       return;
     }
+
+    try {
+      import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+        trackClientActivity({
+          action: 'EXPORT_REPORT',
+          actionCategory: 'EXPORTS',
+          description: `Exported Call Analytics Report CSV (${userActivityRows.length} counselors, Date: ${dateRange}, Team: ${teamFilter})`,
+          path: '/dashboard',
+          details: {
+            exportCount: userActivityRows.length,
+            format: 'csv',
+            dateRange,
+            teamFilter,
+            salesRepFilter,
+          },
+        });
+      }).catch(() => {});
+    } catch (e) {}
 
     const headers = ['Name', 'Total', 'Answered', 'Unanswered', 'WhatsApp Calls', 'Duration', 'Unique Calls', 'Answered Calls'];
     const rows = userActivityRows.map((r) => [
@@ -1247,6 +1325,215 @@ export default function RecorderHubDashboard() {
             </div>
           </div>
         </section>
+
+        {/* Admin Live User Activity & Dashboard Sessions Widget */}
+        {(isAdmin || isSuperAdmin) && (
+          <section className="mb-10">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <div className="flex items-center space-x-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+                    Live Team Activity & Dashboard Sessions
+                  </h2>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                    Real-time Audit
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Live feed showing which team members opened the dashboard, when, and their recent actions.
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-3">
+                <span className="text-xs font-semibold px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-200/80">
+                  {dashboardOpensToday} Dashboard Opens Today
+                </span>
+                <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-200/80">
+                  {activeUsersCount} Active Users Today
+                </span>
+                <Link
+                  href="/activity"
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-sm transition-all"
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span>View Full Activity Logs →</span>
+                </Link>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+              {recentActivities.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 space-y-2">
+                  <Radio className="w-5 h-5 text-emerald-500 animate-pulse mx-auto" />
+                  <p className="text-xs font-semibold text-slate-600">Session tracking active. Awaiting user logins and activity.</p>
+                  <p className="text-[11px] text-slate-400">When users open the dashboard or perform actions, their session cards will appear here.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {recentActivities.slice(0, 6).map((session) => {
+                    const latestAct = session.latestActivity || (session.activities && session.activities[0]) || {};
+                    const isExpanded = Boolean(expandedSessions[session._id || session.sessionId]);
+                    const sessionActs = session.activities || [];
+
+                    const startedDate = new Date(session.startedAt || session.createdAt);
+                    const lastActiveDate = new Date(session.lastActiveAt || session.updatedAt);
+                    const diffMins = Math.max(0, Math.floor((Date.now() - lastActiveDate.getTime()) / 60000));
+                    const timeAgo = diffMins < 1 ? 'Just now' : diffMins < 60 ? `${diffMins}m ago` : `${Math.floor(diffMins / 60)}h ago`;
+
+                    const isOnline = session.isOnline !== undefined ? session.isOnline : (diffMins < 15);
+
+                    const actAction = (latestAct.action || 'OPEN_DASHBOARD').toUpperCase();
+                    const isDashOpen = actAction.includes('OPEN_DASHBOARD');
+                    const isRec = actAction.includes('RECORDING');
+                    const isExp = actAction.includes('EXPORT');
+                    const isLogin = actAction.includes('LOGIN');
+
+                    const badgeClass = isDashOpen
+                      ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                      : isRec
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : isExp
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : isLogin
+                      ? 'bg-teal-50 text-teal-700 border-teal-200'
+                      : 'bg-slate-100 text-slate-700 border-slate-200';
+
+                    const ActionIcon = isDashOpen
+                      ? Monitor
+                      : isRec
+                      ? Headphones
+                      : isExp
+                      ? FileSpreadsheet
+                      : isLogin
+                      ? ShieldCheck
+                      : Clock;
+
+                    return (
+                      <div
+                        key={session._id || session.sessionId}
+                        className="p-4 rounded-xl border border-slate-200/90 bg-slate-50/70 hover:bg-slate-50 hover:border-slate-300 transition-all flex flex-col justify-between space-y-3"
+                      >
+                        {/* Session Card Header: 1 User = 1 Card */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center space-x-2.5 min-w-0">
+                            {/* Avatar with live status dot */}
+                            <div className="relative shrink-0">
+                              <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-800 font-bold flex items-center justify-center text-xs">
+                                {(session.userName || session.userEmail).charAt(0).toUpperCase()}
+                              </div>
+                              <span
+                                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                                  isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                                }`}
+                                title={isOnline ? 'Active right now' : 'Idle / Offline'}
+                              />
+                            </div>
+
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-slate-900 truncate block">
+                                {session.userName || session.userEmail.split('@')[0]}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono truncate block">
+                                {session.userEmail}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              isOnline
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}>
+                              {isOnline ? 'Online Now' : timeAgo}
+                            </span>
+                            <span className="block text-[10px] text-slate-400 mt-0.5">
+                              {session.totalActions || sessionActs.length} {sessionActs.length === 1 ? 'action' : 'actions'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Session Meta */}
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 bg-white/80 p-2 rounded-lg border border-slate-200/60 font-mono">
+                          <span>
+                            Started: {startedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span>•</span>
+                          <span>Active for {session.durationMinutes || 1}m</span>
+                          <span>•</span>
+                          <span className="truncate max-w-[120px] font-sans">
+                            {session.device || 'Desktop'}
+                          </span>
+                        </div>
+
+                        {/* Latest Action In Session */}
+                        <div className="space-y-1">
+                          <div className="flex items-center space-x-1.5">
+                            <span className={`inline-flex items-center space-x-1 text-[10px] font-bold px-2 py-0.5 rounded-md border ${badgeClass}`}>
+                              <ActionIcon className="w-3 h-3" />
+                              <span>{latestAct.action || 'OPEN_DASHBOARD'}</span>
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400 truncate">
+                              {latestAct.path || session.currentPath || '/dashboard'}
+                            </span>
+                          </div>
+                          <p className="text-xs font-semibold text-slate-800 line-clamp-1">
+                            {latestAct.description || 'Active on dashboard'}
+                          </p>
+                        </div>
+
+                        {/* Expandable Activity List for this Session */}
+                        {sessionActs.length > 1 && (
+                          <div className="pt-1 border-t border-slate-200/60 space-y-2">
+                            <button
+                              onClick={() => {
+                                const sid = session._id || session.sessionId;
+                                setExpandedSessions((prev) => ({ ...prev, [sid]: !prev[sid] }));
+                              }}
+                              className="text-[11px] font-bold text-slate-600 hover:text-slate-900 flex items-center justify-between w-full cursor-pointer py-0.5"
+                            >
+                              <span>
+                                {isExpanded ? 'Hide session history' : `View all ${sessionActs.length} actions in this session`}
+                              </span>
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {isExpanded && (
+                              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1 animate-in fade-in">
+                                {sessionActs.map((act: any, actIdx: number) => {
+                                  const actTime = new Date(act.timestamp || Date.now());
+                                  return (
+                                    <div
+                                      key={act._id || actIdx}
+                                      className="flex items-start justify-between text-[10px] p-1.5 rounded bg-white border border-slate-100"
+                                    >
+                                      <div className="min-w-0 pr-2">
+                                        <span className="font-bold text-slate-800 block truncate">
+                                          {act.description || act.action}
+                                        </span>
+                                        <span className="font-mono text-slate-400 text-[9px]">
+                                          {act.path || '/dashboard'}
+                                        </span>
+                                      </div>
+                                      <span className="text-slate-400 font-mono shrink-0">
+                                        {actTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Section 2: Analytics & Productivity */}
         <section className="mb-10">

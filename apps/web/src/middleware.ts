@@ -5,7 +5,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Protected application routes
-  const protectedPaths = ['/dashboard', '/calls', '/counselors', '/device-health', '/settings'];
+  const protectedPaths = ['/dashboard', '/calls', '/counselors', '/device-health', '/settings', '/activity'];
   const isProtected = protectedPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   const sessionToken = request.cookies.get('recordhub_session')?.value || request.cookies.get('access_token')?.value;

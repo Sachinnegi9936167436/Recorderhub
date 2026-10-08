@@ -115,10 +115,78 @@ DeviceSchema.index({ lastSyncTimestamp: -1 });
 AppReleaseSchema.index({ versionCode: -1 });
 AppReleaseSchema.index({ isActive: 1, versionCode: -1 });
 
+const AuditLogSchema = new Schema(
+  {
+    organizationId: { type: String, default: '65c1f0000000000000000001' },
+    actorUserId: { type: String },
+    userEmail: { type: String, required: true },
+    userName: { type: String, default: '' },
+    userRole: { type: String, default: 'COUNSELOR' },
+    action: { type: String, required: true },
+    actionCategory: { type: String, default: 'DASHBOARD' },
+    description: { type: String, required: true },
+    targetResource: { type: String, default: 'DASHBOARD' },
+    path: { type: String, default: '/dashboard' },
+    details: { type: Schema.Types.Mixed, default: {} },
+    ipAddress: { type: String, default: '' },
+    userAgent: { type: String, default: '' },
+    device: { type: String, default: 'Desktop' },
+    timestamp: { type: Date, default: Date.now },
+  },
+  { timestamps: true, collection: 'auditlogs' }
+);
+
+AuditLogSchema.index({ timestamp: -1, createdAt: -1 });
+AuditLogSchema.index({ userEmail: 1, timestamp: -1 });
+AuditLogSchema.index({ action: 1, timestamp: -1 });
+AuditLogSchema.index({ actionCategory: 1, timestamp: -1 });
+AuditLogSchema.index({ organizationId: 1, timestamp: -1 });
+
+const ActivityItemSchema = new Schema(
+  {
+    action: { type: String, required: true },
+    actionCategory: { type: String, default: 'GENERAL' },
+    description: { type: String, required: true },
+    path: { type: String, default: '/dashboard' },
+    details: { type: Schema.Types.Mixed, default: {} },
+    timestamp: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
+const UserSessionSchema = new Schema(
+  {
+    organizationId: { type: String, default: '65c1f0000000000000000001' },
+    sessionId: { type: String, required: true },
+    userEmail: { type: String, required: true },
+    userName: { type: String, default: '' },
+    userRole: { type: String, default: 'COUNSELOR' },
+    startedAt: { type: Date, default: Date.now },
+    lastActiveAt: { type: Date, default: Date.now },
+    ipAddress: { type: String, default: '' },
+    userAgent: { type: String, default: '' },
+    device: { type: String, default: 'Desktop' },
+    currentPath: { type: String, default: '/dashboard' },
+    status: { type: String, default: 'ACTIVE' },
+    activities: [ActivityItemSchema],
+    totalActions: { type: Number, default: 1 },
+  },
+  { timestamps: true, collection: 'usersessions' }
+);
+
+UserSessionSchema.index({ startedAt: -1, lastActiveAt: -1 });
+UserSessionSchema.index({ userEmail: 1, lastActiveAt: -1 });
+UserSessionSchema.index({ sessionId: 1 });
+UserSessionSchema.index({ organizationId: 1, lastActiveAt: -1 });
+
 export const UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
 export const CallModel = mongoose.models.Call || mongoose.model('Call', CallSchema);
 export const DeviceModel = mongoose.models.Device || mongoose.model('Device', DeviceSchema);
 export const TeamModel = mongoose.models.Team || mongoose.model('Team', TeamSchema);
 export const AppReleaseModel = mongoose.models.AppRelease || mongoose.model('AppRelease', AppReleaseSchema);
+export const AuditLogModel = mongoose.models.AuditLog || mongoose.model('AuditLog', AuditLogSchema);
+export const UserSessionModel = mongoose.models.UserSession || mongoose.model('UserSession', UserSessionSchema);
+
+
 
 

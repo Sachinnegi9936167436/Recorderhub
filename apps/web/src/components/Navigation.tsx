@@ -14,7 +14,8 @@ import {
   Puzzle, 
   HeartHandshake, 
   Settings, 
-  ChevronDown
+  ChevronDown,
+  History
 } from 'lucide-react';
 
 function NavigationInner() {
@@ -32,6 +33,7 @@ function NavigationInner() {
     ] : []),
     ...(mounted && (isAdmin || isSuperAdmin) ? [
       { name: 'User Management', href: '/counselors?view=users', viewKey: 'users', icon: UserCheck },
+      { name: 'Activity Logs', href: '/activity', icon: History },
       { name: 'Settings', href: '/settings', icon: Settings },
     ] : []),
   ];

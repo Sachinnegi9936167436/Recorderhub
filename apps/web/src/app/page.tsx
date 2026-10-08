@@ -59,6 +59,22 @@ export default function LoginPage() {
         document.cookie = `recordhub_session=${token}; path=/; max-age=2592000; SameSite=Lax`;
       }
 
+      // Track Login Activity - Start 1 unified session for this login
+      try {
+        const { startNewSessionId, trackClientActivity } = await import('@/lib/activity-tracker');
+        const sid = startNewSessionId(userEmail);
+        trackClientActivity({
+          sessionId: sid,
+          userEmail,
+          userName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || userEmail.split('@')[0],
+          userRole,
+          action: 'LOGIN',
+          actionCategory: 'AUTH',
+          description: `Logged into RecordHub Web Dashboard (${userRole})`,
+          path: '/dashboard',
+        });
+      } catch (trackErr) {}
+
       setSuccessMessage(`Authenticated as ${userRole}! Redirecting...`);
 
       setTimeout(() => {

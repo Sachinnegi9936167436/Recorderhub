@@ -8,14 +8,20 @@ import android.util.Log
 import com.academically.recordhub.data.local.AppDatabase
 import com.academically.recordhub.data.local.CallEventEntity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import java.io.File
 
 object CallLogScanner {
 
     private const val TAG = "CallLogScanner"
+    private val scanMutex = Mutex()
 
     suspend fun scanRecentCallLogs(context: Context): Int = withContext(Dispatchers.IO) {
+        if (!scanMutex.tryLock()) {
+            Log.d(TAG, "Concurrent scanRecentCallLogs already running. Skipping duplicate pass.")
+            return@withContext 0
+        }
         var importedCount = 0
         val db = AppDatabase.getInstance(context)
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "ANDROID_DEVICE"
@@ -153,8 +159,10 @@ object CallLogScanner {
                 }
             }
 
-            // Secondary pass: Attach audio recordings strictly to recent SIM/Cellular calls in Room DB missing recording paths
-            val unlinkedEvents = db.callEventDao().getUnlinkedSimEvents(effectiveCutoffMs)
+            // Secondary pass: Attach audio recordings strictly to recent SIM/Cellular calls (limit to last 24h & max 10 calls to prevent slow scans)
+            val twentyFourHoursAgo = now - (24 * 60 * 60 * 1000L)
+            val unlinkedCutoffMs = maxOf(effectiveCutoffMs, twentyFourHoursAgo)
+            val unlinkedEvents = db.callEventDao().getUnlinkedSimEvents(unlinkedCutoffMs).take(10)
 
             for (evt in unlinkedEvents) {
                 val matchedFile = SimCallRecordingScanner.findAudioForCall(
@@ -184,6 +192,8 @@ object CallLogScanner {
             Log.i(TAG, "Imported/linked $importedCount call events with audio recordings")
         } catch (e: Exception) {
             Log.e(TAG, "Error scanning system call logs: ${e.message}", e)
+        } finally {
+            scanMutex.unlock()
         }
 
         return@withContext importedCount

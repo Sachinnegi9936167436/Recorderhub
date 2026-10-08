@@ -71,6 +71,15 @@ async function createIndexes() {
   await safeCreateIndex(devicesColl, { deviceId: 1 });
   await safeCreateIndex(devicesColl, { lastSyncTimestamp: -1 });
 
+  // Audit Logs collection indexes
+  const auditLogsColl = db.collection('auditlogs');
+  console.log('\n--- Building indexes on "auditlogs" collection ---');
+  await safeCreateIndex(auditLogsColl, { timestamp: -1 });
+  await safeCreateIndex(auditLogsColl, { userEmail: 1, timestamp: -1 });
+  await safeCreateIndex(auditLogsColl, { action: 1, timestamp: -1 });
+  await safeCreateIndex(auditLogsColl, { actionCategory: 1, timestamp: -1 });
+  await safeCreateIndex(auditLogsColl, { organizationId: 1, timestamp: -1 });
+
   console.log('\nAll indexes verified / created successfully!');
   await mongoose.disconnect();
 }

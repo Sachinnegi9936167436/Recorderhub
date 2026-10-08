@@ -1256,6 +1256,24 @@ function SalestrailCallsInner() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      try {
+        import('@/lib/activity-tracker').then(({ trackClientActivity }) => {
+          trackClientActivity({
+            action: 'EXPORT_CALLS',
+            actionCategory: 'EXPORTS',
+            description: `Exported ${exportCalls.length} call records to CSV (Date: ${dateRange}, Filter: ${subFilter})`,
+            path: '/calls',
+            details: {
+              exportCount: exportCalls.length,
+              dateRange,
+              repCategory,
+              subFilter,
+              format: 'csv',
+            },
+          });
+        }).catch(() => {});
+      } catch (e) {}
     } catch (err) {
       console.error('Error exporting CSV:', err);
       alert('Error exporting CSV');

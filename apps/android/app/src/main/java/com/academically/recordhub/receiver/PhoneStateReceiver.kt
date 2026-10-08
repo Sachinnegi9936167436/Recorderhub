@@ -9,14 +9,8 @@ import android.util.Log
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import com.academically.recordhub.service.CallObserverService
 import com.academically.recordhub.utils.AppLogManager
-import com.academically.recordhub.utils.CallLogScanner
 import com.academically.recordhub.worker.CallSyncWorker
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 class PhoneStateReceiver : BroadcastReceiver() {
 
@@ -35,7 +29,7 @@ class PhoneStateReceiver : BroadcastReceiver() {
         val isLoggedIn = prefs.getBoolean("is_logged_in", false)
         if (!isLoggedIn) return
 
-        // 1. Ensure WhatsApp Listener is active
+        // 1. Ensure WhatsApp Listener is active (safe, rate-limited rebind check)
         try {
             if (com.academically.recordhub.service.WhatsAppCallNotificationListener.isNotificationListenerEnabled(context)) {
                 if (!com.academically.recordhub.service.WhatsAppCallNotificationListener.isConnected || com.academically.recordhub.service.WhatsAppCallNotificationListener.instance == null) {
@@ -44,41 +38,16 @@ class PhoneStateReceiver : BroadcastReceiver() {
             }
         } catch (_: Exception) {}
 
-        // 2. Safely attempt to start CallObserverService without crashing on Android 12+ FGS restrictions
-        try {
-            val serviceIntent = Intent(context, CallObserverService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Foreground service start deferred (Android 12+ FGS restriction): ${e.message}")
-        }
-
-        // 3. When call ends (IDLE state), trigger auto-scan & immediate server sync via WorkManager
+        // 2. When call ends (IDLE state), delegate scan & sync immediately to WorkManager.
+        // NOTE: Never call startForegroundService from a background BroadcastReceiver (causes Android 12+ FGS crashes / ANRs).
+        // NOTE: Never execute heavy disk/audio scanning inside onReceive or goAsync (causes BroadcastQueue timeout ANRs).
         if (stateStr == TelephonyManager.EXTRA_STATE_IDLE) {
-            AppLogManager.log("SYNC", TAG, "SIM Call ended (IDLE detected via BroadcastReceiver). Scheduling CallSyncWorker...")
-
-            // Immediate pass via coroutine
-            val pendingResult = goAsync()
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    delay(1500)
-                    CallLogScanner.scanRecentCallLogs(context.applicationContext)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Instant scan error in PhoneStateReceiver: ${e.message}")
-                } finally {
-                    try {
-                        pendingResult.finish()
-                    } catch (_: Exception) {}
-                }
-            }
+            AppLogManager.log("SYNC", TAG, "SIM Call ended (IDLE detected via BroadcastReceiver). Enqueuing CallSyncWorker...")
 
             try {
-                // Pass 1: Run after 4s (allowing OEM dialers on Samsung/Xiaomi/Vivo to finish writing audio)
+                // Pass 1: Run after 2.5s (allowing Android telephony provider & OEM dialers on Xiaomi/Samsung/Vivo to finish writing audio)
                 val primarySync = OneTimeWorkRequestBuilder<CallSyncWorker>()
-                    .setInitialDelay(4, java.util.concurrent.TimeUnit.SECONDS)
+                    .setInitialDelay(2500, java.util.concurrent.TimeUnit.MILLISECONDS)
                     .build()
                 WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
                     "CallSyncWorkerOneTime",
@@ -86,9 +55,9 @@ class PhoneStateReceiver : BroadcastReceiver() {
                     primarySync
                 )
 
-                // Pass 2: Secondary safety pass after 12s for slow OEM encoders
+                // Pass 2: Secondary safety pass after 10s for slow OEM encoders
                 val secondarySync = OneTimeWorkRequestBuilder<CallSyncWorker>()
-                    .setInitialDelay(12, java.util.concurrent.TimeUnit.SECONDS)
+                    .setInitialDelay(10, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
                 WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
                     "CallSyncWorkerSecondary",
